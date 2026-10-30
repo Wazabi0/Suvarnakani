@@ -1,0 +1,1830 @@
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import {
+  Landmark, PenTool, FlaskConical, Orbit, Scissors, Volume2, VolumeX, Music, Unlock, Lock,
+  Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
+  Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
+} from "lucide-react";
+
+/* ============================================================================
+ * SuvarṇaKani (สุวรรณกานิ / ສຸວັນນະການິ)
+ * First-principles Thai & Lao script, tone physics and SRS trainer.
+ * Single-file React + Tailwind + lucide-react.
+ * ========================================================================== */
+
+const STORAGE_KEY = "suvarnakani.v1";
+
+const COLORS = {
+  obsidian: "#0B0F19",
+  slate: "#0F172A",
+  gold: "#F59E0B",
+  cyan: "#06B6D4",
+  magenta: "#EC4899",
+  purple: "#9333EA",
+};
+
+const TIER = {
+  glyph: { label: "Glyph", color: COLORS.cyan, tw: "bg-[#06B6D4]" },
+  syllable: { label: "Syllable", color: COLORS.magenta, tw: "bg-[#EC4899]" },
+  vocab: { label: "Vocabulary", color: COLORS.purple, tw: "bg-[#9333EA]" },
+};
+
+const FONT_STACKS = {
+  loop: {
+    th: '"Noto Serif Thai", "Sarabun", serif',
+    lo: '"Noto Serif Lao", "Phetsarath OT", serif',
+  },
+  street: {
+    th: '"Kanit", "Noto Sans Thai", "Prompt", sans-serif',
+    lo: '"Noto Sans Lao", "Phetsarath OT", sans-serif',
+  },
+};
+
+const GOOGLE_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;600&family=Noto+Serif+Lao:wght@400;600&family=Sarabun:wght@400;600&family=Kanit:wght@300;500&family=Noto+Sans+Thai:wght@400;600&family=Noto+Sans+Lao:wght@400;600&display=swap";
+
+/* ---------------------------------------------------------------------------
+ * Tone system (Bangkok Thai, Chao tone numbers)
+ * ------------------------------------------------------------------------- */
+const TONES = {
+  mid: { name: "Mid", th: "สามัญ", chao: "33", color: "#38BDF8", notes: ["C4", "C4"] },
+  low: { name: "Low", th: "เอก", chao: "21", color: "#A78BFA", notes: ["A3", "F3"] },
+  falling: { name: "Falling", th: "โท", chao: "51", color: "#F43F5E", notes: ["E4", "G4", "G3"] },
+  high: { name: "High", th: "ตรี", chao: "45", color: "#F59E0B", notes: ["E4", "A4"] },
+  rising: { name: "Rising", th: "จัตวา", chao: "214", color: "#34D399", notes: ["C4", "G3", "F4"] },
+};
+
+const NOTE_FREQ = { F3: 174.61, G3: 196.0, A3: 220.0, C4: 261.63, E4: 329.63, F4: 349.23, G4: 392.0, A4: 440.0 };
+
+const CLASSES = {
+  mid: { name: "Middle", persona: "Golden Monks", th: "อักษรกลาง", lo: "ອັກສອນກາງ", color: COLORS.gold },
+  high: { name: "High", persona: "Sky Nagas", th: "อักษรสูง", lo: "ອັກສອນສູງ", color: COLORS.cyan },
+  low: { name: "Low", persona: "River Spirits", th: "อักษรต่ำ", lo: "ອັກສອນຕ່ຳ", color: COLORS.purple },
+};
+
+const MARKS = {
+  none: { name: "No mark", th: "", lo: "" },
+  ek: { name: "Mai Ek ◌่", th: "่", lo: "່" },
+  tho: { name: "Mai Tho ◌้", th: "้", lo: "້" },
+  tri: { name: "Mai Tri ◌๊", th: "๊", lo: "໊" },
+  jat: { name: "Mai Chattawa ◌๋", th: "๋", lo: "໋" },
+};
+
+/** Deterministic Thai tone rule engine. */
+function computeTone({ cls, live, long, mark = "none", hn = false }) {
+  const steps = [];
+  let eff = cls;
+  let warning = null;
+  if (hn && cls === "low") {
+    eff = "high";
+    steps.push("Silent ห นำ (ຫ ນຳ) in front of a Low-class sonorant promotes the syllable to High class.");
+  }
+  steps.push(`${CLASSES[eff].name} class (${CLASSES[eff].persona}).`);
+  steps.push(
+    live
+      ? "Live syllable (คำเป็น): long vowel, or ends in a sonorant (m, n, ng, w, y)."
+      : `Dead syllable (คำตาย): short open vowel, or ends in a stop (p, t, k). Vowel is ${long ? "long" : "short"}.`
+  );
+  let tone;
+  if (mark !== "none") {
+    if (mark === "ek") tone = eff === "low" ? "falling" : "low";
+    else if (mark === "tho") tone = eff === "low" ? "high" : "falling";
+    else if (mark === "tri") tone = "high";
+    else tone = "rising";
+    if ((mark === "tri" || mark === "jat") && eff !== "mid") {
+      warning = "Mai tri and mai chattawa normally appear only on Middle-class consonants. Outside that, they show up in loanwords and slang and are read as written.";
+    }
+    if (eff === "low" && (mark === "ek" || mark === "tho")) {
+      steps.push(`Low-class shift: tone mark #${mark === "ek" ? 1 : 2} is read one step further, as ${TONES[tone].name}.`);
+    } else {
+      steps.push(`${MARKS[mark].name} sets the tone directly: ${TONES[tone].name}.`);
+    }
+  } else if (live) {
+    tone = eff === "high" ? "rising" : "mid";
+    steps.push(`No mark on a live syllable: ${eff === "high" ? "High class rises" : "baseline Mid"}.`);
+  } else if (eff === "low") {
+    tone = long ? "falling" : "high";
+    steps.push(`Low class + dead + ${long ? "long vowel → Falling" : "short vowel → High"}.`);
+  } else {
+    tone = "low";
+    steps.push(`${CLASSES[eff].name} class + dead syllable → Low.`);
+  }
+  const formula = `${CLASSES[eff].name} + ${live ? "Live" : `Dead ${long ? "Long" : "Short"}`} + ${MARKS[mark].name} = ${TONES[tone].name} (${TONES[tone].chao})`;
+  return { tone, eff, steps, warning, formula };
+}
+
+/* ---------------------------------------------------------------------------
+ * Curriculum (3 levels). ttsTh / ttsLo contain ONLY Thai script and are what
+ * the Thai TTS voice reads. ttsLo is a Thai-script approximation of the Lao.
+ * ------------------------------------------------------------------------- */
+const CURRICULUM = [
+  // ---------------- Level 1: The Golden Monks ----------------
+  { id: "g-ko", level: 1, tier: "glyph", th: "ก", lo: "ກ", thRoman: "k / g · gaw gài", loRoman: "k · ko kai", meaning: "k sound · chicken (ไก่)", accept: ["k", "g", "ko", "gor", "gaw", "kokai", "gorgai", "chicken"], ttsTh: "กอ ไก่", ttsLo: "กอ ไก่", cls: "mid", tone: ["mid"],
+    loop: "A loopless letter. Start at the little beak on the upper left, arch over the top, then drop the right leg.", mnemonic: "A Golden Monk bows to feed his chicken (ไก่). Calm and centred: the Mid tone.", street: "Street fonts keep the same silhouette, so ก is one of the easiest letters to read on signs.", trap: "ก vs ถ: ถ has a loop at its bottom-left foot. ก never does." },
+  { id: "g-cho", level: 1, tier: "glyph", th: "จ", lo: "ຈ", thRoman: "j (unaspirated ch) · jaw jaan", loRoman: "ch/j · cho chok", meaning: "j sound · plate (จาน)", accept: ["j", "ch", "jo", "jor", "jaw", "jaan", "plate", "cup"], ttsTh: "จอ จาน", ttsLo: "จอ จอก", cls: "mid", tone: ["mid"],
+    loop: "Head loop sits low on the right inside the curl. Start there, sweep up and round to the left, and finish the tail.", mnemonic: "The monk carries his alms plate (จาน) in a curling arm.", street: "In loopless fonts the inner loop becomes a short hook.", trap: "จ is easy to confuse with ร or ว in fast handwriting; จ curls back on itself.",
+    bridge: "Lao name word differs: ຈອກ (cup) instead of จาน (plate)." },
+  { id: "g-do", level: 1, tier: "glyph", th: "ด", lo: "ດ", thRoman: "d · daw dèk", loRoman: "d · do dek", meaning: "d sound · child (เด็ก)", accept: ["d", "do", "dor", "daw", "child", "kid"], ttsTh: "ดอ เด็ก", ttsLo: "ดอ เด็ก", cls: "mid", tone: ["mid"],
+    loop: "The loop sits inside the bowl. Start at the loop, run down to the left foot, climb the left wall, arch over and come down on the right.", mnemonic: "A child (เด็ก) curled up asleep inside the temple bell.", street: "Loopless fonts turn it into an upside-down U with a slash; look for the smooth, un-notched roof.", trap: "ด vs ต: ต has a notch dipping into its roof. ด vs ค: ค's loop hangs off the straight left wall instead of a diagonal tail." },
+  { id: "g-to", level: 1, tier: "glyph", th: "ต", lo: "ຕ", thRoman: "t (unaspirated) · taw tào", loRoman: "t · to ta", meaning: "t sound · turtle (เต่า)", accept: ["t", "to", "tor", "taw", "turtle", "eye"], ttsTh: "ตอ เต่า", ttsLo: "ตอ ตา", cls: "mid", tone: ["mid"],
+    loop: "Same path as ด, plus a notch in the roof. Start at the inner loop.", mnemonic: "The turtle (เต่า) has a dent in its shell: that notch is ต.", street: "The roof notch survives in street fonts, so read the top edge.", trap: "ต = ด + notched roof.", bridge: "Lao name word: ຕາ (eye)." },
+  { id: "g-bo", level: 1, tier: "glyph", th: "บ", lo: "ບ", thRoman: "b · baw bai-mái", loRoman: "b · bo bae", meaning: "b sound · leaf (ใบไม้)", accept: ["b", "bo", "bor", "baw", "leaf", "goat"], ttsTh: "บอ ใบไม้", ttsLo: "บอ แบ้", cls: "mid", tone: ["mid"],
+    loop: "Head loop at top-left. Drop the left wall, run along the flat floor, rise up the right wall.", mnemonic: "A leaf-shaped alms bowl (ใบไม้) with a flat bottom.", street: "Loopless: a plain U with a flat floor.", trap: "บ vs ป: ป's right wall shoots above the line. บ vs น: น ends in a curled tail.", bridge: "Lao name word: ແບ້ (goat)." },
+  { id: "g-po", level: 1, tier: "glyph", th: "ป", lo: "ປ", thRoman: "p (unaspirated) · paw plaa", loRoman: "p · po pa", meaning: "p sound · fish (ปลา)", accept: ["p", "po", "por", "paw", "fish"], ttsTh: "ปอ ปลา", ttsLo: "ปอ ปา", cls: "mid", tone: ["mid"],
+    loop: "Like บ, but the right wall shoots up above the line like a fishing pole.", mnemonic: "A fishing pole (ปลา) sticking up from the bowl.", street: "The tall tail is the only clue in any font; ignore the loop.", trap: "ป vs บ (no tail) and ป vs ฝ (W-body with tail).", bridge: "Thai ปลา keeps the pl- cluster; Lao ປາ drops it." },
+  { id: "g-o", level: 1, tier: "glyph", th: "อ", lo: "ອ", thRoman: "silent / glottal · aw àang", loRoman: "o · o o", meaning: "silent carrier · basin (อ่าง)", accept: ["o", "or", "aw", "silent", "glottal", "basin", "bowl"], ttsTh: "ออ อ่าง", ttsLo: "ออ โอ", cls: "mid", tone: ["mid"],
+    loop: "Loop at top-right inside. Start at the loop, pull up and round counter-clockwise into a closed bowl.", mnemonic: "An empty basin (อ่าง): it carries a vowel but makes no sound of its own.", street: "Loopless fonts make it a plain 0 with a flick.", trap: "อ (glottal, middle) vs ฮ (h, low): ฮ has an extra notch.", bridge: "Lao name word: ໂອ (bowl)." },
+  { id: "s-kaa", level: 1, tier: "syllable", th: "กา", lo: "ກາ", thRoman: "gaa", loRoman: "kaa", meaning: "crow", accept: ["gaa", "kaa", "ga", "ka", "crow"], ttsTh: "กา", ttsLo: "กา", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "Monk + long aa = a level Mid call: the crow's caw.", trap: "The vowel า always sits to the right, but it is spoken after the consonant." },
+  { id: "s-dii", level: 1, tier: "syllable", th: "ดี", lo: "ດີ", thRoman: "dii", loRoman: "dii", meaning: "good", accept: ["dii", "di", "dee", "good"], ttsTh: "ดี", ttsLo: "ดี", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "The ี on the roof is a long ii: a good, long, level note.", trap: "ิ (short i) vs ี (long ii): the long one has an extra tick." },
+  { id: "s-taa", level: 1, tier: "syllable", th: "ตา", lo: "ຕາ", thRoman: "taa", loRoman: "taa", meaning: "eye / maternal grandfather", accept: ["taa", "ta", "eye", "grandfather", "grandpa"], ttsTh: "ตา", ttsLo: "ตา", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "Grandpa's eye watches the turtle.", trap: "ตา (eye) vs ทา (to paint): different class, different breath." },
+  { id: "s-plaa", level: 1, tier: "syllable", th: "ปลา", lo: "ປາ", thRoman: "plaa", loRoman: "paa", meaning: "fish", accept: ["plaa", "pla", "paa", "pa", "fish"], ttsTh: "ปลา", ttsLo: "ปา", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "The fish slips its l in the Mekong: Thai plaa, Lao paa.", trap: "In a cluster, the first consonant (ป) sets the class.", bridge: "Cluster simplification: Thai keeps pl-, Lao drops the l." },
+  { id: "v-kin", level: 1, tier: "vocab", th: "กิน", lo: "ກິນ", thRoman: "gin", loRoman: "kin", meaning: "eat", accept: ["gin", "kin", "eat"], ttsTh: "กิน", ttsLo: "กิน", tone: ["mid"], parts: { cls: "mid", live: true, long: false, mark: "none" },
+    mnemonic: "Short i, but the final น keeps the syllable alive: Mid.", trap: "A short vowel is still live when it ends in m, n, ng, w or y." },
+  { id: "v-baan", level: 1, tier: "vocab", th: "บ้าน", lo: "ບ້ານ", thRoman: "bâan", loRoman: "baan", meaning: "house / home", accept: ["baan", "ban", "house", "home"], ttsTh: "บ้าน", ttsLo: "บ้าน", tone: ["falling"], parts: { cls: "mid", live: true, long: true, mark: "tho" },
+    mnemonic: "Mai Tho on a monk: the voice falls as you come home and drop your bag.", trap: "Tone marks sit above the consonant, even though they are pronounced over the whole syllable." },
+  { id: "v-jai", level: 1, tier: "vocab", th: "ใจ", lo: "ໃຈ", thRoman: "jai", loRoman: "chai", meaning: "heart / mind", accept: ["jai", "chai", "heart", "mind"], ttsTh: "ใจ", ttsLo: "ใจ", tone: ["mid"], parts: { cls: "mid", live: true, long: false, mark: "none" },
+    mnemonic: "The ใ swirls in front like a heart opening before the word is spoken.", trap: "ใ (mai muan) and ไ (mai malai) sound the same; ใ appears in only 20 common Thai words." },
+  { id: "v-diijai", level: 1, tier: "vocab", th: "ดีใจ", lo: "ດີໃຈ", thRoman: "dii-jai", loRoman: "dii-chai", meaning: "glad / happy", accept: ["diijai", "dijai", "deejai", "diichai", "glad", "happy"], ttsTh: "ดีใจ", ttsLo: "ดีใจ", tone: ["mid", "mid"],
+    mnemonic: "Good + heart = glad.", trap: "Thai writes no spaces between words, so ดีใจ looks like one block." },
+
+  // ---------------- Level 2: Sky Nagas vs River Spirits ----------------
+  { id: "g-kho", level: 2, tier: "glyph", th: "ข", lo: "ຂ", thRoman: "kh · khǎw khài", loRoman: "kh · kho khai", meaning: "kh sound · egg (ไข่)", accept: ["kh", "k", "kho", "khor", "khaw", "egg"], ttsTh: "ขอ ไข่", ttsLo: "ขอ ไข่", cls: "high", tone: ["rising"],
+    loop: "Head loop at top-left. Drop the left wall, round the bottom, climb the right wall.", mnemonic: "A Sky Naga guards its egg (ไข่) high up. Its name rises: khǎw.", street: "Loopless: a U with a tiny notch on the left top.", trap: "ข vs ช: ช has a hook on the right shoulder. ข vs ฃ (obsolete) has a notch." },
+  { id: "g-so", level: 2, tier: "glyph", th: "ส", lo: "ສ", thRoman: "s · sǎw sʉ̌a", loRoman: "s · so suea", meaning: "s sound · tiger (เสือ)", accept: ["s", "so", "sor", "saw", "tiger"], ttsTh: "สอ เสือ", ttsLo: "สอ เสือ", cls: "high", tone: ["rising"],
+    loop: "Loop low on the left, curve up and over, with a flick on top-right.", mnemonic: "The tiger (เสือ) prowls in the sky with the Nagas: a high, hissing s.", street: "In street fonts ส can look like ล; check the top-right flick.", trap: "ส vs ล: ล has no flick on top; ส vs ศ/ษ (also high-class s, used in Sanskrit loans)." },
+  { id: "g-ho", level: 2, tier: "glyph", th: "ห", lo: "ຫ", thRoman: "h · hǎw hìip", loRoman: "h · ho han", meaning: "h sound · chest (หีบ)", accept: ["h", "ho", "hor", "haw", "chest", "goose"], ttsTh: "หอ หีบ", ttsLo: "หอ ห่าน", cls: "high", tone: ["rising"],
+    loop: "Loop at bottom-left; zig up, down and up again.", mnemonic: "The Naga hides treasure in a chest (หีบ). It can also go silent and lift its neighbour into the sky (ห นำ).", street: "Loopless ห looks like a W with a hook.", trap: "ห (high h) vs ฮ (low h): different tone behaviour, same sound.", bridge: "Lao name word: ຫ່ານ (goose)." },
+  { id: "g-kho2", level: 2, tier: "glyph", th: "ค", lo: "ຄ", thRoman: "kh · khaw khwaai", loRoman: "kh · kho khwai", meaning: "kh sound · water buffalo (ควาย)", accept: ["kh", "k", "kho", "khor", "khaw", "buffalo", "waterbuffalo"], ttsTh: "คอ ควาย", ttsLo: "คอ ควาย", cls: "low", tone: ["mid"],
+    loop: "The loop hangs off the inside of the straight left wall. Start at the loop and follow the body round.", mnemonic: "A River Spirit rides the water buffalo (ควาย) along the bank. Same kh as ข, but a low-class tone.", street: "Loopless ค is easy to misread as ด; check for the straight left wall.", trap: "ข (high) and ค (low) are both kh: the letter you see decides the tone, not the sound." },
+  { id: "g-cho2", level: 2, tier: "glyph", th: "ช", lo: "ຊ", thRoman: "ch · chaw cháang", loRoman: "x/s · xo xang", meaning: "ch sound · elephant (ช้าง)", accept: ["ch", "x", "s", "cho", "chor", "chaw", "elephant"], ttsTh: "ชอ ช้าง", ttsLo: "ซอ ซ้าง", cls: "low", tone: ["mid"],
+    loop: "Like ข with a hooked right shoulder (the elephant's trunk).", mnemonic: "The elephant (ช้าง) curls its trunk on the right shoulder.", street: "The hook is the giveaway in any font.", trap: "ช vs ซ: ซ has the hook plus a notch on the left.", bridge: "Thai ช (ch) corresponds to Lao ຊ (x / s): ช้าง ↔ ຊ້າງ." },
+  { id: "g-no", level: 2, tier: "glyph", th: "น", lo: "ນ", thRoman: "n · naw nǔu", loRoman: "n · no nok", meaning: "n sound · mouse (หนู)", accept: ["n", "no", "nor", "naw", "mouse", "bird"], ttsTh: "นอ หนู", ttsLo: "นอ นก", cls: "low", tone: ["mid"],
+    loop: "Head loop top-left. Down the left wall, up the diagonal, finish with a curled tail at bottom-right.", mnemonic: "The mouse (หนู) curls its tail.", street: "Loopless น looks like a Latin u with a kick.", trap: "น vs บ: บ has a flat floor and no tail. น vs ม: ม has a second loop at its bottom-left.", bridge: "Lao name word: ນົກ (bird)." },
+  { id: "g-mo", level: 2, tier: "glyph", th: "ม", lo: "ມ", thRoman: "m · maw máa", loRoman: "m · mo maeo", meaning: "m sound · horse (ม้า)", accept: ["m", "mo", "mor", "maw", "horse", "cat"], ttsTh: "มอ ม้า", ttsLo: "มอ แมว", cls: "low", tone: ["mid"],
+    loop: "Two loops: one at top-left, one tucked in at bottom-left.", mnemonic: "A horse (ม้า) with a saddle loop and a stirrup loop.", street: "Loopless ม is a sharp-cornered u with a small notch.", trap: "ม vs น vs บ: count the loops and check the tail.", bridge: "Lao name word: ແມວ (cat)." },
+  { id: "s-khaa", level: 2, tier: "syllable", th: "ขา", lo: "ຂາ", thRoman: "khǎa", loRoman: "khaa", meaning: "leg", accept: ["khaa", "kha", "leg"], ttsTh: "ขา", ttsLo: "ขา", tone: ["rising"], parts: { cls: "high", live: true, long: true, mark: "none" },
+    mnemonic: "A Sky Naga lifts its leg: no mark, live syllable, so the voice rises.", trap: "Same sound as คา but High class: it rises." },
+  { id: "s-khaa2", level: 2, tier: "syllable", th: "คา", lo: "ຄາ", thRoman: "khaa", loRoman: "khaa", meaning: "stuck / lodged", accept: ["khaa", "kha", "stuck", "lodged"], ttsTh: "คา", ttsLo: "คา", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "The River Spirit is stuck in the mud: flat Mid.", trap: "ขา (rising, leg) vs คา (mid, stuck)." },
+  { id: "s-maa-h", level: 2, tier: "syllable", th: "ม้า", lo: "ມ້າ", thRoman: "máa", loRoman: "maa", meaning: "horse", accept: ["maa", "ma", "horse"], ttsTh: "ม้า", ttsLo: "ม้า", tone: ["high"], parts: { cls: "low", live: true, long: true, mark: "tho" },
+    mnemonic: "Low class + Mai Tho shifts up to High: the horse whinnies.", trap: "Mai Tho on a Low consonant is High, not Falling." },
+  { id: "v-naam", level: 2, tier: "vocab", th: "น้ำ", lo: "ນ້ຳ", thRoman: "náam", loRoman: "nam", meaning: "water", accept: ["naam", "nam", "water"], ttsTh: "น้ำ", ttsLo: "น้ำ", tone: ["high"], parts: { cls: "low", live: true, long: true, mark: "tho" },
+    mnemonic: "Water splashes up: Low + Mai Tho = High.", trap: "ำ is written as a short am, but in น้ำ most Bangkok speakers say a long náam." },
+  { id: "v-chaang", level: 2, tier: "vocab", th: "ช้าง", lo: "ຊ້າງ", thRoman: "cháang", loRoman: "xaang", meaning: "elephant", accept: ["chaang", "chang", "xaang", "xang", "saang", "elephant"], ttsTh: "ช้าง", ttsLo: "ซ้าง", tone: ["high"], parts: { cls: "low", live: true, long: true, mark: "tho" },
+    mnemonic: "The elephant trumpets high.", trap: "Low + Mai Tho = High.", bridge: "Thai ช ↔ Lao ຊ: cháang ↔ xaang." },
+  { id: "v-khaaw", level: 2, tier: "vocab", th: "ข้าว", lo: "ເຂົ້າ", thRoman: "khâaw", loRoman: "khao", meaning: "rice / food", accept: ["khaaw", "khaao", "khao", "kao", "rice", "food"], ttsTh: "ข้าว", ttsLo: "เข้า", tone: ["falling"], parts: { cls: "high", live: true, long: true, mark: "tho" },
+    mnemonic: "High + Mai Tho falls: the rice sack drops.", trap: "Thai ข้าว (rice) vs เข้า (enter) differ only in vowel length.", bridge: "Lao spells rice ເຂົ້າ, with a different vowel shape from Thai ข้าว." },
+  { id: "v-maa", level: 2, tier: "vocab", th: "มา", lo: "ມາ", thRoman: "maa", loRoman: "maa", meaning: "come", accept: ["maa", "ma", "come"], ttsTh: "มา", ttsLo: "มา", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "Come along at a calm Mid tone.", trap: "Part of the minimal triplet มา (come) · ม้า (horse) · หมา (dog)." },
+
+  // ---------------- Level 3: The Mekong Bridge ----------------
+  { id: "g-pho", level: 3, tier: "glyph", th: "ผ", lo: "ຜ", thRoman: "ph · phǎw phʉ̂ng", loRoman: "ph · pho pheung", meaning: "ph sound · bee (ผึ้ง)", accept: ["ph", "p", "pho", "phor", "phaw", "bee"], ttsTh: "ผอ ผึ้ง", ttsLo: "ผอ เผิ้ง", cls: "high", tone: ["rising"],
+    loop: "Head loop top-left. Down the left wall, up to a LOW inner peak, down, then up the right wall.", mnemonic: "A bee (ผึ้ง) buzzing low over the flowers: the inner peak stays low.", street: "Loopless ผ looks like a W whose middle stops halfway.", trap: "ผ vs พ: พ's inner peak climbs all the way to the top. Add a tall tail and you get ฝ / ฟ." },
+  { id: "g-pho2", level: 3, tier: "glyph", th: "พ", lo: "ພ", thRoman: "ph · phaw phaan", loRoman: "ph · pho phu", meaning: "ph sound · offering tray (พาน)", accept: ["ph", "p", "pho", "phor", "phaw", "tray", "mountain"], ttsTh: "พอ พาน", ttsLo: "พอ พู", cls: "low", tone: ["mid"],
+    loop: "Head loop top-left. Same path as ผ, but the inner peak reaches the full height, like a W.", mnemonic: "The offering tray (พาน) is stacked tall to the top.", street: "Loopless พ is a clean W.", trap: "ผ (high, low peak) vs พ (low class, tall peak).", bridge: "Lao name word: ພູ (mountain)." },
+  { id: "g-ro", level: 3, tier: "glyph", th: "ร", lo: "ຮ", thRoman: "r · raw rʉa", loRoman: "h · ho heuan", meaning: "Thai r ↔ Lao h", accept: ["r", "h", "ro", "ror", "raw", "boat", "house"], ttsTh: "รอ เรือ", ttsLo: "ฮอ เฮือน", cls: "low", tone: ["mid"],
+    loop: "Thai ร: loop top-right, then down the hook. Lao ຮ: loop and an open belly.", mnemonic: "The boat (เรือ) crosses the Mekong and becomes a house (ເຮືອນ): r turns into h.", street: "Loopless ร looks like a 5 without its top bar.", trap: "Thai ร vs ธ vs ว.", bridge: "Native Thai ร usually becomes Lao ຮ (รัก ↔ ຮັກ), but often ລ in other words (รถ ↔ ລົດ). Lao has ຣ too, used mostly for names and loans." },
+  { id: "g-lo", level: 3, tier: "glyph", th: "ล", lo: "ລ", thRoman: "l · law ling", loRoman: "l · lo ling", meaning: "l sound · monkey (ลิง)", accept: ["l", "lo", "lor", "law", "monkey"], ttsTh: "ลอ ลิง", ttsLo: "ลอ ลีง", cls: "low", tone: ["mid"],
+    loop: "Loop low on the left, round over the top, and a short drop on the right.", mnemonic: "The monkey (ลิง) swings round the branch.", street: "Loopless ล and ส can blur; ส keeps a top-right flick.", trap: "ล vs ส vs ศ.", bridge: "Lao name word: ລີງ (monkey), same word." },
+  { id: "s-maa-r", level: 3, tier: "syllable", th: "หมา", lo: "ໝາ", thRoman: "mǎa", loRoman: "maa", meaning: "dog", accept: ["maa", "ma", "dog"], ttsTh: "หมา", ttsLo: "หมา", tone: ["rising"], parts: { cls: "low", live: true, long: true, mark: "none", hn: true },
+    mnemonic: "The silent Naga ห lifts ม into the sky: the dog's howl rises.", trap: "Completes the triplet: มา (Mid, come) · ม้า (High, horse) · หมา (Rising, dog).", bridge: "Lao writes ຫ + ມ as the single letter ໝ." },
+  { id: "s-naaw", level: 3, tier: "syllable", th: "หนาว", lo: "ໜາວ", thRoman: "nǎaw", loRoman: "naao", meaning: "cold (weather)", accept: ["naaw", "naao", "nao", "cold"], ttsTh: "หนาว", ttsLo: "หนาว", tone: ["rising"], parts: { cls: "low", live: true, long: true, mark: "none", hn: true },
+    mnemonic: "Shivering, your voice rises: nǎaw.", trap: "ห is silent; it only changes the tone.", bridge: "Lao writes ຫ + ນ as the single letter ໜ." },
+  { id: "v-hello", level: 3, tier: "vocab", th: "สวัสดี", lo: "ສະບາຍດີ", thRoman: "sà-wàt-dii", loRoman: "sabaidee", meaning: "hello", accept: ["sawatdee", "sawasdee", "sawatdii", "sabaidee", "sabaidii", "hello", "hi"], ttsTh: "สวัสดี", ttsLo: "สะบายดี", tone: ["low", "low", "mid"],
+    mnemonic: "Thai greets with สวัสดี; Lao greets with ສະບາຍດີ.", trap: "Thai สบายดี means 'I'm fine', not 'hello'.", bridge: "Different greeting words across the river; ສະບາຍດີ is spelled phonetically (ສະ for Thai ส-)." },
+  { id: "v-thanks", level: 3, tier: "vocab", th: "ขอบคุณ", lo: "ຂອບໃຈ", thRoman: "khàawp-khun", loRoman: "khop jai", meaning: "thank you", accept: ["khopkhun", "khobkhun", "kopkun", "khawpkhun", "khopjai", "khobjai", "khopchai", "thankyou", "thanks"], ttsTh: "ขอบคุณ", ttsLo: "ขอบใจ", tone: ["low", "mid"],
+    mnemonic: "Thai thanks with ขอบคุณ; Lao uses ຂອບໃຈ.", trap: "In Thai, ขอบใจ is casual, said to someone younger. In Lao, ຂອບໃຈ is the normal polite thanks.", bridge: "Same root ขอบ / ຂອບ, different second word." },
+  { id: "v-saep", level: 3, tier: "vocab", th: "แซ่บ", lo: "ແຊບ", thRoman: "sɛ̂ɛp", loRoman: "xaep", meaning: "delicious (spicy-tasty)", accept: ["saep", "saeb", "zaep", "sep", "xaep", "xep", "delicious", "tasty", "yummy"], ttsTh: "แซ่บ", ttsLo: "แซบ", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "ek" },
+    mnemonic: "An Isan/Lao word that Bangkok borrowed: Low + Mai Ek falls.", trap: "Thai adds Mai Ek to match its tone rules; Lao ແຊບ needs no mark.", bridge: "Lao ແຊບ uses no tone mark; the Thai borrowing adds one." },
+  { id: "v-love", level: 3, tier: "vocab", th: "รัก", lo: "ຮັກ", thRoman: "rák", loRoman: "hak", meaning: "love", accept: ["rak", "hak", "love"], ttsTh: "รัก", ttsLo: "ฮัก", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "Low class + dead short = High: love leaps up.", trap: "No tone mark, yet it is High: the dead-syllable rule does it.", bridge: "Thai ร ↔ Lao ຮ: rák ↔ hak." },
+  { id: "v-post", level: 3, tier: "vocab", th: "ไปรษณีย์", lo: "ໄປສະນີ", thRoman: "prai-sà-nii", loRoman: "paisanii", meaning: "post office / mail", accept: ["praisanii", "praisani", "praisanee", "paisanii", "paisani", "postoffice", "post", "mail"], ttsTh: "ไปรษณีย์", ttsLo: "ไปสะนี", tone: ["mid", "low", "mid"],
+    mnemonic: "Thai keeps its Sanskrit spelling and silences the last letter with ์. Lao spells what it says.", trap: "Silent killer: ย์ is not pronounced.", bridge: "Thai etymological spelling vs Lao phonetic spelling." },
+];
+
+const LEVELS = [
+  { n: 1, title: "The Golden Monks", sub: "Middle class · first syllables" },
+  { n: 2, title: "Sky Nagas vs River Spirits", sub: "High vs Low class · tone marks" },
+  { n: 3, title: "The Mekong Bridge", sub: "ห นำ · Thai ↔ Lao cognates" },
+];
+
+/* ---------------------------------------------------------------------------
+ * SRS
+ * ------------------------------------------------------------------------- */
+const SRS_STAGES = [
+  { name: "Locked", alias: "Queue", color: "#475569" },
+  { name: "Lotus Seed", alias: "Apprentice", color: "#EC4899" },
+  { name: "Novice Monk", alias: "Guru", color: "#9333EA" },
+  { name: "Naga Adept", alias: "Master", color: "#3B82F6" },
+  { name: "Temple Guardian", alias: "Enlightened", color: "#06B6D4" },
+  { name: "Golden Nirvana", alias: "Burned", color: "#F59E0B" },
+];
+const HOUR = 3600 * 1000;
+const SRS_INTERVAL = { 1: 4 * HOUR, 2: 24 * HOUR, 3: 7 * 24 * HOUR, 4: 30 * 24 * HOUR };
+
+function normalizeAnswer(s) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[ɛ]/g, "e")
+    .replace(/[ʉ]/g, "ue")
+    .replace(/[^a-z]/g, "");
+}
+
+function isCorrect(item, input) {
+  const n = normalizeAnswer(input);
+  if (!n) return false;
+  const pool = [...item.accept, item.thRoman, item.loRoman, ...item.meaning.split(/[\/·,()]/)];
+  return pool.some((a) => normalizeAnswer(a) === n);
+}
+
+function loadState() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function saveState(state) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* storage unavailable: progress lives for this session only */
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Audio engine: speech and Web Audio are never active at the same time.
+ * ------------------------------------------------------------------------- */
+const sanitizeThai = (s) => (s || "").replace(/[^฀-๿\s]/g, "").replace(/\s+/g, " ").trim();
+const sanitizeLao = (s) => (s || "").replace(/[^຀-໿\s]/g, "").replace(/\s+/g, " ").trim();
+
+class SuvarnaMobileAudioEngine {
+  constructor() {
+    this.ctx = null;
+    this.nodes = [];
+    this.speechTimer = null;
+    this.rate = 0.85;
+    this.muted = false;
+    this.voices = [];
+    this.primed = false;
+    this.listeners = new Set();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      const load = () => {
+        this.voices = window.speechSynthesis.getVoices() || [];
+        this.listeners.forEach((fn) => fn());
+      };
+      load();
+      window.speechSynthesis.addEventListener?.("voiceschanged", load);
+    }
+  }
+  onVoices(fn) {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+  thaiVoice() {
+    return this.voices.find((v) => /^th(-|_|$)/i.test(v.lang));
+  }
+  laoVoice() {
+    return this.voices.find((v) => /^lo(-|_|$)/i.test(v.lang));
+  }
+  /** iOS needs a speech call inside the first user gesture. */
+  prime() {
+    if (this.primed || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    this.primed = true;
+    try {
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      window.speechSynthesis.speak(u);
+    } catch {
+      /* ignore */
+    }
+  }
+  stopTones() {
+    this.nodes.forEach((n) => {
+      try { n.stop(0); } catch { /* already stopped */ }
+      try { n.disconnect(); } catch { /* ignore */ }
+    });
+    this.nodes = [];
+  }
+  cancelSpeech() {
+    clearTimeout(this.speechTimer);
+    this.speechTimer = null;
+    try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+  }
+  /**
+   * Speak with a human voice. `ttsThai` must be Thai script. If `laoRaw` is
+   * given and the device has a Lao voice, the Lao text is spoken instead.
+   */
+  speakHumanVoice(ttsThai, laoRaw) {
+    if (this.muted || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    this.stopTones();
+    this.cancelSpeech();
+    const lv = laoRaw ? this.laoVoice() : null;
+    const text = lv ? sanitizeLao(laoRaw) : sanitizeThai(ttsThai);
+    if (!text) return;
+    const voice = lv || this.thaiVoice();
+    this.speechTimer = setTimeout(() => {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = lv ? "lo-LA" : "th-TH";
+      if (voice) u.voice = voice;
+      u.rate = this.rate;
+      window.speechSynthesis.speak(u);
+    }, 120);
+  }
+  /** Play Ranat Ek style chimes for one or more tones in sequence. */
+  playRanatToneChime(tones) {
+    if (this.muted || typeof window === "undefined") return;
+    this.cancelSpeech();
+    this.stopTones();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!this.ctx) this.ctx = new AC();
+    const ctx = this.ctx;
+    if (ctx.state === "suspended") ctx.resume();
+    const list = Array.isArray(tones) ? tones : [tones];
+    let t = ctx.currentTime + 0.03;
+    const step = 0.2 / this.rate;
+    list.forEach((tone) => {
+      (TONES[tone]?.notes || []).forEach((note) => {
+        this.strike(NOTE_FREQ[note], t);
+        t += step;
+      });
+      t += step * 0.9;
+    });
+  }
+  strike(freq, t) {
+    const ctx = this.ctx;
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.32, t + 0.006);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    out.connect(ctx.destination);
+    const body = ctx.createOscillator();
+    body.type = "triangle";
+    body.frequency.setValueAtTime(freq, t);
+    body.connect(out);
+    // Short wooden "knock" partial.
+    const knockGain = ctx.createGain();
+    knockGain.gain.setValueAtTime(0.0001, t);
+    knockGain.gain.exponentialRampToValueAtTime(0.12, t + 0.003);
+    knockGain.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+    knockGain.connect(ctx.destination);
+    const knock = ctx.createOscillator();
+    knock.type = "sine";
+    knock.frequency.setValueAtTime(freq * 3.93, t);
+    knock.connect(knockGain);
+    [body, knock].forEach((o) => {
+      o.start(t);
+      o.stop(t + 0.6);
+      this.nodes.push(o);
+      o.onended = () => {
+        this.nodes = this.nodes.filter((n) => n !== o);
+      };
+    });
+  }
+}
+
+let audioSingleton = null;
+const getAudio = () => {
+  if (!audioSingleton) audioSingleton = new SuvarnaMobileAudioEngine();
+  return audioSingleton;
+};
+
+/* ---------------------------------------------------------------------------
+ * Small shared UI
+ * ------------------------------------------------------------------------- */
+function Glyph({ text, script, font, className = "", style = {} }) {
+  return (
+    <span lang={script === "lo" ? "lo" : "th"} className={className} style={{ fontFamily: FONT_STACKS[font][script], ...style }}>
+      {text}
+    </span>
+  );
+}
+
+/** Renders Thai, Lao or both, depending on the script mode. */
+function DualText({ th, lo, mode, font, className = "", gapClass = "gap-4", divider = true }) {
+  if (mode === "th") return <Glyph text={th} script="th" font={font} className={className} />;
+  if (mode === "lo") return <Glyph text={lo} script="lo" font={font} className={className} />;
+  return (
+    <span className={`inline-flex items-baseline ${gapClass}`}>
+      <Glyph text={th} script="th" font={font} className={className} />
+      {divider && <span className="text-slate-600 text-base self-center">⇄</span>}
+      <Glyph text={lo} script="lo" font={font} className={className} />
+    </span>
+  );
+}
+
+function ToneBadge({ tone, small }) {
+  const t = TONES[tone];
+  if (!t) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`} style={{ background: `${t.color}22`, color: t.color, border: `1px solid ${t.color}55` }}>
+      {t.name} <span className="opacity-70">{t.chao}</span>
+    </span>
+  );
+}
+
+function AudioButtons({ ttsTh, ttsLo, loRaw, tones, mode, compact }) {
+  const audio = getAudio();
+  const btn = `inline-flex items-center gap-1.5 rounded-xl border font-semibold transition active:scale-95 ${compact ? "px-2.5 py-1.5 text-xs" : "px-3.5 py-2 text-sm"}`;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {mode !== "lo" && (
+        <button className={`${btn} border-cyan-400/40 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20`} onClick={() => audio.speakHumanVoice(ttsTh)}>
+          <Volume2 size={compact ? 14 : 16} /> {mode === "dual" ? "ไทย" : "Speak"}
+        </button>
+      )}
+      {mode !== "th" && (
+        <button className={`${btn} border-purple-400/40 bg-purple-400/10 text-purple-200 hover:bg-purple-400/20`} onClick={() => audio.speakHumanVoice(ttsLo || ttsTh, loRaw)}>
+          <Volume2 size={compact ? 14 : 16} /> {mode === "dual" ? "ລາວ" : "Speak"}
+        </button>
+      )}
+      {tones && tones.length > 0 && (
+        <button className={`${btn} border-amber-400/40 bg-amber-400/10 text-amber-200 hover:bg-amber-400/20`} onClick={() => audio.playRanatToneChime(tones)}>
+          <Music size={compact ? 14 : 16} /> Chime
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
+      <div
+        className={`relative w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"} max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[#0F172A]/95 shadow-2xl`}
+        style={{ boxShadow: `0 0 60px ${accent}22` }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/5 bg-[#0F172A]/95 px-5 py-3 backdrop-blur">
+          <div className="text-sm font-semibold tracking-wide text-slate-200">{title}</div>
+          <button aria-label="Close" className="rounded-full p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Card({ children, className = "", glow }) {
+  return (
+    <div className={`rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={glow ? { boxShadow: `0 0 40px ${glow}1f` } : undefined}>
+      {children}
+    </div>
+  );
+}
+
+function SectionTitle({ icon: Icon, title, sub, color = COLORS.gold }) {
+  return (
+    <div className="mb-4 flex items-start gap-3">
+      <div className="mt-0.5 rounded-2xl p-2" style={{ background: `${color}1f`, color }}>
+        <Icon size={20} />
+      </div>
+      <div>
+        <h2 className="text-lg font-bold text-white">{title}</h2>
+        {sub && <p className="text-sm text-slate-400">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+function Chip({ active, onClick, children, color = COLORS.gold, disabled }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className={`rounded-xl border px-3 py-2 text-sm font-semibold transition active:scale-95 disabled:opacity-30 ${active ? "text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`}
+      style={active ? { background: `${color}33`, borderColor: `${color}aa` } : undefined}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* ---------------------------------------------------------------------------
+ * Pitch contour (Chao 1-5)
+ * ------------------------------------------------------------------------- */
+function ToneContour({ tone, width = 300, height = 160 }) {
+  const t = TONES[tone];
+  const pad = { l: 30, r: 14, t: 14, b: 14 };
+  const yFor = (lvl) => pad.t + ((5 - lvl) / 4) * (height - pad.t - pad.b);
+  const digits = t.chao.split("").map(Number);
+  const pts = digits.map((d, i) => [pad.l + (i / (digits.length - 1)) * (width - pad.l - pad.r), yFor(d)]);
+  let d = `M ${pts[0][0]} ${pts[0][1]}`;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[i - 1] || pts[i];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C ${c1[0]} ${c1[1]}, ${c2[0]} ${c2[1]}, ${p2[0]} ${p2[1]}`;
+  }
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full" role="img" aria-label={`${t.name} tone contour ${t.chao}`}>
+      {[1, 2, 3, 4, 5].map((l) => (
+        <g key={l}>
+          <line x1={pad.l} x2={width - pad.r} y1={yFor(l)} y2={yFor(l)} stroke="#ffffff14" strokeDasharray="3 5" />
+          <text x={10} y={yFor(l) + 4} fill="#64748B" fontSize="11">{l}</text>
+        </g>
+      ))}
+      <path d={d} fill="none" stroke={t.color} strokeWidth="5" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${t.color})` }} />
+      {pts.map(([x, y], i) => (
+        <circle key={i} cx={x} cy={y} r={i === 0 ? 5 : 3.5} fill={i === 0 ? "#fff" : t.color} />
+      ))}
+    </svg>
+  );
+}
+
+/* ============================================================================
+ * Module 1: SRS Shrine
+ * ========================================================================== */
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect }) {
+  const [now, setNow] = useState(Date.now());
+  const [lessonOpen, setLessonOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  const stageOf = (id) => srs[id]?.stage || 0;
+
+  const unlockedLevels = useMemo(() => {
+    const set = new Set([1]);
+    for (let n = 2; n <= LEVELS.length; n += 1) {
+      const prev = CURRICULUM.filter((i) => i.level === n - 1);
+      if (sandbox || prev.every((i) => stageOf(i.id) >= 2)) set.add(n);
+      else break;
+    }
+    if (sandbox) LEVELS.forEach((l) => set.add(l.n));
+    return set;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srs, sandbox]);
+
+  const lessonQueue = useMemo(() => CURRICULUM.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0), [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reviewQueue = useMemo(
+    () => CURRICULUM.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
+    [srs, now, sandbox]
+  );
+  const nextReview = useMemo(() => {
+    const times = CURRICULUM.map((i) => srs[i.id]).filter((s) => s && s.stage >= 1 && s.stage < 5 && s.next > now).map((s) => s.next);
+    return times.length ? Math.min(...times) : null;
+  }, [srs, now]);
+
+  const counts = SRS_STAGES.map((_, idx) => CURRICULUM.filter((i) => stageOf(i.id) === idx).length);
+
+  const finishLessons = (ids) => {
+    setSrs((prev) => {
+      const next = { ...prev };
+      ids.forEach((id) => { next[id] = { stage: 1, next: Date.now() }; });
+      return next;
+    });
+    setLessonOpen(false);
+  };
+
+  const answer = (id, correct) => {
+    setSrs((prev) => {
+      const cur = prev[id] || { stage: 1, next: 0 };
+      const stage = correct ? Math.min(5, cur.stage + 1) : Math.max(1, cur.stage - 1);
+      return { ...prev, [id]: { stage, next: stage >= 5 ? Infinity : Date.now() + SRS_INTERVAL[stage] } };
+    });
+  };
+
+  const fmtWait = (t) => {
+    const m = Math.round((t - now) / 60000);
+    if (m < 60) return `${m} min`;
+    if (m < 60 * 24) return `${Math.round(m / 60)} h`;
+    return `${Math.round(m / 1440)} d`;
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card className="overflow-hidden" glow={COLORS.gold}>
+        <div className="relative p-5 sm:p-7">
+          <div className="pointer-events-none absolute -right-6 -top-10 select-none text-[180px] leading-none text-amber-400/5" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/80">SRS Shrine</p>
+          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">Read Thai &amp; Lao from first principles</h1>
+          <p className="mt-1 max-w-xl text-sm text-slate-400">Learn the letters, then the tone equation, then the words that cross the Mekong.</p>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-md">
+            <button
+              disabled={!lessonQueue.length}
+              onClick={() => setLessonOpen(true)}
+              className="rounded-2xl border border-pink-400/40 bg-gradient-to-br from-pink-500/30 to-pink-500/5 p-4 text-left transition active:scale-[0.98] disabled:opacity-40"
+            >
+              <BookOpen size={18} className="text-pink-300" />
+              <div className="mt-2 text-3xl font-black text-white">{lessonQueue.length}</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-pink-200">Lessons</div>
+            </button>
+            <button
+              disabled={!reviewQueue.length}
+              onClick={() => setReviewOpen(true)}
+              className="rounded-2xl border border-cyan-400/40 bg-gradient-to-br from-cyan-500/30 to-cyan-500/5 p-4 text-left transition active:scale-[0.98] disabled:opacity-40"
+            >
+              <RotateCcw size={18} className="text-cyan-300" />
+              <div className="mt-2 text-3xl font-black text-white">{reviewQueue.length}</div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-cyan-200">Reviews</div>
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            {reviewQueue.length ? "Reviews are waiting." : nextReview ? `Next review in ${fmtWait(nextReview)}.` : "Finish a lesson to start reviews."}
+            {sandbox && " Sandbox is on: every level is open and all learned items are reviewable now."}
+          </p>
+        </div>
+        <div className="flex h-2 w-full">
+          {counts.map((c, idx) => (
+            <div key={idx} style={{ flexGrow: c || 0.0001, background: SRS_STAGES[idx].color }} />
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-2 p-4 sm:grid-cols-6">
+          {SRS_STAGES.map((s, idx) => (
+            <div key={s.name} className="rounded-xl bg-white/[0.03] px-2 py-2 text-center">
+              <div className="text-lg font-black" style={{ color: s.color }}>{counts[idx]}</div>
+              <div className="text-[11px] font-semibold text-slate-300">{s.name}</div>
+              <div className="text-[10px] text-slate-500">{s.alias}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {LEVELS.map((lvl) => {
+        const items = CURRICULUM.filter((i) => i.level === lvl.n);
+        const unlocked = unlockedLevels.has(lvl.n);
+        const done = items.filter((i) => stageOf(i.id) >= 2).length;
+        return (
+          <Card key={lvl.n} className={`p-4 sm:p-5 ${unlocked ? "" : "opacity-60"}`}>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400">
+                  {unlocked ? <Unlock size={13} /> : <Lock size={13} />} Level {lvl.n}
+                </div>
+                <h3 className="text-base font-bold text-white">{lvl.title}</h3>
+                <p className="text-xs text-slate-400">{lvl.sub}</p>
+              </div>
+              <div className="text-right text-xs text-slate-400">
+                <div className="font-bold text-slate-200">{done}/{items.length}</div>
+                at Novice Monk+
+              </div>
+            </div>
+            {["glyph", "syllable", "vocab"].map((tier) => {
+              const list = items.filter((i) => i.tier === tier);
+              if (!list.length) return null;
+              return (
+                <div key={tier} className="mb-2">
+                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: TIER[tier].color }}>{TIER[tier].label}</div>
+                  <div className="flex flex-wrap gap-2">
+                    {list.map((item) => {
+                      const st = stageOf(item.id);
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => onInspect(item)}
+                          className="group relative min-w-[52px] rounded-xl px-2.5 py-1.5 text-center text-white shadow transition hover:-translate-y-0.5 active:scale-95"
+                          style={{ background: `linear-gradient(160deg, ${TIER[tier].color}, ${TIER[tier].color}aa)`, opacity: unlocked ? 1 : 0.55 }}
+                          title={item.meaning}
+                        >
+                          <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-2xl leading-tight" gapClass="gap-1.5" divider={false} />
+                          <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0F19]" style={{ background: SRS_STAGES[st].color }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </Card>
+        );
+      })}
+
+      <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
+      <ReviewModal open={reviewOpen} queue={reviewQueue} mode={mode} font={font} onClose={() => setReviewOpen(false)} onAnswer={answer} />
+    </div>
+  );
+}
+
+function ItemHero({ item, mode, font }) {
+  const color = TIER[item.tier].color;
+  return (
+    <div className="rounded-3xl p-6 text-center" style={{ background: `radial-gradient(circle at 50% 30%, ${color}55, ${color}11 70%)` }}>
+      <div className="text-xs font-bold uppercase tracking-widest" style={{ color }}>{TIER[item.tier].label}</div>
+      <div className="my-3 text-white drop-shadow-lg">
+        <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35]" />
+      </div>
+      <div className="text-sm text-slate-200">
+        {mode !== "lo" && <span>{item.thRoman}</span>}
+        {mode === "dual" && <span className="text-slate-500"> · </span>}
+        {mode !== "th" && <span className="text-purple-200">{item.loRoman}</span>}
+      </div>
+      <div className="mt-1 text-lg font-semibold text-white">{item.meaning}</div>
+      <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+        {item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}
+        {item.cls && (
+          <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: `${CLASSES[item.cls].color}22`, color: CLASSES[item.cls].color }}>
+            {CLASSES[item.cls].name} class · {CLASSES[item.cls].persona}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
+  const [idx, setIdx] = useState(0);
+  const batch = useRef([]);
+  useEffect(() => {
+    if (open) {
+      batch.current = queue;
+      setIdx(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const items = open ? batch.current : [];
+  const item = items[idx];
+  if (!open || !item) return null;
+  const last = idx === items.length - 1;
+  return (
+    <Modal open={open} onClose={onClose} title={`Lesson ${idx + 1} / ${items.length}`} accent={TIER[item.tier].color}>
+      <ItemHero item={item} mode={mode} font={font} />
+      <div className="mt-4 flex justify-center">
+        <AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} />
+      </div>
+      <div className="mt-4 space-y-3 text-sm">
+        <InfoRow icon={Sparkles} label="Mnemonic" text={item.mnemonic} color={COLORS.gold} />
+        {item.loop && <InfoRow icon={PenTool} label="Head-loop topology" text={item.loop} color={COLORS.cyan} />}
+        {item.bridge && <InfoRow icon={Languages} label="Mekong bridge" text={item.bridge} color={COLORS.purple} />}
+      </div>
+      <div className="mt-5 flex items-center justify-between gap-2">
+        <button disabled={idx === 0} onClick={() => setIdx(idx - 1)} className="inline-flex items-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 disabled:opacity-30">
+          <ChevronLeft size={16} /> Back
+        </button>
+        <div className="flex gap-1">
+          {items.map((_, i) => <span key={i} className={`h-1.5 w-5 rounded-full ${i === idx ? "bg-amber-400" : "bg-white/15"}`} />)}
+        </div>
+        {last ? (
+          <button onClick={() => onFinish(items.map((i) => i.id))} className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">
+            <Check size={16} /> Add to SRS
+          </button>
+        ) : (
+          <button onClick={() => setIdx(idx + 1)} className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white">
+            Next <ChevronRight size={16} />
+          </button>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+function InfoRow({ icon: Icon, label, text, color }) {
+  return (
+    <div className="flex gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-3">
+      <Icon size={16} className="mt-0.5 shrink-0" style={{ color }} />
+      <div>
+        <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color }}>{label}</div>
+        <div className="text-slate-200">{text}</div>
+      </div>
+    </div>
+  );
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
+  const [list, setList] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [input, setInput] = useState("");
+  const [result, setResult] = useState(null);
+  const [score, setScore] = useState({ right: 0, wrong: 0 });
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      setList(shuffle(queue));
+      setIdx(0);
+      setInput("");
+      setResult(null);
+      setScore({ right: 0, wrong: 0 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (open && !result) inputRef.current?.focus();
+  }, [open, idx, result]);
+
+  if (!open) return null;
+  const item = list[idx];
+  const finished = idx >= list.length;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (result) {
+      setResult(null);
+      setInput("");
+      setIdx(idx + 1);
+      return;
+    }
+    if (!input.trim()) return;
+    const ok = isCorrect(item, input);
+    setResult(ok ? "right" : "wrong");
+    setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
+    onAnswer(item.id, ok);
+    const audio = getAudio();
+    if (mode === "lo") audio.speakHumanVoice(item.ttsLo || item.ttsTh, item.lo);
+    else audio.speakHumanVoice(item.ttsTh);
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={finished ? "Review complete" : `Review ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
+      {finished ? (
+        <div className="py-6 text-center">
+          <Trophy size={44} className="mx-auto text-amber-400" />
+          <div className="mt-3 text-2xl font-black text-white">{score.right} / {score.right + score.wrong}</div>
+          <p className="mt-1 text-sm text-slate-400">Correct items moved up a stage. Missed items dropped one stage and will come back sooner.</p>
+          <button onClick={onClose} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <div className="rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
+            <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35] text-white" />
+          </div>
+          <label className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">Type the reading or the meaning</label>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            readOnly={!!result}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="e.g. maa / horse"
+            className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${result === "right" ? "border-emerald-400 bg-emerald-500/20" : result === "wrong" ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
+          />
+          {result && (
+            <div className="mt-3 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className={`font-bold ${result === "right" ? "text-emerald-300" : "text-rose-300"}`}>{result === "right" ? "Correct" : "Not quite"}</div>
+              <div className="text-slate-200">
+                <span className="text-slate-400">Reading:</span> {item.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}
+                <br /><span className="text-slate-400">Meaning:</span> {item.meaning}
+              </div>
+              <div className="flex flex-wrap gap-1.5">{item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}</div>
+              <p className="text-slate-400">{item.mnemonic}</p>
+              <AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} compact />
+            </div>
+          )}
+          <button type="submit" className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black active:scale-[0.99]">
+            {result ? "Next" : "Check"}
+          </button>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+function Inspector({ item, mode, font, srs, onClose }) {
+  if (!item) return null;
+  const tone = item.parts ? computeTone(item.parts) : null;
+  const st = srs[item.id]?.stage || 0;
+  return (
+    <Modal open={!!item} onClose={onClose} title="Item inspector" accent={TIER[item.tier].color} wide>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <ItemHero item={item} mode={mode} font={font} />
+          <div className="mt-3 flex justify-center"><AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} /></div>
+          <div className="mt-3 text-center text-xs text-slate-400">
+            SRS stage: <span className="font-bold" style={{ color: SRS_STAGES[st].color }}>{SRS_STAGES[st].name}</span> ({SRS_STAGES[st].alias})
+          </div>
+        </div>
+        <div className="space-y-3 text-sm">
+          <InfoRow icon={Sparkles} label="Mnemonic story" text={item.mnemonic} color={COLORS.gold} />
+          {item.loop && <InfoRow icon={PenTool} label="Head-loop topology" text={item.loop} color={COLORS.cyan} />}
+          {tone && (
+            <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-3">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-pink-300">Tone equation (Thai)</div>
+              <div className="mt-1 font-semibold text-white">{tone.formula}</div>
+            </div>
+          )}
+          {item.bridge && <InfoRow icon={Languages} label="Mekong bridge" text={item.bridge} color={COLORS.purple} />}
+          <InfoRow icon={AlertTriangle} label="Lookalike trap" text={item.trap} color="#F43F5E" />
+          <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-3">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-300">Head-loop vs street font</div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-center">
+              {["loop", "street"].map((f) => (
+                <div key={f} className="rounded-xl bg-black/30 p-2">
+                  <DualText th={item.th} lo={item.lo} mode={mode} font={f} className="text-4xl leading-[1.4] text-white" gapClass="gap-2" divider={false} />
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500">{f === "loop" ? "Traditional" : "Loopless"}</div>
+                </div>
+              ))}
+            </div>
+            {item.street && <p className="mt-2 text-slate-300">{item.street}</p>}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+/* ============================================================================
+ * Module 2: Tracer dojo
+ * ========================================================================== */
+const TRACE_SIZE = 320;
+const TRACE_FONT_PX = 220;
+const TRACE_BASELINE = 230;
+const TRACE_FONT = '"Noto Serif Thai", "Sarabun", serif';
+
+const TRACE_GLYPHS = [
+  { g: "ก", name: "gaw gài", cls: "mid", start: [150, 148], path: "Loopless. Begin at the beak on the upper left, arch over the roof, drop the right leg." },
+  { g: "ข", name: "khǎw khài", cls: "high", start: [126, 140], path: "Head loop top-left. Drop the left wall, round the floor, climb the right wall." },
+  { g: "ด", name: "daw dèk", cls: "mid", start: [156, 180], path: "Loop inside the bowl. Run down-left to the foot, climb the left wall, arch over, come down the right." },
+  { g: "ต", name: "taw tào", cls: "mid", start: [159, 172], path: "Same as ด, but dip into a notch in the middle of the roof." },
+  { g: "ค", name: "khaw khwaai", cls: "low", start: [150, 168], path: "Loop hangs inside the straight left wall. Start at the loop and follow the body round to the right foot." },
+  { g: "ผ", name: "phǎw phʉ̂ng", cls: "high", start: [131, 126], path: "Head loop top-left. Down, up to a LOW inner peak, down, then up the right wall." },
+  { g: "พ", name: "phaw phaan", cls: "low", start: [111, 126], path: "Head loop top-left. Down, up to a FULL-HEIGHT inner peak, down, then up the right wall." },
+  { g: "น", name: "naw nǔu", cls: "low", start: [114, 126], path: "Head loop top-left. Down the left wall, up the diagonal, finish in a curled tail at the bottom-right." },
+];
+
+function Tracer() {
+  const [sel, setSel] = useState(0);
+  const [result, setResult] = useState(null);
+  const canvasRef = useRef(null);
+  const strokes = useRef([]);
+  const drawing = useRef(false);
+  const glyph = TRACE_GLYPHS[sel];
+
+  const getCtx = () => {
+    const c = canvasRef.current;
+    if (!c) return null;
+    const ctx = c.getContext("2d");
+    return ctx;
+  };
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    c.width = TRACE_SIZE * dpr;
+    c.height = TRACE_SIZE * dpr;
+    const ctx = c.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }, []);
+
+  const clear = useCallback(() => {
+    const ctx = getCtx();
+    if (ctx) ctx.clearRect(0, 0, TRACE_SIZE, TRACE_SIZE);
+    strokes.current = [];
+    setResult(null);
+  }, []);
+
+  useEffect(() => { clear(); }, [sel, clear]);
+
+  const pos = (e) => {
+    const r = canvasRef.current.getBoundingClientRect();
+    return [((e.clientX - r.left) / r.width) * TRACE_SIZE, ((e.clientY - r.top) / r.height) * TRACE_SIZE];
+  };
+
+  const down = (e) => {
+    e.preventDefault();
+    canvasRef.current.setPointerCapture?.(e.pointerId);
+    drawing.current = true;
+    strokes.current.push([pos(e)]);
+    setResult(null);
+  };
+  const move = (e) => {
+    if (!drawing.current) return;
+    const p = pos(e);
+    const s = strokes.current[strokes.current.length - 1];
+    const prev = s[s.length - 1];
+    s.push(p);
+    const ctx = getCtx();
+    ctx.strokeStyle = "#F59E0B";
+    ctx.lineWidth = 14;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowColor = "#F59E0B";
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(prev[0], prev[1]);
+    ctx.lineTo(p[0], p[1]);
+    ctx.stroke();
+  };
+  const up = () => { drawing.current = false; };
+
+  const check = async () => {
+    if (!strokes.current.length) return;
+    try { await document.fonts?.load(`${TRACE_FONT_PX}px "Noto Serif Thai"`, glyph.g); } catch { /* fallback font */ }
+    const S = TRACE_SIZE;
+    const mk = () => { const c = document.createElement("canvas"); c.width = S; c.height = S; return c.getContext("2d", { willReadFrequently: true }); };
+    const gctx = mk();
+    gctx.font = `${TRACE_FONT_PX}px ${TRACE_FONT}`;
+    gctx.textAlign = "center";
+    gctx.fillStyle = "#000";
+    gctx.fillText(glyph.g, S / 2, TRACE_BASELINE);
+    const tctx = mk();
+    tctx.font = gctx.font;
+    tctx.textAlign = "center";
+    tctx.lineWidth = 26;
+    tctx.lineJoin = "round";
+    tctx.strokeStyle = "#000";
+    tctx.strokeText(glyph.g, S / 2, TRACE_BASELINE);
+    tctx.fillText(glyph.g, S / 2, TRACE_BASELINE);
+    const uctx = mk();
+    uctx.strokeStyle = "#000";
+    uctx.lineWidth = 22;
+    uctx.lineCap = "round";
+    uctx.lineJoin = "round";
+    strokes.current.forEach((s) => {
+      uctx.beginPath();
+      s.forEach(([x, y], i) => (i ? uctx.lineTo(x, y) : uctx.moveTo(x, y)));
+      if (s.length === 1) uctx.lineTo(s[0][0] + 0.1, s[0][1]);
+      uctx.stroke();
+    });
+    const G = gctx.getImageData(0, 0, S, S).data;
+    const T = tctx.getImageData(0, 0, S, S).data;
+    const U = uctx.getImageData(0, 0, S, S).data;
+    let gTot = 0; let gHit = 0; let uTot = 0; let uIn = 0;
+    for (let i = 3; i < G.length; i += 4) {
+      const g = G[i] > 100; const u = U[i] > 100;
+      if (g) { gTot += 1; if (u) gHit += 1; }
+      if (u) { uTot += 1; if (T[i] > 100) uIn += 1; }
+    }
+    const coverage = gTot ? gHit / gTot : 0;
+    const accuracy = uTot ? uIn / uTot : 0;
+    const first = strokes.current[0][0];
+    const startDist = Math.hypot(first[0] - glyph.start[0], first[1] - glyph.start[1]);
+    const score = Math.round(100 * (0.55 * coverage + 0.45 * accuracy));
+    setResult({ coverage, accuracy, score, startOk: startDist < 34 });
+    const audio = getAudio();
+    audio.playRanatToneChime(score >= 70 ? ["high"] : ["low"]);
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Feel the loop under your finger." color={COLORS.cyan} />
+      <div className="flex flex-wrap gap-2">
+        {TRACE_GLYPHS.map((t, i) => (
+          <button key={t.g} onClick={() => setSel(i)} className={`h-12 w-12 rounded-xl border text-2xl transition ${i === sel ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONT }}>
+            {t.g}
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+        <Card className="mx-auto w-full max-w-[360px] p-3" glow={COLORS.cyan}>
+          <div className="relative aspect-square w-full touch-none select-none">
+            <svg viewBox={`0 0 ${TRACE_SIZE} ${TRACE_SIZE}`} className="absolute inset-0 h-full w-full">
+              {[...Array(9)].map((_, i) => (
+                <g key={i} stroke="#ffffff0d">
+                  <line x1={i * 40} y1={0} x2={i * 40} y2={TRACE_SIZE} />
+                  <line x1={0} y1={i * 40} x2={TRACE_SIZE} y2={i * 40} />
+                </g>
+              ))}
+              <line x1={0} x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="#06B6D433" strokeDasharray="6 6" />
+              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#06B6D426" stroke="#06B6D488" strokeWidth="1.5" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</text>
+              <circle cx={glyph.start[0]} cy={glyph.start[1]} r="16" fill="#F59E0B33" stroke="#F59E0B" strokeWidth="2">
+                <animate attributeName="r" values="13;18;13" dur="1.6s" repeatCount="indefinite" />
+              </circle>
+              <text x={glyph.start[0]} y={glyph.start[1] + 5} textAnchor="middle" fontSize="14" fontWeight="800" fill="#FDE68A">1</text>
+            </svg>
+            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} />
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={clear} className="flex-1 rounded-xl border border-white/10 py-2 text-sm text-slate-300 hover:bg-white/5"><Eraser size={15} className="mr-1 inline" />Clear</button>
+            <button onClick={check} className="flex-1 rounded-xl bg-cyan-500 py-2 text-sm font-bold text-black"><Check size={15} className="mr-1 inline" />Check</button>
+          </div>
+        </Card>
+        <div className="space-y-3">
+          <Card className="p-4">
+            <div className="flex items-baseline gap-3">
+              <span className="text-5xl text-white" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</span>
+              <div>
+                <div className="font-semibold text-white">{glyph.name}</div>
+                <div className="text-xs" style={{ color: CLASSES[glyph.cls].color }}>{CLASSES[glyph.cls].name} class · {CLASSES[glyph.cls].persona}</div>
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-slate-300">{glyph.path}</p>
+            <p className="mt-2 text-xs text-slate-500">The tracer always uses head-loop type, because that is where the loops are visible.</p>
+          </Card>
+          {result && (
+            <Card className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="text-4xl font-black" style={{ color: result.score >= 70 ? "#34D399" : result.score >= 45 ? COLORS.gold : "#F43F5E" }}>{result.score}</div>
+                <div className="text-sm text-slate-300">
+                  {result.score >= 70 ? "Clean trace." : result.score >= 45 ? "Close. Follow the outline more tightly." : "Try again, slower, on the outline."}
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.coverage * 100)}%</div>coverage</div>
+                <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.accuracy * 100)}%</div>on the line</div>
+                <div className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${result.startOk ? "text-emerald-300" : "text-rose-300"}`}>{result.startOk ? "Yes" : "No"}</div>started at 1</div>
+              </div>
+            </Card>
+          )}
+          <Card className="p-4 text-sm text-slate-300">
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Feel the difference</div>
+            <ul className="list-disc space-y-1 pl-5">
+              <li><b>ด vs ค</b>: ด's loop sits inside the bowl with a diagonal run to the foot. ค's loop hangs off a straight left wall.</li>
+              <li><b>ผ vs พ</b>: same start, but พ's inner peak climbs to full height.</li>
+              <li><b>ก</b> has no loop at all. Start at the beak.</li>
+            </ul>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Module 3: Tone Alchemy Reactor
+ * ========================================================================== */
+const REACTOR_CONS = {
+  mid: [{ th: "ก", lo: "ກ", label: "ก k" }],
+  high: [{ th: "ข", lo: "ຂ", label: "ข kh" }],
+  low: [
+    { th: "ค", lo: "ຄ", label: "ค kh (aspirate)" },
+    { th: "ม", lo: "ມ", label: "ม m (sonorant)", hnTh: "หม", hnLo: "ໝ" },
+  ],
+};
+
+function buildSyllable(script, cons, { live, long, mark }) {
+  const T = script === "th"
+    ? { aa: "า", a: "ะ", sa: "ั", nFin: "น", pFin: "บ" }
+    : { aa: "າ", a: "ະ", sa: "ັ", nFin: "ນ", pFin: "ບ" };
+  const m = MARKS[mark][script];
+  if (live && long) return `${cons}${m}${T.aa}`; // Caa
+  if (live && !long) return `${cons}${T.sa}${m}${T.nFin}`; // Can
+  if (!live && long) return `${cons}${m}${T.aa}${T.pFin}`; // Caap
+  return `${cons}${m}${T.a}`; // Ca
+}
+
+function Reactor({ mode, font }) {
+  const [cls, setCls] = useState("low");
+  const [lowIdx, setLowIdx] = useState(1);
+  const [live, setLive] = useState(true);
+  const [long, setLong] = useState(true);
+  const [mark, setMark] = useState("none");
+  const [hn, setHn] = useState(false);
+
+  const consObj = cls === "low" ? REACTOR_CONS.low[lowIdx] : REACTOR_CONS[cls][0];
+  const hnActive = cls === "low" && !!consObj.hnTh && hn;
+  const thCons = hnActive ? consObj.hnTh : consObj.th;
+  const loCons = hnActive ? consObj.hnLo : consObj.lo;
+  const th = buildSyllable("th", thCons, { live, long, mark });
+  const lo = buildSyllable("lo", loCons, { live, long, mark });
+  const res = computeTone({ cls, live, long, mark, hn: hnActive });
+  const t = TONES[res.tone];
+
+  const preset = (p) => {
+    setCls(p.cls); setLowIdx(p.lowIdx ?? 1); setLive(p.live); setLong(p.long); setMark(p.mark); setHn(!!p.hn);
+  };
+
+  const syllableShape = live ? (long ? "long open (Caa)" : "short + n (Can)") : long ? "long + p (Caap)" : "short open (Ca)";
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={FlaskConical} title="Tone Alchemy Reactor" sub="Mix class, syllable type, vowel length and tone mark. The reactor derives the tone." color={COLORS.magenta} />
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="space-y-4 p-4">
+          <div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">1 · Consonant class</div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(CLASSES).map(([k, c]) => (
+                <Chip key={k} active={cls === k} color={c.color} onClick={() => setCls(k)}>{c.name}<span className="ml-1 text-xs opacity-60">{c.persona}</span></Chip>
+              ))}
+            </div>
+            {cls === "low" && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {REACTOR_CONS.low.map((c, i) => <Chip key={c.th} active={lowIdx === i} color={COLORS.purple} onClick={() => setLowIdx(i)}>{c.label}</Chip>)}
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">2 · Syllable ending</div>
+            <div className="flex gap-2">
+              <Chip active={live} color="#34D399" onClick={() => setLive(true)}>Live คำเป็น</Chip>
+              <Chip active={!live} color="#F43F5E" onClick={() => setLive(false)}>Dead คำตาย</Chip>
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">3 · Vowel length</div>
+            <div className="flex gap-2">
+              <Chip active={long} onClick={() => setLong(true)}>Long</Chip>
+              <Chip active={!long} onClick={() => setLong(false)}>Short</Chip>
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">4 · Tone mark</div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(MARKS).map(([k, m]) => <Chip key={k} active={mark === k} color={COLORS.magenta} onClick={() => setMark(k)}>{m.name}</Chip>)}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">5 · Silent ห นำ / ຫ ນຳ</div>
+            <Chip active={hnActive} color={COLORS.cyan} disabled={!(cls === "low" && consObj.hnTh)} onClick={() => setHn(!hn)}>
+              {hnActive ? "On: ห lifts ม to High class" : "Off"}
+            </Chip>
+            {!(cls === "low" && consObj.hnTh) && <p className="mt-1 text-xs text-slate-500">Only works on a Low-class sonorant. Pick Low → ม.</p>}
+          </div>
+          <div>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Presets</div>
+            <div className="flex flex-wrap gap-2 text-sm">
+              <Chip onClick={() => preset({ cls: "low", live: true, long: true, mark: "none" })}>มา come</Chip>
+              <Chip onClick={() => preset({ cls: "low", live: true, long: true, mark: "tho" })}>ม้า horse</Chip>
+              <Chip onClick={() => preset({ cls: "low", live: true, long: true, mark: "none", hn: true })}>หมา dog</Chip>
+              <Chip onClick={() => preset({ cls: "low", lowIdx: 0, live: false, long: false, mark: "ek" })}>ค่ะ polite</Chip>
+              <Chip onClick={() => preset({ cls: "high", live: true, long: true, mark: "none" })}>ขา leg</Chip>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-5" glow={t.color}>
+          <div className="text-center">
+            <DualText th={th} lo={lo} mode={mode} font={font} className="text-7xl leading-[1.4] text-white" />
+            <div className="mt-1 text-xs text-slate-500">Shape: {syllableShape}</div>
+            <div className="mt-3"><ToneBadge tone={res.tone} /></div>
+            <div className="mt-1 text-sm text-slate-400">Thai name: เสียง{t.th}</div>
+          </div>
+          <div className="mt-4 rounded-2xl bg-black/30 p-3">
+            <ToneContour tone={res.tone} />
+          </div>
+          <div className="mt-4 rounded-2xl border border-pink-400/20 bg-pink-500/5 p-3">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-pink-300">Equation</div>
+            <div className="mt-1 font-semibold text-white">{res.formula}</div>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-300">
+              {res.steps.map((s, i) => <li key={i}>{s}</li>)}
+            </ol>
+            {res.warning && <p className="mt-2 flex gap-2 text-xs text-amber-300"><AlertTriangle size={14} className="shrink-0" />{res.warning}</p>}
+          </div>
+          {mode !== "th" && (
+            <p className="mt-3 flex gap-2 text-xs text-slate-400">
+              <Info size={14} className="shrink-0 text-purple-300" />
+              Lao uses the same class × live/dead × mark logic, but Vientiane Lao has its own tone values (and up to six tones), so the contour above is Bangkok Thai.
+            </p>
+          )}
+          <div className="mt-4 flex justify-center">
+            <AudioButtons ttsTh={th} ttsLo={th} loRaw={lo} tones={[res.tone]} mode={mode === "lo" ? "th" : "th"} />
+          </div>
+          <p className="mt-2 text-center text-[11px] text-slate-500">Some combinations are valid spelling but not real words; the voice reads them as written.</p>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Module 4: Orbital Vowel Compass + Lookalike traps
+ * ========================================================================== */
+const ORBIT_CONS = [
+  { th: "ก", lo: "ກ", r: "k", cls: "mid" },
+  { th: "ด", lo: "ດ", r: "d", cls: "mid" },
+  { th: "ข", lo: "ຂ", r: "kh", cls: "high" },
+  { th: "ส", lo: "ສ", r: "s", cls: "high" },
+  { th: "ม", lo: "ມ", r: "m", cls: "low" },
+  { th: "น", lo: "ນ", r: "n", cls: "low" },
+];
+
+const ORBIT_VOWELS = [
+  { id: "e", dir: "W", th: "เ", lo: "ເ", r: "ee", long: true, open: true, kind: "pre" },
+  { id: "ae", dir: "W", th: "แ", lo: "ແ", r: "ɛɛ", long: true, open: true, kind: "pre" },
+  { id: "o", dir: "W", th: "โ", lo: "ໂ", r: "oo", long: true, open: true, kind: "pre" },
+  { id: "ai", dir: "W", th: "ไ", lo: "ໄ", r: "ai", long: false, open: false, kind: "pre", note: "ai ends in a glide, so it is live." },
+  { id: "i", dir: "N", th: "ิ", lo: "ິ", r: "i", long: false, open: true, kind: "post" },
+  { id: "ii", dir: "N", th: "ี", lo: "ີ", r: "ii", long: true, open: true, kind: "post" },
+  { id: "u", dir: "S", th: "ุ", lo: "ຸ", r: "u", long: false, open: true, kind: "post" },
+  { id: "uu", dir: "S", th: "ู", lo: "ູ", r: "uu", long: true, open: true, kind: "post" },
+  { id: "aa", dir: "E", th: "า", lo: "າ", r: "aa", long: true, open: true, kind: "post" },
+  { id: "a", dir: "E", th: "ะ", lo: "ະ", r: "a", long: false, open: true, kind: "post" },
+  { id: "ia", dir: "O", th: "เ◌ีย", lo: "ເ◌ຍ", r: "ia", long: true, open: true, kind: "ia" },
+  { id: "ao", dir: "O", th: "เ◌า", lo: "ເ◌ົາ", r: "ao", long: false, open: false, kind: "ao", note: "ao ends in a glide, so it is live." },
+];
+
+function composeVowel(v, c, script) {
+  if (v.kind === "pre") return v[script] + c;
+  if (v.kind === "post") return c + v[script];
+  if (v.kind === "ia") return script === "th" ? `เ${c}ีย` : `ເ${c}ຍ`;
+  return script === "th" ? `เ${c}า` : `ເ${c}ົາ`;
+}
+function vowelForm(v, script) {
+  if (v.kind === "pre") return `${v[script]}◌`;
+  if (v.kind === "post") return `◌${v[script]}`;
+  return v[script];
+}
+
+const DIRS = {
+  W: { label: "West · in front", pos: "col-start-1 row-start-2" },
+  N: { label: "North · roof", pos: "col-start-2 row-start-1" },
+  S: { label: "South · under", pos: "col-start-2 row-start-3" },
+  E: { label: "East · behind", pos: "col-start-3 row-start-2" },
+};
+
+const TRAPS = [
+  {
+    title: "ด vs ต vs ค",
+    items: [
+      { th: "ด", lo: "ດ", r: "d", cls: "mid", note: "Smooth roof. Loop inside the bowl, diagonal run to the foot." },
+      { th: "ต", lo: "ຕ", r: "t", cls: "mid", note: "Same body as ด with a notch dipping into the roof." },
+      { th: "ค", lo: "ຄ", r: "kh", cls: "low", note: "Straight left wall; the loop hangs inside it." },
+    ],
+  },
+  {
+    title: "ผ / ฝ vs พ / ฟ",
+    items: [
+      { th: "ผ", lo: "ຜ", r: "ph", cls: "high", note: "Inner peak stays low." },
+      { th: "ฝ", lo: "ຝ", r: "f", cls: "high", note: "ผ + tall tail." },
+      { th: "พ", lo: "ພ", r: "ph", cls: "low", note: "Inner peak reaches full height." },
+      { th: "ฟ", lo: "ຟ", r: "f", cls: "low", note: "พ + tall tail." },
+    ],
+  },
+  {
+    title: "น vs ม vs บ / ป",
+    items: [
+      { th: "น", lo: "ນ", r: "n", cls: "low", note: "Curled tail at bottom-right." },
+      { th: "ม", lo: "ມ", r: "m", cls: "low", note: "Second loop at bottom-left." },
+      { th: "บ", lo: "ບ", r: "b", cls: "mid", note: "Flat floor, no tail." },
+      { th: "ป", lo: "ປ", r: "p", cls: "mid", note: "บ + tall right tail." },
+    ],
+  },
+];
+
+const SILENT_KILLERS = [
+  { th: "ไปรษณีย์", silent: "ย์", lo: "ໄປສະນີ", r: "prai-sà-nii", m: "post office", ttsTh: "ไปรษณีย์", ttsLo: "ไปสะนี" },
+  { th: "เบียร์", silent: "ร์", lo: "ເບຍ", r: "bia", m: "beer", ttsTh: "เบียร์", ttsLo: "เบีย" },
+  { th: "ศูนย์", silent: "ย์", lo: "ສູນ", r: "sǔun", m: "zero / centre", ttsTh: "ศูนย์", ttsLo: "สูน" },
+  { th: "อาทิตย์", silent: "ย์", lo: "ອາທິດ", r: "aa-thít", m: "sun / week", ttsTh: "อาทิตย์", ttsLo: "อาทิด" },
+];
+
+function OrbitModule({ mode, font }) {
+  const [ci, setCi] = useState(0);
+  const [vid, setVid] = useState("ii");
+  const c = ORBIT_CONS[ci];
+  const v = ORBIT_VOWELS.find((x) => x.id === vid);
+  const th = composeVowel(v, c.th, "th");
+  const lo = composeVowel(v, c.lo, "lo");
+  const live = !v.open || v.long;
+  const tone = computeTone({ cls: c.cls, live, long: v.long, mark: "none" });
+  const showScripts = mode === "dual" ? ["th", "lo"] : [mode];
+
+  const vowelBtn = (x) => (
+    <button
+      key={x.id}
+      onClick={() => setVid(x.id)}
+      className={`min-w-[52px] rounded-xl border px-2 py-1 text-xl transition ${x.id === vid ? "border-amber-400 bg-amber-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`}
+    >
+      <Glyph text={vowelForm(x, mode === "lo" ? "lo" : "th")} script={mode === "lo" ? "lo" : "th"} font={font} />
+    </button>
+  );
+
+  return (
+    <div className="space-y-6">
+      <SectionTitle icon={Compass} title="360° Orbital Vowel Compass" sub="Vowels orbit the consonant in every direction, but the consonant is always spoken first." color={COLORS.gold} />
+      <div className="flex flex-wrap gap-2">
+        {ORBIT_CONS.map((x, i) => (
+          <Chip key={x.th} active={i === ci} color={CLASSES[x.cls].color} onClick={() => setCi(i)}>
+            <DualText th={x.th} lo={x.lo} mode={mode} font={font} className="text-xl" gapClass="gap-1" divider={false} />
+          </Chip>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <div className="grid grid-cols-3 grid-rows-3 items-center justify-items-center gap-2">
+            {Object.entries(DIRS).map(([d, info]) => (
+              <div key={d} className={`${info.pos} flex flex-col items-center gap-1`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{info.label}</div>
+                <div className="flex flex-wrap justify-center gap-1">{ORBIT_VOWELS.filter((x) => x.dir === d).map(vowelBtn)}</div>
+              </div>
+            ))}
+            <div className="col-start-2 row-start-2 flex h-28 w-28 items-center justify-center rounded-full border-2 border-dashed border-amber-400/40" style={{ boxShadow: "inset 0 0 30px #F59E0B22" }}>
+              <DualText th={c.th} lo={c.lo} mode={mode === "dual" ? "th" : mode} font={font} className="text-6xl leading-none text-cyan-300" />
+            </div>
+          </div>
+          <div className="mt-3 border-t border-white/5 pt-3 text-center">
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Surrounding · 360°</div>
+            <div className="flex justify-center gap-2">{ORBIT_VOWELS.filter((x) => x.dir === "O").map(vowelBtn)}</div>
+          </div>
+        </Card>
+        <Card className="p-5 text-center" glow={COLORS.gold}>
+          <div className="flex flex-wrap items-center justify-center gap-6">
+            {showScripts.map((s) => (
+              <div key={s}>
+                <Glyph text={s === "th" ? th : lo} script={s} font={font} className="text-7xl leading-[1.5] text-white" />
+                <div className="text-[10px] uppercase tracking-wider text-slate-500">{s === "th" ? "Thai" : "Lao"} · vowel form <Glyph text={vowelForm(v, s)} script={s} font={font} className="text-base normal-case text-amber-300" /></div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-black/30 px-4 py-2 text-lg">
+            <span className="font-bold text-cyan-300">{c.r}</span>
+            <span className="text-slate-500">+</span>
+            <span className="font-bold text-amber-300">{v.r}</span>
+            <span className="text-slate-500">=</span>
+            <span className="font-black text-white">{c.r}{v.r}</span>
+          </div>
+          <p className="mt-2 text-sm text-slate-400">
+            Written {v.dir === "W" ? "in front of" : v.dir === "N" ? "above" : v.dir === "S" ? "below" : v.dir === "E" ? "after" : "around"} the consonant, read after it. {v.long ? "Long" : "Short"} vowel{v.note ? `; ${v.note}` : ""}.
+          </p>
+          <div className="mt-3"><ToneBadge tone={tone.tone} /></div>
+          <div className="mt-1 text-xs text-slate-500">{tone.formula}</div>
+          <div className="mt-4 flex justify-center"><AudioButtons ttsTh={th} ttsLo={th} loRaw={lo} tones={[tone.tone]} mode={mode} /></div>
+        </Card>
+      </div>
+
+      <SectionTitle icon={Eye} title="Lookalike Trap Dojo" sub="X-ray the letters that trip everyone up." color="#F43F5E" />
+      <div className="grid gap-4 lg:grid-cols-3">
+        {TRAPS.map((group) => (
+          <Card key={group.title} className="p-4">
+            <div className="mb-3 font-bold text-white">{group.title}</div>
+            <div className="grid grid-cols-2 gap-2">
+              {group.items.map((x) => (
+                <div key={x.th} className="rounded-2xl bg-black/30 p-3 text-center">
+                  <DualText th={x.th} lo={x.lo} mode={mode} font="loop" className="text-5xl leading-[1.4] text-white" gapClass="gap-2" divider={false} />
+                  <div className="text-xs font-bold" style={{ color: CLASSES[x.cls].color }}>{x.r} · {CLASSES[x.cls].name}</div>
+                  <div className="mt-1 text-[11px] leading-snug text-slate-400">{x.note}</div>
+                  <button className="mt-1 text-slate-400 hover:text-white" aria-label="Speak" onClick={() => getAudio().speakHumanVoice(`${x.th}อ`)}><Volume2 size={14} /></button>
+                </div>
+              ))}
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      <Card className="p-4">
+        <div className="mb-1 font-bold text-white">Silent killer: Thai ◌์ การันต์ vs phonetic Lao</div>
+        <p className="mb-3 text-sm text-slate-400">Thai keeps letters from Sanskrit and English spellings and silences them with ◌์. Modern Lao mostly writes what it says.</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {SILENT_KILLERS.map((w) => {
+            const head = w.th.slice(0, w.th.length - w.silent.length);
+            return (
+              <div key={w.th} className="rounded-2xl bg-black/30 p-3 text-center">
+                {mode !== "lo" && (
+                  <div className="text-3xl leading-[1.6] text-white" style={{ fontFamily: FONT_STACKS[font].th }}>
+                    {head}<span className="text-rose-400 line-through decoration-2">{w.silent}</span>
+                  </div>
+                )}
+                {mode !== "th" && <div className="text-3xl leading-[1.6] text-purple-200" style={{ fontFamily: FONT_STACKS[font].lo }}>{w.lo}</div>}
+                <div className="text-xs text-slate-300">{w.r} · {w.m}</div>
+                <div className="mt-2 flex justify-center"><AudioButtons ttsTh={w.ttsTh} ttsLo={w.ttsLo} loRaw={w.lo} mode={mode} compact /></div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Module 5: Zero-space Script Slicer
+ * ========================================================================== */
+const COMBINING = /[ัิ-ฺ็-๎ັິ-ຼ່-ໍ]/;
+function clusters(str) {
+  const out = [];
+  for (const ch of str) {
+    if (COMBINING.test(ch) && out.length) out[out.length - 1] += ch;
+    else out.push(ch);
+  }
+  return out;
+}
+
+const SENTENCES = [
+  {
+    id: "eat", script: "th", gloss: "I eat delicious rice and drink water.",
+    words: [
+      { w: "ฉัน", r: "chǎn", m: "I", tts: "ฉัน", tone: ["rising"] },
+      { w: "กิน", r: "gin", m: "eat", tts: "กิน", tone: ["mid"] },
+      { w: "ข้าว", r: "khâaw", m: "rice", tts: "ข้าว", tone: ["falling"] },
+      { w: "แซ่บ", r: "sɛ̂ɛp", m: "delicious", tts: "แซ่บ", tone: ["falling"] },
+      { w: "และ", r: "lɛ́", m: "and", tts: "และ", tone: ["high"] },
+      { w: "ดื่ม", r: "dʉ̀ʉm", m: "drink", tts: "ดื่ม", tone: ["low"] },
+      { w: "น้ำ", r: "náam", m: "water", tts: "น้ำ", tone: ["high"] },
+    ],
+  },
+  {
+    id: "eat", script: "lo", gloss: "I eat delicious rice and drink water.",
+    words: [
+      { w: "ຂ້ອຍ", r: "khoi", m: "I", tts: "ข้อย" },
+      { w: "ກິນ", r: "kin", m: "eat", tts: "กิน" },
+      { w: "ເຂົ້າ", r: "khao", m: "rice", tts: "เข้า" },
+      { w: "ແຊບ", r: "xaep", m: "delicious", tts: "แซบ" },
+      { w: "ແລະ", r: "lae", m: "and", tts: "และ" },
+      { w: "ດື່ມ", r: "deum", m: "drink", tts: "ดื่ม" },
+      { w: "ນ້ຳ", r: "nam", m: "water", tts: "น้ำ" },
+    ],
+  },
+  {
+    id: "meet", script: "th", gloss: "Hello, nice to meet you.",
+    words: [
+      { w: "สวัสดี", r: "sà-wàt-dii", m: "hello", tts: "สวัสดี", tone: ["low", "low", "mid"] },
+      { w: "ครับ", r: "khráp", m: "(polite particle, male)", tts: "ครับ", tone: ["high"] },
+      { w: "ยินดี", r: "yin-dii", m: "glad", tts: "ยินดี", tone: ["mid", "mid"] },
+      { w: "ที่", r: "thîi", m: "that / to", tts: "ที่", tone: ["falling"] },
+      { w: "ได้", r: "dâi", m: "get to", tts: "ได้", tone: ["falling"] },
+      { w: "รู้จัก", r: "rúu-jàk", m: "know (someone)", tts: "รู้จัก", tone: ["high", "low"] },
+    ],
+  },
+  {
+    id: "meet", script: "lo", gloss: "Hello, nice to meet you.",
+    words: [
+      { w: "ສະບາຍດີ", r: "sabaidee", m: "hello", tts: "สะบายดี" },
+      { w: "ຍິນດີ", r: "nyin dii", m: "glad", tts: "ยินดี" },
+      { w: "ທີ່", r: "thii", m: "that / to", tts: "ที่" },
+      { w: "ໄດ້", r: "dai", m: "get to", tts: "ได้" },
+      { w: "ຮູ້ຈັກ", r: "hu chak", m: "know (someone)", tts: "ฮู้จัก" },
+    ],
+  },
+];
+
+function SliceSentence({ sentence, font, mode }) {
+  const text = sentence.words.map((w) => w.w).join("");
+  const cl = useMemo(() => clusters(text), [text]);
+  const truth = useMemo(() => {
+    const s = new Set();
+    let acc = 0;
+    sentence.words.forEach((w, i) => {
+      acc += clusters(w.w).length;
+      if (i < sentence.words.length - 1) s.add(acc);
+    });
+    return s;
+  }, [sentence]);
+  const [cuts, setCuts] = useState(new Set());
+  const [checked, setChecked] = useState(false);
+  const [open, setOpen] = useState(null);
+
+  const toggle = (i) => {
+    setChecked(false);
+    setCuts((prev) => {
+      const n = new Set(prev);
+      if (n.has(i)) n.delete(i);
+      else n.add(i);
+      return n;
+    });
+  };
+  const correct = [...cuts].filter((c) => truth.has(c)).length;
+  const wrong = [...cuts].filter((c) => !truth.has(c)).length;
+  const perfect = checked && correct === truth.size && wrong === 0;
+  const audio = getAudio();
+  const isLo = sentence.script === "lo";
+
+  return (
+    <Card className="p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-xs font-bold uppercase tracking-wider" style={{ color: isLo ? COLORS.purple : COLORS.cyan }}>{isLo ? "Lao ລາວ" : "Thai ไทย"}</div>
+        <button className="text-xs text-slate-400 hover:text-white" onClick={() => audio.speakHumanVoice(sentence.words.map((w) => w.tts).join(" "), isLo ? text : undefined)}>
+          <Volume2 size={14} className="mr-1 inline" />Play sentence
+        </button>
+      </div>
+      <div className="flex flex-wrap items-stretch justify-center rounded-2xl bg-black/30 px-2 py-4" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}>
+        {cl.map((ch, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && (
+              <button
+                onClick={() => toggle(i)}
+                aria-label={`Cut before character ${i + 1}`}
+                className="group relative -mx-1 w-3 shrink-0"
+              >
+                <span
+                  className={`absolute inset-y-1 left-1/2 w-[3px] -translate-x-1/2 rounded-full transition ${
+                    cuts.has(i)
+                      ? checked ? (truth.has(i) ? "bg-emerald-400 shadow-[0_0_10px_#34D399]" : "bg-rose-500 shadow-[0_0_10px_#F43F5E]") : "bg-amber-400 shadow-[0_0_12px_#F59E0B]"
+                      : checked && truth.has(i) ? "bg-emerald-400/30" : "bg-transparent group-hover:bg-white/20"
+                  }`}
+                />
+              </button>
+            )}
+            <span className="select-none text-4xl leading-[1.7] text-white sm:text-5xl">{ch}</span>
+          </React.Fragment>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button onClick={() => setChecked(true)} className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black"><Scissors size={15} className="mr-1 inline" />Check cuts</button>
+        <button onClick={() => { setCuts(new Set()); setChecked(false); }} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300"><RotateCcw size={14} className="mr-1 inline" />Reset</button>
+        <button onClick={() => { setCuts(new Set(truth)); setChecked(true); }} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300"><Eye size={14} className="mr-1 inline" />Reveal</button>
+        {checked && (
+          <span className={`text-sm font-semibold ${perfect ? "text-emerald-300" : "text-slate-300"}`}>
+            {perfect ? "Perfect segmentation." : `${correct}/${truth.size} boundaries found${wrong ? `, ${wrong} extra cut${wrong > 1 ? "s" : ""}` : ""}.`}
+          </span>
+        )}
+      </div>
+      <p className="mt-2 text-xs text-slate-500">“{sentence.gloss}” · Tap the gaps between characters to drop a cut.</p>
+      {checked && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {sentence.words.map((w, i) => (
+            <button key={i} onClick={() => setOpen(open === i ? null : i)} className={`rounded-xl border px-3 py-1.5 text-left transition ${open === i ? "border-amber-400 bg-amber-400/10" : "border-white/10 hover:bg-white/5"}`}>
+              <span className="text-xl text-white" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}>{w.w}</span>
+              <span className="ml-2 text-xs text-slate-400">{w.m}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {checked && open !== null && (
+        <div className="mt-3 rounded-2xl bg-white/[0.04] p-3">
+          {(() => {
+            const w = sentence.words[open];
+            return (
+              <div className="flex flex-wrap items-center gap-4">
+                <span className="text-5xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}>{w.w}</span>
+                <div className="space-y-1 text-sm">
+                  <div className="text-white">{w.r} · {w.m}</div>
+                  {w.tone ? <div className="flex gap-1">{w.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}</div> : <div className="text-xs text-slate-500">Vientiane tones differ from Thai; listen and compare.</div>}
+                  <AudioButtons ttsTh={w.tts} ttsLo={w.tts} loRaw={isLo ? w.w : undefined} tones={w.tone} mode={isLo ? "lo" : "th"} compact />
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Slicer({ mode, font }) {
+  const [sid, setSid] = useState("eat");
+  const list = SENTENCES.filter((s) => s.id === sid && (mode === "dual" || s.script === mode));
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Scissors} title="Zero-Space Script Slicer" sub="Thai and Lao write words with no spaces. Find the word boundaries with golden laser cuts." color={COLORS.gold} />
+      <div className="flex gap-2">
+        <Chip active={sid === "eat"} onClick={() => setSid("eat")}>Eating</Chip>
+        <Chip active={sid === "meet"} onClick={() => setSid("meet")}>Greeting</Chip>
+      </div>
+      {list.map((s) => <SliceSentence key={`${s.id}-${s.script}`} sentence={s} font={font} mode={mode} />)}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Audio Studio drawer
+ * ========================================================================== */
+function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
+  const audio = getAudio();
+  const [, force] = useState(0);
+  useEffect(() => audio.onVoices(() => force((n) => n + 1)), [audio]);
+  if (!open) return null;
+  const th = audio.thaiVoice();
+  const lo = audio.laoVoice();
+  return (
+    <div className="fixed inset-0 z-40" onClick={onClose}>
+      <div className="absolute right-2 top-16 w-[min(92vw,360px)] rounded-3xl border border-white/10 bg-[#0F172A]/95 p-4 shadow-2xl backdrop-blur" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2 font-bold text-white"><Headphones size={18} className="text-amber-400" /> Audio Studio</div>
+          <button onClick={onClose} className="rounded-full p-1 text-slate-400 hover:bg-white/10"><X size={16} /></button>
+        </div>
+        <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Speech rate</div>
+        <div className="mb-4 flex gap-2">
+          <Chip active={rate === 0.85} onClick={() => setRate(0.85)}>0.85× Clear</Chip>
+          <Chip active={rate === 1} onClick={() => setRate(1)}>1.0× Normal</Chip>
+        </div>
+        <button onClick={() => setMuted(!muted)} className={`mb-4 flex w-full items-center justify-center gap-2 rounded-xl border py-2 text-sm font-semibold ${muted ? "border-rose-400/50 bg-rose-500/10 text-rose-200" : "border-white/10 text-slate-200"}`}>
+          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />} {muted ? "Muted" : "Sound on"}
+        </button>
+        <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Diagnostics</div>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => audio.speakHumanVoice("สวัสดี ครับ")} className="rounded-xl bg-cyan-500/15 py-2 text-sm text-cyan-200"><Volume2 size={14} className="mr-1 inline" />Test voice</button>
+          <button onClick={() => audio.playRanatToneChime(["mid", "low", "falling", "high", "rising"])} className="rounded-xl bg-amber-500/15 py-2 text-sm text-amber-200"><Music size={14} className="mr-1 inline" />5 tone chimes</button>
+        </div>
+        <div className="mt-3 space-y-1 text-xs">
+          <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings."}</div>
+          <div className={lo ? "text-emerald-300" : "text-slate-500"}>{lo ? `Lao voice: ${lo.name}` : "No Lao voice: Lao items are read with Thai-script approximations."}</div>
+          <p className="pt-1 text-slate-500">Voice and chimes never play at the same time; starting one stops the other.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * App shell
+ * ========================================================================== */
+const TABS = [
+  { id: "shrine", label: "Shrine", icon: Landmark },
+  { id: "tracer", label: "Tracer", icon: PenTool },
+  { id: "reactor", label: "Reactor", icon: FlaskConical },
+  { id: "orbit", label: "Orbit", icon: Orbit },
+  { id: "slicer", label: "Slicer", icon: Scissors },
+];
+
+export default function SuvarnaKani() {
+  const initial = useMemo(() => loadState() || {}, []);
+  const [tab, setTab] = useState(initial.tab || "shrine");
+  const [mode, setMode] = useState(initial.mode || "dual");
+  const [font, setFont] = useState(initial.font || "loop");
+  const [sandbox, setSandbox] = useState(!!initial.sandbox);
+  const [rate, setRate] = useState(initial.rate || 0.85);
+  const [muted, setMuted] = useState(!!initial.muted);
+  const [srs, setSrs] = useState(() => {
+    const raw = initial.srs || {};
+    const fixed = {};
+    Object.entries(raw).forEach(([k, v]) => { fixed[k] = { ...v, next: v.next === null ? Infinity : v.next }; });
+    return fixed;
+  });
+  const [studio, setStudio] = useState(false);
+  const [inspect, setInspect] = useState(null);
+
+  useEffect(() => {
+    if (document.querySelector("link[data-suvarnakani-fonts]")) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = GOOGLE_FONTS_HREF;
+    link.setAttribute("data-suvarnakani-fonts", "");
+    document.head.appendChild(link);
+  }, []);
+
+  useEffect(() => {
+    const audio = getAudio();
+    audio.rate = rate;
+    audio.muted = muted;
+    if (muted) { audio.cancelSpeech(); audio.stopTones(); }
+  }, [rate, muted]);
+
+  useEffect(() => {
+    const prime = () => getAudio().prime();
+    window.addEventListener("pointerdown", prime, { once: true });
+    return () => window.removeEventListener("pointerdown", prime);
+  }, []);
+
+  useEffect(() => {
+    saveState({ tab, mode, font, sandbox, rate, muted, srs });
+  }, [tab, mode, font, sandbox, rate, muted, srs]);
+
+  const resetProgress = () => {
+    if (window.confirm("Reset all SRS progress?")) setSrs({});
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0B0F19] pb-24 text-slate-100 sm:pb-8" style={{ backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
+      <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0B0F19]/85 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <div className="mr-auto flex items-center gap-2">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 text-lg font-black text-black shadow-[0_0_20px_#F59E0B66]" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
+            <div className="leading-tight">
+              <div className="font-extrabold tracking-tight text-white">SuvarṇaKani</div>
+              <div className="text-[11px] text-amber-300/80"><span style={{ fontFamily: FONT_STACKS.loop.th }}>สุวรรณกานิ</span> · <span style={{ fontFamily: FONT_STACKS.loop.lo }}>ສຸວັນນະການິ</span></div>
+            </div>
+          </div>
+          <div className="flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-xs font-semibold">
+            {[["dual", "Dual", "ไทย/ລາວ"], ["th", "Thai", "ไทย"], ["lo", "Lao", "ລາວ"]].map(([k, en, native]) => (
+              <button key={k} onClick={() => setMode(k)} className={`rounded-lg px-2.5 py-1.5 transition ${mode === k ? "bg-amber-500 text-black" : "text-slate-300 hover:text-white"}`}><span className="hidden sm:inline">{en} </span>{native}</button>
+            ))}
+          </div>
+          <button onClick={() => setFont(font === "loop" ? "street" : "loop")} title="Toggle head-loop / street-sign font" className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
+            <Type size={14} /> <span className="hidden sm:inline">{font === "loop" ? "Head-loop" : "Street"}</span><span className="sm:hidden">{font === "loop" ? "Loop" : "Street"}</span>
+          </button>
+          <button onClick={() => setSandbox(!sandbox)} title="Sandbox: unlock all levels" className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold ${sandbox ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200" : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"}`}>
+            {sandbox ? <Unlock size={14} /> : <Lock size={14} />} <span className="hidden sm:inline">Unlock all</span>
+          </button>
+          <button onClick={() => setStudio(true)} aria-label="Audio Studio" className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10">
+            {muted ? <VolumeX size={16} /> : <Headphones size={16} />}
+          </button>
+        </div>
+        <nav className="mx-auto hidden max-w-6xl gap-1 px-4 pb-2 sm:flex">
+          {TABS.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${tab === t.id ? "bg-white/10 text-amber-300" : "text-slate-400 hover:text-white"}`}>
+              <t.icon size={16} /> {t.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-4 py-5">
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} />}
+        {tab === "tracer" && <Tracer />}
+        {tab === "reactor" && <Reactor mode={mode} font={font} />}
+        {tab === "orbit" && <OrbitModule mode={mode} font={font} />}
+        {tab === "slicer" && <Slicer mode={mode} font={font} />}
+        <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-500">
+          <span><Zap size={12} className="mr-1 inline text-amber-400" />Progress is saved on this device.</span>
+          <button onClick={resetProgress} className="underline hover:text-slate-300">Reset progress</button>
+        </footer>
+      </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+        {TABS.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold ${tab === t.id ? "text-amber-400" : "text-slate-400"}`}>
+            <t.icon size={20} />
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      <AudioStudio open={studio} onClose={() => setStudio(false)} rate={rate} setRate={setRate} muted={muted} setMuted={setMuted} />
+      <Inspector item={inspect} mode={mode} font={font} srs={srs} onClose={() => setInspect(null)} />
+    </div>
+  );
+}
