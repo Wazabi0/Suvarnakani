@@ -320,6 +320,31 @@ const CURRICULUM = [
     mnemonic: "Short and shut: pìt.", trap: "เปิด (open) vs ปิด (closed)." },
   { id: "v-forbid", level: 7, tier: "vocab", th: "ห้าม", lo: "ຫ້າມ", thRoman: "hâam", loRoman: "ham", meaning: "forbidden / do not", accept: ["haam", "ham", "forbidden", "donot", "no", "prohibited"], ttsTh: "ห้าม", ttsLo: "ห้าม", tone: ["falling"], parts: { cls: "high", live: true, long: true, mark: "tho" },
     mnemonic: "High + Mai Tho falls like a barrier: ห้าม!", trap: "ห้าม + verb = no ...ing: ห้ามสูบบุหรี่, no smoking.", bridge: "Same in Lao: ຫ້າມ." },
+  // Level 8: Particles and Politeness.
+  { id: "p-khrap", level: 8, tier: "vocab", th: "ครับ", lo: "ເຈົ້າ", thRoman: "kráp", loRoman: "jao", meaning: "polite particle (male speaker)", accept: ["khrap", "krap", "khap", "kap", "polite", "politemale", "yes"], ttsTh: "ครับ", ttsLo: "เจ้า", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "Low class + short dead syllable = High: the River Spirit bows with a bright, clipped kráp.", trap: "Said by men at the end of a sentence; in speech the r often drops: kháp.", bridge: "Lao uses ເຈົ້າ (jao) for both men and women, as a polite yes and at the end of sentences." },
+  { id: "p-kha", level: 8, tier: "vocab", th: "ค่ะ", lo: "ເຈົ້າ", thRoman: "khâ", loRoman: "jao", meaning: "polite particle (female speaker, statements)", accept: ["kha", "ka", "polite", "politefemale", "yes"], ttsTh: "ค่ะ", ttsLo: "เจ้า", tone: ["falling"], parts: { cls: "low", live: false, long: false, mark: "ek" },
+    mnemonic: "Low class + Mai Ek = Falling: ค่ะ settles the sentence down.", trap: "ค่ะ (falling) closes statements; คะ (high) asks questions. One small mark changes the job.", bridge: "Lao: ເຈົ້າ for everyone." },
+  { id: "p-kha-q", level: 8, tier: "vocab", th: "คะ", lo: "ເຈົ້າ", thRoman: "khá", loRoman: "jao", meaning: "polite particle (female speaker, questions)", accept: ["kha", "ka", "polite", "question", "politequestion"], ttsTh: "คะ", ttsLo: "เจ้า", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "No mark, short and dead, low class = High: the question lifts.", trap: "Writing ค่ะ at the end of a question is a very common mistake, even by Thais in chat.", bridge: "Lao: ເຈົ້າ." },
+  { id: "p-na", level: 8, tier: "vocab", th: "นะ", lo: "ເດີ", thRoman: "ná", loRoman: "doe", meaning: "softener (…okay?, …you know)", accept: ["na", "nah", "okay", "ok", "softener"], ttsTh: "นะ", ttsLo: "เดอ", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "A friendly nudge at the end: ไปนะ, I'm going, okay?", trap: "Not a question word; it softens a statement or request.", bridge: "Lao ເດີ (doe) does the same softening job: ໄປເດີ." },
+  { id: "p-mai-q", level: 8, tier: "vocab", th: "ไหม", lo: "ບໍ", thRoman: "mǎi", loRoman: "bo", meaning: "yes/no question particle", accept: ["mai", "mai?", "question", "yesno"], ttsTh: "ไหม", ttsLo: "บ๋อ", tone: ["rising"], parts: { cls: "low", live: true, long: false, mark: "none", hn: true },
+    mnemonic: "ห leads ม: the silent ห lifts it into a Rising question.", trap: "ไหม (question), ไม่ (not), ไม้ (wood), ใหม่ (new): four tones, four meanings. In speech ไหม often becomes máy.", bridge: "Lao asks with ບໍ (bo): ແຊບບໍ? Is it tasty?" },
+  { id: "p-chai", level: 8, tier: "vocab", th: "ใช่", lo: "ແມ່ນ", thRoman: "châi", loRoman: "maen", meaning: "yes, that's right", accept: ["chai", "yes", "right", "correct"], ttsTh: "ใช่", ttsLo: "แม่น", tone: ["falling"], parts: { cls: "low", live: true, long: false, mark: "ek" },
+    mnemonic: "Low class + Mai Ek = Falling: a firm nod.", trap: "Spelled with ใ (mai muan), one of only 20 words that use it.", bridge: "Lao ແມ່ນ (maen) means 'it is / that's right'." },
+  { id: "p-mai-chai", level: 8, tier: "vocab", th: "ไม่ใช่", lo: "ບໍ່ແມ່ນ", thRoman: "mâi-châi", loRoman: "bo maen", meaning: "no, that's not right", accept: ["maichai", "no", "notright", "incorrect", "not"], ttsTh: "ไม่ใช่", ttsLo: "บ่อแม่น", tone: ["falling", "falling"],
+    mnemonic: "ไม่ (not) + ใช่ (right): two falls in a row.", trap: "Thai has no single word for 'no'; you negate the verb or ใช่.", bridge: "Lao negates with ບໍ່ (bo): ບໍ່ແມ່ນ." },
+  { id: "p-sorry", level: 8, tier: "vocab", th: "ขอโทษ", lo: "ຂໍໂທດ", thRoman: "khɔ̌ɔ-thôot", loRoman: "kho thot", meaning: "sorry / excuse me", accept: ["khothot", "khawthot", "kothot", "sorry", "excuseme"], ttsTh: "ขอโทษ", ttsLo: "ขอโทด", tone: ["rising", "falling"],
+    mnemonic: "ขอ (ask for) + โทษ (fault): 'I ask about my fault'.", trap: "The final ษ is read as t: thôot.", bridge: "Lao ຂໍໂທດ spells the final with ດ, as it sounds." },
+  { id: "p-mai-pen-rai", level: 8, tier: "vocab", th: "ไม่เป็นไร", lo: "ບໍ່ເປັນຫຍັງ", thRoman: "mâi-pen-rai", loRoman: "bo pen nyang", meaning: "never mind / you're welcome", accept: ["maipenrai", "nevermind", "noproblem", "yourewelcome", "welcome"], ttsTh: "ไม่เป็นไร", ttsLo: "บ่อเปนหยัง", tone: ["falling", "mid", "mid"],
+    mnemonic: "'It isn't anything': the most Thai phrase there is.", trap: "Answers thanks, apologies and small disasters alike.", bridge: "Lao says ບໍ່ເປັນຫຍັງ ('it isn't what'), with ຫຍັງ for Thai ไร / อะไร." },
+  { id: "p-howmuch", level: 8, tier: "vocab", th: "เท่าไร", lo: "ເທົ່າໃດ", thRoman: "thâw-rai", loRoman: "thao dai", meaning: "how much?", accept: ["thaorai", "thaurai", "taorai", "howmuch", "howmany"], ttsTh: "เท่าไร", ttsLo: "เท่าได", tone: ["falling", "mid"],
+    mnemonic: "Point at anything in a market and add เท่าไร.", trap: "Often written เท่าไหร่ in chat, which matches how it is said: thâw-rài.", bridge: "Lao ເທົ່າໃດ (thao dai); ໃດ is 'which'." },
+  { id: "p-dai", level: 8, tier: "vocab", th: "ได้", lo: "ໄດ້", thRoman: "dâi", loRoman: "dai", meaning: "can / OK / get", accept: ["dai", "can", "ok", "okay", "get"], ttsTh: "ได้", ttsLo: "ได้", tone: ["falling"], parts: { cls: "mid", live: true, long: false, mark: "tho" },
+    mnemonic: "Middle + Mai Tho = Falling: ได้! Deal.", trap: "ได้ไหม? Can (you)? ได้ = yes; ไม่ได้ = no.", bridge: "Same word and spelling idea in Lao: ໄດ້." },
+  { id: "p-you", level: 8, tier: "vocab", th: "คุณ", lo: "ທ່ານ", thRoman: "khun", loRoman: "than", meaning: "you (polite) / Mr, Ms", accept: ["khun", "kun", "you", "mr", "ms", "mrs"], ttsTh: "คุณ", ttsLo: "ท่าน", tone: ["mid"], parts: { cls: "low", live: true, long: false, mark: "none" },
+    mnemonic: "Low class + live = Mid: neutral and polite.", trap: "Also a title before first names: คุณจอช.", bridge: "Lao uses ທ່ານ (than) formally and ເຈົ້າ (jao) everyday." },
 ];
 
 // Each course has its own colour world (see the roadmap's course designs).
@@ -331,6 +356,7 @@ const LEVELS = [
   { n: 5, title: "Vowel Universe", sub: "Short, long and wrap-around vowels", accent: "#FFD166", bg: "radial-gradient(circle at 80% 30%, #FFD16618, transparent 55%), linear-gradient(160deg, #141a2e, transparent 70%)" },
   { n: 6, title: "Clusters and Leaders", sub: "True and false clusters · leading consonants", accent: "#5EEAD4", bg: "linear-gradient(160deg, #10222a, transparent 70%)" },
   { n: 7, title: "Street Signs and Numbers", sub: "Digits, prices and the words on every sign", accent: "#FFB86B", bg: "linear-gradient(160deg, #22222a, transparent 70%)" },
+  { n: 8, title: "Particles and Politeness", sub: "ครับ, ค่ะ, นะ, ไหม and the phrases that carry them", accent: "#F472B6", bg: "linear-gradient(160deg, #3a1630, transparent 70%)" },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -2905,6 +2931,21 @@ const STREET_PACKS = [
     [{ t: "ໝາກໄມ້", r: "mak mai", m: "fruit", tts: "หมากไม้" }, { t: "ລາຄາ", id: "v-price" }, { price: true, t: "໒໐໐໐໐", r: "sao phan", m: "20,000", tts: "ซาวพัน" }, { price: true, t: "ກີບ", id: "v-baht" }],
     [{ t: "ເຂົ້າໜຽວ", r: "khao niao", m: "sticky rice", tts: "เข้าเหนียว" }, { price: true, t: "໑໐໐໐໐", r: "sip phan", m: "10,000", tts: "สิบพัน" }, { price: true, t: "ກີບ", id: "v-baht" }],
   ] },
+  { id: "talk-th", script: "th", title: "At the counter", place: "Bangkok", style: "chat", speakers: ["You", "Barista", "You", "Barista", "You", "Barista"], lines: [
+    [{ t: "สวัสดี", id: "v-hello" }, { t: "ครับ", id: "p-khrap" }],
+    [{ t: "สวัสดี", id: "v-hello" }, { t: "ค่ะ", id: "p-kha" }, { t: "รับ", r: "ráp", m: "receive / have (what would you like?)", tone: ["high"] }, { t: "อะไร", r: "à-rai", m: "what", tone: ["low", "mid"] }, { t: "คะ", id: "p-kha-q" }],
+    [{ t: "กาแฟ", r: "kaa-fɛɛ", m: "coffee", tone: ["mid", "mid"] }, { t: "เย็น", r: "yen", m: "iced", tone: ["mid"] }, { t: "เท่าไร", id: "p-howmuch" }, { t: "ครับ", id: "p-khrap" }],
+    [{ t: "๕๕", r: "hâa-sìp-hâa", m: "55", tts: "ห้าสิบห้า" }, { t: "บาท", id: "v-baht" }, { t: "ค่ะ", id: "p-kha" }],
+    [{ t: "ขอบคุณ", id: "v-thanks" }, { t: "ครับ", id: "p-khrap" }],
+    [{ t: "ไม่เป็นไร", id: "p-mai-pen-rai" }, { t: "ค่ะ", id: "p-kha" }],
+  ] },
+  { id: "talk-lo", script: "lo", title: "Market chat", place: "Luang Prabang", style: "chat", speakers: ["You", "Seller", "You", "Seller", "You"], lines: [
+    [{ t: "ສະບາຍດີ", id: "v-hello" }, { t: "ເຈົ້າ", id: "p-khrap", m: "polite particle / yes" }],
+    [{ t: "ສະບາຍດີ", id: "v-hello" }, { t: "ແຊບ", id: "v-saep" }, { t: "ເດີ", id: "p-na" }],
+    [{ t: "ອັນນີ້", r: "an nii", m: "this one", tts: "อันนี้" }, { t: "ເທົ່າໃດ", id: "p-howmuch" }],
+    [{ t: "໕໐໐໐", r: "ha phan", m: "5,000", tts: "ห้าพัน" }, { t: "ກີບ", id: "v-baht" }],
+    [{ t: "ຂອບໃຈ", id: "v-thanks" }, { t: "ເຈົ້າ", id: "p-khrap", m: "polite particle / yes" }],
+  ] },
 ];
 
 const STREET_STYLES = {
@@ -2913,6 +2954,7 @@ const STREET_STYLES = {
   shop: { card: "linear-gradient(170deg, #f5f5f0, #e7e5df)", ink: "#1a1a1a", accent: "#E4002B", border: "#00000022" },
   temple: { card: "linear-gradient(170deg, #5a1414, #2e0909)", ink: "#FFE08A", accent: "#F5C542", border: "#f5c54244" },
   market: { card: "linear-gradient(170deg, #12324a, #0a1c2b)", ink: "#EAF6FF", accent: "#7FD1FF", border: "#7fd1ff44" },
+  chat: { card: "linear-gradient(170deg, #3a1630, #1f0b1a)", ink: "#FFE4F1", accent: "#F472B6", border: "#f472b644" },
 };
 
 function resolveToken(tok, script) {
@@ -2968,7 +3010,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest }) {
 
   return (
     <div className="space-y-4">
-      <SectionTitle icon={BookOpen} title="Street Reader" sub="Real signs in the loopless type you meet on the street. Green words you know; tap the rest." color="#FFB86B" />
+      <SectionTitle icon={BookOpen} title="Street Reader" sub="Real signs and short exchanges in the loopless type you meet on the street. Green words you know; tap the rest." color="#FFB86B" />
       <div className="flex flex-wrap gap-2">
         {packs.map((p) => (
           <Chip key={p.id} active={p.id === pack.id} color="#FFB86B" onClick={() => setPid(p.id)}>
@@ -2987,6 +3029,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest }) {
             <div className="space-y-2">
               {pack.lines.map((line, li) => (
                 <div key={li} className="flex flex-wrap items-baseline gap-x-1 gap-y-1 border-b border-dashed pb-2 last:border-0" style={{ borderColor: style.border }}>
+                  {pack.speakers && <span className="mr-2 w-16 shrink-0 text-xs font-bold uppercase tracking-wider" style={{ color: style.accent, fontFamily: UI_FONT }}>{pack.speakers[li]}</span>}
                   {line.map((raw, ri) => {
                     flat += 1;
                     const i = flat;
@@ -3017,7 +3060,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest }) {
             </button>
             {timer.last != null && <span className="text-slate-200">{timer.last.toFixed(1)} s</span>}
             {best[pack.id] && <span className="text-slate-400">Best {best[pack.id].toFixed(1)} s</span>}
-            <span className="text-xs text-slate-400">Read the whole sign aloud, then stop the timer.</span>
+            <span className="text-xs text-slate-400">Read it all aloud, then stop the timer.</span>
           </div>
         </div>
         <Card className="p-4">
