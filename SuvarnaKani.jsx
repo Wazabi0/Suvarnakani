@@ -3,7 +3,7 @@ import {
   Landmark, PenTool, FlaskConical, Orbit, Scissors, Volume2, VolumeX, Music, Unlock, Lock,
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
-  Cloud, Sun, Waves, Ear, Target,
+  Cloud, Sun, Waves, Ear, Target, Flame,
 } from "lucide-react";
 
 /* ============================================================================
@@ -231,7 +231,70 @@ const SRS_STAGES = [
   { name: "Golden Nirvana", alias: "Burned", color: "#F59E0B" },
 ];
 const HOUR = 3600 * 1000;
-const SRS_INTERVAL = { 1: 4 * HOUR, 2: 24 * HOUR, 3: 7 * 24 * HOUR, 4: 30 * 24 * HOUR };
+const DAY = 24 * HOUR;
+
+/* ---------------------------------------------------------------------------
+ * FSRS-4.5 memory model. Each item keeps two memory tracks, "read" (reading or
+ * meaning) and "second" (tone or class), because learners forget tones first.
+ * The item is due when its weakest track is predicted to drop to 90% recall.
+ * Ratings: 1 = Again (wrong), 2 = Hard (right but guessed), 3 = Good.
+ * ------------------------------------------------------------------------- */
+const FSRS_W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
+const FSRS_DECAY = -0.5;
+const FSRS_FACTOR = 19 / 81;
+const TARGET_RETENTION = 0.9;
+const BURN_STABILITY_DAYS = 120;
+const LEECH_LAPSES = 4;
+
+const clampD = (d) => Math.min(10, Math.max(1, d));
+const fsrsRetrievability = (elapsedDays, S) => (1 + (FSRS_FACTOR * elapsedDays) / S) ** FSRS_DECAY;
+const fsrsInterval = (S, r = TARGET_RETENTION) => (S / FSRS_FACTOR) * (r ** (1 / FSRS_DECAY) - 1);
+const fsrsInitD = (g) => clampD(FSRS_W[4] - (g - 3) * FSRS_W[5]);
+
+function fsrsUpdate(track, g, now = Date.now()) {
+  if (!track || !track.S) return { S: FSRS_W[g - 1], D: fsrsInitD(g), last: now, lapses: g === 1 ? 1 : 0 };
+  const { S, D } = track;
+  const elapsed = Math.max(0, (now - track.last) / DAY);
+  const R = fsrsRetrievability(elapsed, S);
+  const nextD = clampD(FSRS_W[7] * fsrsInitD(3) + (1 - FSRS_W[7]) * (D - FSRS_W[6] * (g - 3)));
+  let nextS;
+  if (g === 1) {
+    nextS = Math.min(S, FSRS_W[11] * D ** -FSRS_W[12] * ((S + 1) ** FSRS_W[13] - 1) * Math.exp(FSRS_W[14] * (1 - R)));
+  } else {
+    const hard = g === 2 ? FSRS_W[15] : 1;
+    nextS = S * (Math.exp(FSRS_W[8]) * (11 - D) * S ** -FSRS_W[9] * (Math.exp(FSRS_W[10] * (1 - R)) - 1) * hard + 1);
+  }
+  return { S: Math.max(0.05, nextS), D: nextD, last: now, lapses: (track.lapses || 0) + (g === 1 ? 1 : 0) };
+}
+
+/** Map memory stability onto the six named stages shown in the Shrine. */
+function stageFromStability(S) {
+  if (S >= BURN_STABILITY_DAYS) return 5;
+  if (S >= 30) return 4;
+  if (S >= 7) return 3;
+  if (S >= 1) return 2;
+  return 1;
+}
+
+function scheduleItem(cur, ratings, now = Date.now()) {
+  const fsrs = { ...(cur.fsrs || {}) };
+  Object.entries(ratings).forEach(([track, g]) => { if (g) fsrs[track] = fsrsUpdate(fsrs[track], g, now); });
+  const tracks = Object.values(fsrs);
+  const weakest = Math.min(...tracks.map((t) => t.S));
+  const stage = stageFromStability(weakest);
+  // A lapse sends the item back for a same-session relearn after 10 minutes.
+  const relearn = Object.values(ratings).includes(1);
+  const next = stage >= 5 ? Infinity : relearn ? now + 10 * 60 * 1000 : Math.min(...tracks.map((t) => t.last + fsrsInterval(t.S) * DAY));
+  return { ...cur, fsrs, stage, next };
+}
+
+const lapsesOf = (s) => (s?.fsrs ? Object.values(s.fsrs).reduce((n, t) => n + (t.lapses || 0), 0) : 0);
+const isLeech = (s) => !!s && s.stage >= 1 && s.stage < 5 && lapsesOf(s) >= LEECH_LAPSES && !s.leechCleared;
+
+const todayKey = (t = Date.now()) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 function normalizeAnswer(s) {
   return (s || "")
@@ -613,12 +676,285 @@ function ToneContour({ tone, width = 300, height = 160 }) {
 }
 
 /* ============================================================================
+ * Today Path: one ordered daily session sized to the learner's minutes.
+ * ========================================================================== */
+const EAR_DAILY_TRIALS = 20;
+
+function computeStreak(log) {
+  let streak = 0;
+  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) > 0);
+  let t = Date.now();
+  if (!active(todayKey(t))) t -= DAY;
+  while (active(todayKey(t))) {
+    streak += 1;
+    t -= DAY;
+  }
+  return streak;
+}
+
+function weekAccuracy(log) {
+  let right = 0;
+  let total = 0;
+  for (let i = 0; i < 7; i += 1) {
+    const d = log[todayKey(Date.now() - i * DAY)];
+    if (d) { right += d.reviewsRight || 0; total += d.reviews || 0; }
+  }
+  return total >= 10 ? right / total : null;
+}
+
+function forecast(srs, now) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const days = Array(7).fill(0);
+  Object.values(srs).forEach((s) => {
+    if (!s || s.stage < 1 || s.stage >= 5 || !Number.isFinite(s.next)) return;
+    const d = Math.max(0, Math.floor((s.next - start.getTime()) / DAY));
+    if (d < 7) days[d] += 1;
+  });
+  return days;
+}
+
+function ForecastChart({ days }) {
+  const max = Math.max(4, ...days);
+  const labels = days.map((_, i) => (i === 0 ? "Today" : new Date(Date.now() + i * DAY).toLocaleDateString(undefined, { weekday: "short" })));
+  return (
+    <svg viewBox="0 0 280 92" className="w-full max-w-md" role="img" aria-label={`Reviews due over the next 7 days: ${days.join(", ")}`}>
+      {days.map((n, i) => {
+        const h = (n / max) * 60;
+        const x = 6 + i * 39;
+        return (
+          <g key={i}>
+            <rect x={x} y={70 - h} width="28" height={Math.max(h, 1.5)} rx="5" fill={i === 0 ? COLORS.gold : COLORS.cyan} opacity={i === 0 ? 1 : 0.75} />
+            <text x={x + 14} y={66 - h} textAnchor="middle" fontSize="10" fill="#E2E8F0" fontWeight="700">{n || ""}</text>
+            <text x={x + 14} y={86} textAnchor="middle" fontSize="9.5" fill="#94A3B8">{labels[i]}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech }) {
+  const today = log[todayKey()] || {};
+  const acc = weekAccuracy(log);
+  const streak = computeStreak(log);
+  const lessonBatch = Math.min(lessonQueue.length, dailyMinutes <= 5 ? 3 : 5);
+  const lessonsPaused = (acc != null && acc < 0.8) || reviewCount >= 30;
+  const steps = [
+    { id: "reviews", label: reviewCount ? `${reviewCount} review${reviewCount > 1 ? "s" : ""}` : "Reviews", min: Math.max(1, Math.ceil((reviewCount * 10) / 60)), done: reviewCount === 0, note: reviewCount === 0 ? (today.reviews ? `${today.reviews} done today` : "Nothing due") : null, onClick: onReviews, disabled: !reviewCount },
+    { id: "ear", label: "Ear set", min: 3, done: (today.ear || 0) >= EAR_DAILY_TRIALS, note: `${Math.min(today.ear || 0, EAR_DAILY_TRIALS)} / ${EAR_DAILY_TRIALS} trials`, onClick: onEar },
+  ];
+  if (leeches.length) steps.push({ id: "leech", label: `Leech drill: ${leeches.slice(0, 3).map((l) => l.th).join(" ")}`, thai: true, min: 2, done: (today.drills || 0) > 0, onClick: onLeech });
+  if (lessonQueue.length) {
+    steps.push({
+      id: "lessons",
+      label: `${lessonBatch} new item${lessonBatch > 1 ? "s" : ""}`,
+      min: 3,
+      done: (today.lessons || 0) >= lessonBatch,
+      note: lessonsPaused ? (reviewCount >= 30 ? "Paused until reviews are under 30" : `Paused: ${Math.round(acc * 100)}% this week, aim for 80%`) : null,
+      onClick: onLessons,
+      disabled: lessonsPaused && !(today.lessons > 0),
+    });
+  }
+  let budget = dailyMinutes;
+  const planned = steps.filter((s) => { const keep = s.id === "reviews" || budget - s.min >= 0; if (keep) budget -= s.min; return keep; });
+  const total = planned.reduce((n, s) => n + s.min, 0);
+  const doneMin = planned.filter((s) => s.done).reduce((n, s) => n + s.min, 0);
+  const nextStep = planned.find((s) => !s.done && !s.disabled);
+  const reads = Object.values(srs).reduce((a, s) => [a[0] + (s?.stats?.read?.[0] || 0), a[1] + (s?.stats?.read?.[1] || 0)], [0, 0]);
+  const seconds = Object.values(srs).reduce((a, s) => [a[0] + (s?.stats?.second?.[0] || 0), a[1] + (s?.stats?.second?.[1] || 0)], [0, 0]);
+  const pct = ([r, n]) => (n ? `${Math.round((r / n) * 100)}%` : "–");
+
+  return (
+    <Card className="p-5 sm:p-6" glow={COLORS.gold}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/90">Today</p>
+          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">{planned.every((s) => s.done || s.disabled) ? "Path complete" : `${total}-minute path`}</h1>
+        </div>
+        <div className="flex items-center gap-2 rounded-2xl bg-white/5 px-3 py-2 text-sm">
+          <Flame size={16} className={streak ? "text-amber-400" : "text-slate-400"} />
+          <span className="font-bold text-white tabular-nums">{streak}</span>
+          <span className="text-slate-400">day{streak === 1 ? "" : "s"}</span>
+        </div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${total ? (doneMin / total) * 100 : 100}%` }} /></div>
+      <ol className="mt-4 space-y-2">
+        {planned.map((s) => {
+          const isNext = nextStep && s.id === nextStep.id;
+          return (
+            <li key={s.id}>
+              <button
+                onClick={s.onClick}
+                disabled={s.disabled}
+                className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${isNext ? "border-amber-400/70 bg-amber-400/10" : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"} disabled:cursor-default disabled:hover:bg-white/[0.03]`}
+              >
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${s.done ? "bg-emerald-400 text-emerald-950" : isNext ? "border-2 border-amber-400" : "border-2 border-white/20"}`}>
+                  {s.done && <Check size={15} strokeWidth={3} />}
+                </span>
+                <span className={`flex-1 font-semibold ${s.done ? "text-slate-400 line-through decoration-slate-500" : "text-white"}`} style={s.thai ? { fontFamily: FONT_STACKS.loop.th } : undefined}>{s.label}</span>
+                {s.note && <span className="hidden text-xs text-slate-400 sm:inline">{s.note}</span>}
+                <span className="text-xs tabular-nums text-slate-400">{s.min} min</span>
+              </button>
+              {s.note && <div className="px-12 pt-0.5 text-xs text-slate-400 sm:hidden">{s.note}</div>}
+            </li>
+          );
+        })}
+      </ol>
+      <div className="mt-5 grid gap-4 sm:grid-cols-[1.4fr_1fr]">
+        <div>
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Reviews due, next 7 days</div>
+          <ForecastChart days={forecast(srs, now)} />
+        </div>
+        <div className="grid grid-cols-3 gap-2 self-end text-center">
+          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(reads)}</div><div className="text-[11px] text-slate-400">reading</div></div>
+          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(seconds)}</div><div className="text-[11px] text-slate-400">tone / class</div></div>
+          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{acc == null ? "–" : `${Math.round(acc * 100)}%`}</div><div className="text-[11px] text-slate-400">this week</div></div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/** Contrast drill for leeches: pick the item among its lookalikes. */
+function leechOptions(item) {
+  const group = TRAPS.find((g) => g.items.some((x) => x.th === item.th));
+  let pool = group ? CURRICULUM.filter((c) => c.id !== item.id && group.items.some((x) => x.th === c.th)) : [];
+  if (pool.length < 3) {
+    const extra = shuffle(CURRICULUM.filter((c) => c.id !== item.id && c.tier === item.tier && !pool.includes(c)));
+    pool = [...pool, ...extra].slice(0, 3);
+  }
+  return shuffle([item, ...pool.slice(0, 3)]);
+}
+
+function LeechDrill({ open, leeches, mode, font, onClose, onFinish }) {
+  const [rounds, setRounds] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [pick, setPick] = useState(null);
+  const results = useRef({});
+  useEffect(() => {
+    if (!open) return;
+    const list = leeches.slice(0, 4);
+    setRounds(shuffle([...list, ...list, ...list]).map((item) => ({ item, options: leechOptions(item) })));
+    setIdx(0);
+    setPick(null);
+    results.current = {};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  if (!open) return null;
+  const round = rounds[idx];
+  const done = idx >= rounds.length;
+  const choose = (opt) => {
+    if (pick) return;
+    setPick(opt.id);
+    const ok = opt.id === round.item.id;
+    const r = results.current[round.item.id] || [0, 0];
+    results.current[round.item.id] = [r[0] + (ok ? 1 : 0), r[1] + 1];
+    getAudio().speakHumanVoice(round.item.ttsTh);
+  };
+  const finish = () => {
+    const cleared = Object.entries(results.current).filter(([, [r, n]]) => r === n).map(([id]) => id);
+    onFinish(cleared);
+  };
+  const scriptText = (o) => (mode === "lo" ? o.lo : o.th);
+  return (
+    <Modal open={open} onClose={done ? finish : onClose} title={done ? "Leech drill done" : `Leech drill ${idx + 1} / ${rounds.length}`} accent="#F43F5E">
+      {done ? (
+        <div className="py-4 text-center">
+          <Target size={40} className="mx-auto text-rose-300" />
+          <p className="mt-3 text-sm text-slate-300">Items you got right every time are no longer leeches. The rest stay in the drill.</p>
+          <button onClick={finish} className="mt-4 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Done</button>
+        </div>
+      ) : round && (
+        <div>
+          <p className="text-center text-sm text-slate-300">Which one is</p>
+          <p className="text-center text-xl font-bold text-white">{mode === "lo" ? round.item.loRoman : round.item.thRoman}</p>
+          <p className="text-center text-sm text-slate-400">{round.item.meaning}</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {round.options.map((o) => {
+              const state = !pick ? "" : o.id === round.item.id ? "border-emerald-400 bg-emerald-500/15" : o.id === pick ? "border-rose-400 bg-rose-500/15" : "opacity-50";
+              return (
+                <button key={o.id} onClick={() => choose(o)} className={`rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center transition active:scale-95 ${state}`}>
+                  <Glyph text={scriptText(o)} script={mode === "lo" ? "lo" : "th"} font={font} className="text-5xl leading-[1.4] text-white" />
+                  {pick && <div className="text-xs text-slate-300">{o.thRoman.split(" ·")[0]} · {o.meaning.split(" ·")[0]}</div>}
+                </button>
+              );
+            })}
+          </div>
+          {pick && (
+            <div className="mt-3 space-y-2">
+              {pick !== round.item.id && <p className="text-sm text-rose-200">{round.item.trap}</p>}
+              <button onClick={() => { setPick(null); setIdx(idx + 1); }} className="w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Next</button>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ============================================================================
+ * Onboarding: three questions that set the starting path.
+ * ========================================================================== */
+const ONBOARD_QUESTIONS = [
+  { key: "mode", q: "Which script do you need first?", options: [
+    { v: "th", label: "Thai first", sub: "Lao can join later as a bridge." },
+    { v: "lo", label: "Lao first", sub: "Thai can join later as a bridge." },
+    { v: "dual", label: "Both together", sub: "Side by side from day one. Harder at the start." },
+  ] },
+  { key: "level", q: "Can you read any Thai or Lao already?", options: [
+    { v: "none", label: "Not yet", sub: "Start with Level 1." },
+    { v: "some", label: "Some letters", sub: "Start with Level 1, faster pace." },
+    { v: "reads", label: "I can read slowly", sub: "Open every level now." },
+  ] },
+  { key: "minutes", q: "How many minutes a day?", options: [
+    { v: 5, label: "5 minutes", sub: "Reviews plus a short drill." },
+    { v: 12, label: "12 minutes", sub: "Recommended." },
+    { v: 20, label: "20 minutes", sub: "Faster progress." },
+  ] },
+];
+
+function Onboarding({ onDone }) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const q = ONBOARD_QUESTIONS[step];
+  const choose = (v) => {
+    const next = { ...answers, [q.key]: v };
+    setAnswers(next);
+    if (step + 1 < ONBOARD_QUESTIONS.length) setStep(step + 1);
+    else onDone(next);
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur sm:items-center sm:p-4">
+      <div className="w-full max-w-lg rounded-t-3xl border border-white/10 bg-[#0F172A] p-6 sm:rounded-3xl">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 text-lg font-black text-black" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
+          <div className="text-sm font-semibold text-amber-300">Welcome to SuvarṇaKani</div>
+          <div className="ml-auto flex gap-1">{ONBOARD_QUESTIONS.map((_, i) => <span key={i} className={`h-1.5 w-6 rounded-full ${i <= step ? "bg-amber-400" : "bg-white/15"}`} />)}</div>
+        </div>
+        <h2 className="mt-5 text-xl font-bold text-white">{q.q}</h2>
+        <div className="mt-4 space-y-2">
+          {q.options.map((o) => (
+            <button key={String(o.v)} onClick={() => choose(o.v)} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:border-amber-400/60 hover:bg-amber-400/10">
+              <div className="font-semibold text-white">{o.label}</div>
+              <div className="text-sm text-slate-400">{o.sub}</div>
+            </button>
+          ))}
+        </div>
+        <button onClick={() => onDone({})} className="mt-4 text-xs text-slate-400 underline">Skip for now</button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
  * Module 1: SRS Shrine
  * ========================================================================== */
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar }) {
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes }) {
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [leechOpen, setLeechOpen] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -651,25 +987,39 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
 
   const counts = SRS_STAGES.map((_, idx) => CURRICULUM.filter((i) => stageOf(i.id) === idx).length);
 
+  const leeches = useMemo(() => CURRICULUM.filter((i) => isLeech(srs[i.id])), [srs]);
+
   const finishLessons = (ids) => {
     setSrs((prev) => {
       const next = { ...prev };
       ids.forEach((id) => { next[id] = { stage: 1, next: Date.now() }; });
       return next;
     });
+    logActivity({ lessons: ids.length });
     setLessonOpen(false);
   };
 
+  const finishLeechDrill = (clearedIds) => {
+    setSrs((prev) => {
+      const next = { ...prev };
+      clearedIds.forEach((id) => { if (next[id]) next[id] = { ...next[id], leechCleared: true }; });
+      return next;
+    });
+    logActivity({ drills: 1 });
+    setLeechOpen(false);
+  };
+
   const answer = (id, correct, parts = {}) => {
+    const grade = (ok) => (ok == null ? null : ok ? (parts.guessed ? 2 : 3) : 1);
     setSrs((prev) => {
       const cur = prev[id] || { stage: 1, next: 0 };
-      const stage = correct ? Math.min(5, cur.stage + 1) : Math.max(1, cur.stage - 1);
       const stats = { read: [0, 0], second: [0, 0], ...(cur.stats || {}) };
       const bump = (pair, ok) => [pair[0] + (ok ? 1 : 0), pair[1] + 1];
       if (parts.read != null) stats.read = bump(stats.read, parts.read);
       if (parts.second != null) stats.second = bump(stats.second, parts.second);
-      return { ...prev, [id]: { stage, next: stage >= 5 ? Infinity : Date.now() + SRS_INTERVAL[stage], stats } };
+      return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second) }), stats } };
     });
+    logActivity({ reviews: 1, reviewsRight: correct ? 1 : 0 });
   };
 
   const fmtWait = (t) => {
@@ -681,13 +1031,23 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden" glow={COLORS.gold}>
-        <div className="relative p-5 sm:p-7">
-          <div className="pointer-events-none absolute -right-6 -top-10 select-none text-[180px] leading-none text-amber-400/5" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
+      <TodayPath
+        srs={srs}
+        now={now}
+        reviewCount={reviewQueue.length}
+        lessonQueue={lessonQueue}
+        leeches={leeches}
+        log={log}
+        dailyMinutes={dailyMinutes}
+        onReviews={() => setReviewOpen(true)}
+        onLessons={() => setLessonOpen(true)}
+        onEar={onOpenEar}
+        onLeech={() => setLeechOpen(true)}
+      />
+      <Card className="overflow-hidden">
+        <div className="relative p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/80">SRS Shrine</p>
-          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">Read Thai &amp; Lao from first principles</h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-400">Learn the letters, then the tone equation, then the words that cross the Mekong.</p>
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-md">
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:max-w-md">
             <button
               disabled={!lessonQueue.length}
               onClick={() => setLessonOpen(true)}
@@ -799,8 +1159,9 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
         );
       })}
 
-      <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
+      <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
       <ReviewModal open={reviewOpen} queue={reviewQueue} mode={mode} font={font} onClose={() => setReviewOpen(false)} onAnswer={answer} />
+      <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
     </div>
   );
 }
@@ -1032,9 +1393,24 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   const [pick, setPick] = useState(null);
   const [score, setScore] = useState({ right: 0, wrong: 0 });
   const inputRef = useRef(null);
+  const pending = useRef(null);
+
+  // An answer is saved when the learner moves on, so "I guessed" can still
+  // lower its rating. Closing mid-result saves it too.
+  const commit = (guessed = false) => {
+    if (!pending.current) return;
+    const { id, ok, parts } = pending.current;
+    pending.current = null;
+    onAnswer(id, ok, { ...parts, guessed });
+  };
+  const close = () => {
+    commit();
+    onClose();
+  };
 
   useEffect(() => {
     if (open) {
+      pending.current = null;
       setList(shuffle(queue));
       setIdx(0);
       setInput("");
@@ -1066,12 +1442,13 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   const finish = (rOk, sOk) => {
     const ok = rOk && (sOk == null || sOk);
     setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
-    onAnswer(item.id, ok, { read: rOk, second: sOk, kind });
+    pending.current = { id: item.id, ok, parts: { read: rOk, second: sOk, kind } };
     setPhase("result");
     speak();
   };
 
-  const next = () => {
+  const next = (guessed = false) => {
+    commit(guessed);
     setInput("");
     setPhase("read");
     setReadOk(null);
@@ -1103,13 +1480,13 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   const allOk = phase === "result" && readOk && secondOk !== false;
 
   return (
-    <Modal open={open} onClose={onClose} title={finished ? "Review complete" : `Review ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
+    <Modal open={open} onClose={close} title={finished ? "Review complete" : `Review ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
       {finished ? (
         <div className="py-6 text-center">
           <Trophy size={44} className="mx-auto text-amber-400" />
           <div className="mt-3 text-2xl font-black text-white">{score.right} / {score.right + score.wrong}</div>
-          <p className="mt-1 text-sm text-slate-400">An item moves up a stage only when both its reading and its tone (or class) are right. Missed items drop a stage and come back sooner.</p>
-          <button onClick={onClose} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
+          <p className="mt-1 text-sm text-slate-400">Each item's reading and its tone (or class) are scheduled separately, for about 90% recall. Missed items come back in 10 minutes, then sooner than before.</p>
+          <button onClick={close} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
         </div>
       ) : (
         <form onSubmit={submit}>
@@ -1156,9 +1533,16 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
             </div>
           )}
           {phase !== "second" && (
-            <button type="submit" className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black active:scale-[0.99]">
-              {phase === "result" ? "Next" : "Check"}
-            </button>
+            <div className="mt-4 flex gap-2">
+              {allOk && (
+                <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5" title="Right, but you weren't sure: it will come back sooner">
+                  I guessed
+                </button>
+              )}
+              <button type="submit" className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black active:scale-[0.99]">
+                {phase === "result" ? "Next" : "Check"}
+              </button>
+            </div>
           )}
         </form>
       )}
@@ -1284,7 +1668,7 @@ function pickEarTrial(ear, prevKey) {
   return options[options.length - 1];
 }
 
-function EarDojo({ ear, setEar }) {
+function EarDojo({ ear, setEar, logActivity }) {
   const audio = getAudio();
   const [, force] = useState(0);
   useEffect(() => audio.onVoices(() => force((n) => n + 1)), [audio]);
@@ -1321,6 +1705,7 @@ function EarDojo({ ear, setEar }) {
     setPick(tone);
     const ok = tone === trial.word.tone;
     setSession((s) => ({ right: s.right + (ok ? 1 : 0), total: s.total + 1 }));
+    logActivity({ ear: 1 });
     setEar((prev) => {
       const tones = { ...prev.tones, [trial.word.tone]: [prev.tones[trial.word.tone][0] + (ok ? 1 : 0), prev.tones[trial.word.tone][1] + 1] };
       const confusions = { ...prev.confusions };
@@ -2237,6 +2622,26 @@ export default function SuvarnaKani() {
     return fixed;
   });
   const [ear, setEar] = useState(() => ({ ...emptyEar(), ...(initial.ear || {}) }));
+  const [log, setLog] = useState(initial.log || {});
+  const [dailyMinutes, setDailyMinutes] = useState(initial.dailyMinutes || 12);
+  const [onboarded, setOnboarded] = useState(!!initial.onboarded || !!(initial.srs && Object.keys(initial.srs).length));
+  const logActivity = useCallback((delta) => {
+    setLog((prev) => {
+      const key = todayKey();
+      const day = { ...(prev[key] || {}) };
+      Object.entries(delta).forEach(([k, v]) => { day[k] = (day[k] || 0) + v; });
+      const next = { ...prev, [key]: day };
+      // Keep 60 days of history.
+      Object.keys(next).sort().slice(0, -60).forEach((k) => delete next[k]);
+      return next;
+    });
+  }, []);
+  const finishOnboarding = (a) => {
+    if (a.mode) setMode(a.mode);
+    if (a.level === "reads") setSandbox(true);
+    if (a.minutes) setDailyMinutes(a.minutes);
+    setOnboarded(true);
+  };
   const [studio, setStudio] = useState(false);
   const [inspect, setInspect] = useState(null);
 
@@ -2263,11 +2668,21 @@ export default function SuvarnaKani() {
   }, []);
 
   useEffect(() => {
-    saveState({ tab, mode, font, sandbox, rate, muted, srs, ear });
-  }, [tab, mode, font, sandbox, rate, muted, srs, ear]);
+    saveState({ tab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded });
+  }, [tab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded]);
 
+  // Two taps instead of window.confirm, which embedded viewers block.
+  const [confirmReset, setConfirmReset] = useState(false);
   const resetProgress = () => {
-    if (window.confirm("Reset all SRS progress?")) setSrs({});
+    if (!confirmReset) {
+      setConfirmReset(true);
+      setTimeout(() => setConfirmReset(false), 4000);
+      return;
+    }
+    setSrs({});
+    setEar(emptyEar());
+    setLog({});
+    setConfirmReset(false);
   };
 
   return (
@@ -2306,15 +2721,21 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} />}
-        {tab === "ear" && <EarDojo ear={ear} setEar={setEar} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} />}
+        {tab === "ear" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
         {tab === "tracer" && <Tracer />}
         {tab === "reactor" && <Reactor mode={mode} font={font} />}
         {tab === "orbit" && <OrbitModule mode={mode} font={font} />}
         {tab === "slicer" && <Slicer mode={mode} font={font} />}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
           <span><Zap size={12} className="mr-1 inline text-amber-400" />Progress is saved on this device.</span>
-          <button onClick={resetProgress} className="underline hover:text-slate-300">Reset progress</button>
+          <span className="flex items-center gap-1">
+            Daily goal:
+            {[5, 12, 20].map((m) => (
+              <button key={m} onClick={() => setDailyMinutes(m)} className={`rounded-lg px-2 py-0.5 ${dailyMinutes === m ? "bg-amber-500 font-bold text-black" : "hover:text-slate-200"}`}>{m} min</button>
+            ))}
+          </span>
+          <button onClick={resetProgress} className={`underline ${confirmReset ? "font-bold text-rose-300" : "hover:text-slate-300"}`}>{confirmReset ? "Tap again to erase all progress" : "Reset progress"}</button>
         </footer>
       </main>
 
@@ -2329,6 +2750,7 @@ export default function SuvarnaKani() {
 
       <AudioStudio open={studio} onClose={() => setStudio(false)} rate={rate} setRate={setRate} muted={muted} setMuted={setMuted} />
       <Inspector item={inspect} mode={mode} font={font} srs={srs} onClose={() => setInspect(null)} />
+      {!onboarded && <Onboarding onDone={finishOnboarding} />}
     </div>
   );
 }
