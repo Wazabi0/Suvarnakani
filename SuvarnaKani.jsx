@@ -214,12 +214,95 @@ const CURRICULUM = [
     mnemonic: "Low class + dead short = High: love leaps up.", trap: "No tone mark, yet it is High: the dead-syllable rule does it.", bridge: "Thai ร ↔ Lao ຮ: rák ↔ hak." },
   { id: "v-post", level: 3, tier: "vocab", th: "ไปรษณีย์", lo: "ໄປສະນີ", thRoman: "prai-sà-nii", loRoman: "paisanii", meaning: "post office / mail", accept: ["praisanii", "praisani", "praisanee", "paisanii", "paisani", "postoffice", "post", "mail"], ttsTh: "ไปรษณีย์", ttsLo: "ไปสะนี", tone: ["mid", "low", "mid"],
     mnemonic: "Thai keeps its Sanskrit spelling and silences the last letter with ์. Lao spells what it says.", trap: "Silent killer: ย์ is not pronounced.", bridge: "Thai etymological spelling vs Lao phonetic spelling." },
+  // ---------------- Level 4: Dead Endings ----------------
+  { id: "f-k", level: 4, tier: "glyph", th: "ก ข ค", lo: "ກ", thRoman: "final -k", loRoman: "final -k", meaning: "-k final", accept: ["k", "-k", "kfinal", "finalk"], ttsTh: "ปาก นก", ttsLo: "ปาก นก", tone: [],
+    loop: "As finals these letters lose their aspiration and are not released: just close the throat on -k.", mnemonic: "Every k-family letter ends in the same swallowed -k.", trap: "ข and ค at the end of a word still sound -k, never kh.", bridge: "Lao writes every -k final with ກ." },
+  { id: "f-t", level: 4, tier: "glyph", th: "ด ต ส จ ช ท", lo: "ດ", thRoman: "final -t", loRoman: "final -t", meaning: "-t final", accept: ["t", "-t", "tfinal", "finalt"], ttsTh: "มีด รถ", ttsLo: "มีด ลด", tone: [],
+    loop: "About 15 Thai letters (ด ต ถ ท ธ จ ช ซ ส ศ ษ ฎ ฏ ฐ ฑ ฒ) all end as an unreleased -t.", mnemonic: "The great collapse: s, ch, j, th and d all stop dead as -t.", trap: "ส at the end is -t, not -s: รส is rót (taste).", bridge: "Lao writes every -t final with ດ: ประเทศ ↔ ປະເທດ." },
+  { id: "f-p", level: 4, tier: "glyph", th: "บ ป พ ฟ ภ", lo: "ບ", thRoman: "final -p", loRoman: "final -p", meaning: "-p final", accept: ["p", "-p", "pfinal", "finalp"], ttsTh: "สิบ ภาพ", ttsLo: "สิบ พาบ", tone: [],
+    loop: "Close the lips and hold: no puff of air.", mnemonic: "Lips shut like a temple door: -p.", trap: "ฟ at the end is -p, not -f: กอล์ฟ ends in -p.", bridge: "Lao writes every -p final with ບ: ภาพ ↔ ພາບ." },
+  { id: "f-n", level: 4, tier: "glyph", th: "น ร ล ญ ณ", lo: "ນ", thRoman: "final -n", loRoman: "final -n", meaning: "-n final", accept: ["n", "-n", "nfinal", "finaln"], ttsTh: "อาหาร", ttsLo: "อาหาน", tone: [],
+    loop: "A live ending: the syllable rings on.", mnemonic: "r, l and ny all melt into -n at the end.", trap: "Final ร is -n: อาหาร is aa-hǎan.", bridge: "Lao writes every -n final with ນ: อาหาร ↔ ອາຫານ." },
+  { id: "s-paak", level: 4, tier: "syllable", th: "ปาก", lo: "ປາກ", thRoman: "pàak", loRoman: "paak", meaning: "mouth", accept: ["paak", "pak", "mouth"], ttsTh: "ปาก", ttsLo: "ปาก", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "Middle class + -k stop = dead = Low.", trap: "Long vowel, but the -k final still kills it." },
+  { id: "s-luuk", level: 4, tier: "syllable", th: "ลูก", lo: "ລູກ", thRoman: "lûuk", loRoman: "luk", meaning: "child (offspring) / ball", accept: ["luuk", "luk", "child", "offspring", "ball"], ttsTh: "ลูก", ttsLo: "ลูก", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "Low class + dead + long vowel = Falling.", trap: "Compare นก (short, High) with ลูก (long, Falling)." },
+  { id: "s-nok", level: 4, tier: "syllable", th: "นก", lo: "ນົກ", thRoman: "nók", loRoman: "nok", meaning: "bird", accept: ["nok", "bird"], ttsTh: "นก", ttsLo: "นก", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "Low class + dead + short = High: a bird chirps up.", trap: "Thai hides the short o; Lao writes it as ◌ົ.", bridge: "นก ↔ ນົກ: the hidden o law." },
+  { id: "s-kap", level: 4, tier: "syllable", th: "กับ", lo: "ກັບ", thRoman: "kàp", loRoman: "kap", meaning: "with / and", accept: ["kap", "gap", "kab", "gab", "with", "and"], ttsTh: "กับ", ttsLo: "กับ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "Middle + dead = Low, short or long.", trap: "◌ั marks a short a before a final consonant." },
+  { id: "s-sip", level: 4, tier: "syllable", th: "สิบ", lo: "ສິບ", thRoman: "sìp", loRoman: "sip", meaning: "ten", accept: ["sip", "sib", "ten", "10"], ttsTh: "สิบ", ttsLo: "สิบ", tone: ["low"], parts: { cls: "high", live: false, long: false, mark: "none" },
+    mnemonic: "High class + dead = Low. The Naga's dead syllables fall flat.", trap: "High and Middle class give the same tone on dead syllables." },
+  { id: "s-miit", level: 4, tier: "syllable", th: "มีด", lo: "ມີດ", thRoman: "mîit", loRoman: "mit", meaning: "knife", accept: ["miit", "mit", "meet", "knife"], ttsTh: "มีด", ttsLo: "มีด", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "Low + dead + long = Falling: the knife drops.", trap: "No mark, but the tone is Falling because of the -t stop." },
+  { id: "s-phaap", level: 4, tier: "syllable", th: "ภาพ", lo: "ພາບ", thRoman: "phâap", loRoman: "phap", meaning: "picture", accept: ["phaap", "phap", "paap", "picture", "image"], ttsTh: "ภาพ", ttsLo: "พาบ", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "ภ (low) + long + -p stop = Falling.", trap: "Final พ sounds -p.", bridge: "Lao writes the -p final with ບ and ภ as ພ." },
+  { id: "v-rot", level: 4, tier: "vocab", th: "รถ", lo: "ລົດ", thRoman: "rót", loRoman: "lot", meaning: "car / vehicle", accept: ["rot", "rod", "lot", "car", "vehicle"], ttsTh: "รถ", ttsLo: "ลด", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "Low + dead short = High: the car zooms.", trap: "Final ถ is -t, not th.", bridge: "Law breaker: ร → ລ here, not ຮ." },
+  { id: "v-ahaan", level: 4, tier: "vocab", th: "อาหาร", lo: "ອາຫານ", thRoman: "aa-hǎan", loRoman: "ahaan", meaning: "food", accept: ["aahaan", "ahaan", "ahan", "food"], ttsTh: "อาหาร", ttsLo: "อาหาน", tone: ["mid", "rising"],
+    mnemonic: "Food comes with a rising h.", trap: "Final ร is -n.", bridge: "Lao spells the -n with ນ." },
+  { id: "v-prathet", level: 4, tier: "vocab", th: "ประเทศ", lo: "ປະເທດ", thRoman: "prà-thêet", loRoman: "pathet", meaning: "country", accept: ["prathet", "prathed", "pathet", "country", "nation"], ttsTh: "ประเทศ", ttsLo: "ปะเทด", tone: ["low", "falling"],
+    mnemonic: "ประเทศไทย, ປະເທດລາວ: the country word is shared.", trap: "Final ศ is -t.", bridge: "Lao drops the r cluster and writes -t as ດ." },
+  { id: "v-chook", level: 4, tier: "vocab", th: "โชค", lo: "ໂຊກ", thRoman: "chôok", loRoman: "xok", meaning: "luck", accept: ["chok", "chook", "xok", "luck"], ttsTh: "โชค", ttsLo: "โซก", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "โชคดี! Good luck falls on you.", trap: "Final ค is -k.", bridge: "ช ↔ ຊ again." },
+
+  // ---------------- Level 5: Vowel Universe ----------------
+  { id: "s-te", level: 5, tier: "syllable", th: "เตะ", lo: "ເຕະ", thRoman: "tè", loRoman: "te", meaning: "kick", accept: ["te", "teh", "kick"], ttsTh: "เตะ", ttsLo: "เตะ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "เ◌ะ wraps the consonant: short e, cut off by ะ.", trap: "เ◌ alone is long ee; adding ะ makes it short and dead." },
+  { id: "s-kae", level: 5, tier: "syllable", th: "แกะ", lo: "ແກະ", thRoman: "kɛ̀", loRoman: "kae", meaning: "sheep", accept: ["kae", "gae", "ke", "sheep"], ttsTh: "แกะ", ttsLo: "แกะ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "แ◌ะ: open-mouth short ɛ, chopped short.", trap: "แ (ɛ, as in 'bad') vs เ (e, as in 'bed')." },
+  { id: "s-to", level: 5, tier: "syllable", th: "โต๊ะ", lo: "ໂຕະ", thRoman: "tó", loRoman: "to", meaning: "table", accept: ["to", "toh", "table"], ttsTh: "โต๊ะ", ttsLo: "โตะ", tone: ["high"], parts: { cls: "mid", live: false, long: false, mark: "tri" },
+    mnemonic: "Mai tri on a monk: High. One of the few native words that needs it.", trap: "Mai tri only works on Middle-class consonants.", bridge: "Lao writes ໂຕະ with no mark; its tone rules differ." },
+  { id: "s-ngoen", level: 5, tier: "syllable", th: "เงิน", lo: "ເງິນ", thRoman: "ngən", loRoman: "ngoen", meaning: "money / silver", accept: ["ngoen", "ngern", "ngen", "money", "silver"], ttsTh: "เงิน", ttsLo: "เงิน", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ิ◌ is the 'uh' vowel (ə) with a final. Money hums at Mid.", trap: "เ◌อ when open, เ◌ิ◌ when closed: same vowel, two spellings." },
+  { id: "s-suea", level: 5, tier: "syllable", th: "เสือ", lo: "ເສືອ", thRoman: "sʉ̌a", loRoman: "suea", meaning: "tiger", accept: ["suea", "sua", "seua", "tiger"], ttsTh: "เสือ", ttsLo: "เสือ", tone: ["rising"], parts: { cls: "high", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ือ surrounds the consonant on three sides, like a tiger circling.", trap: "เ◌ือ (ʉa) vs เ◌ีย (ia) vs ◌ัว (ua): the three diphthongs." },
+  { id: "s-bua", level: 5, tier: "syllable", th: "บัว", lo: "ບົວ", thRoman: "bua", loRoman: "bua", meaning: "lotus", accept: ["bua", "lotus"], ttsTh: "บัว", ttsLo: "บัว", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "The lotus opens: ◌ัว.", trap: "With a final, ◌ัว drops its ◌ั: ขวด (bottle), not ขัวด.", bridge: "Lao writes -ua as ◌ົວ." },
+  { id: "s-jam", level: 5, tier: "syllable", th: "จำ", lo: "ຈຳ", thRoman: "jam", loRoman: "cham", meaning: "remember", accept: ["jam", "cham", "remember"], ttsTh: "จำ", ttsLo: "จำ", tone: ["mid"], parts: { cls: "mid", live: true, long: false, mark: "none" },
+    mnemonic: "◌ำ packs a short a and an m into one sign: live, so Mid.", trap: "◌ำ is live even though the vowel is short." },
+  { id: "s-kai", level: 5, tier: "syllable", th: "ไก่", lo: "ໄກ່", thRoman: "kài", loRoman: "kai", meaning: "chicken", accept: ["kai", "gai", "chicken"], ttsTh: "ไก่", ttsLo: "ไก่", tone: ["low"], parts: { cls: "mid", live: true, long: false, mark: "ek" },
+    mnemonic: "The chicken from Level 1's ก, now with its tone mark: Low.", trap: "ไก่ (chicken, low) vs ไข่ (egg, low) vs ใกล้ (near, falling)." },
+  { id: "s-luem", level: 5, tier: "syllable", th: "ลืม", lo: "ລືມ", thRoman: "lʉʉm", loRoman: "luem", meaning: "forget", accept: ["luem", "leum", "lum", "forget"], ttsTh: "ลืม", ttsLo: "ลืม", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "◌ื is the unrounded ʉʉ: say 'oo' with a smile.", trap: "◌ึ short vs ◌ื long; open ◌ื needs a silent อ (มือ)." },
+  { id: "v-dek", level: 5, tier: "vocab", th: "เด็ก", lo: "ເດັກ", thRoman: "dèk", loRoman: "dek", meaning: "child", accept: ["dek", "child", "kid"], ttsTh: "เด็ก", ttsLo: "เด็ก", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "The little ◌็ (mai taikhu) shortens the e.", trap: "◌็ is not a tone mark; it only shortens the vowel.", bridge: "Lao uses ◌ັ for the same job: ເດັກ." },
+  { id: "v-du", level: 5, tier: "vocab", th: "ดุ", lo: "ດຸ", thRoman: "dù", loRoman: "du", meaning: "fierce / to scold", accept: ["du", "fierce", "scold", "strict"], ttsTh: "ดุ", ttsLo: "ดุ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "Short u, open: dead, so Middle class gives Low.", trap: "ดุ (fierce) vs ดู (look): one foot or two." },
+
+  // ---------------- Level 6: Clusters and Leaders ----------------
+  { id: "v-klap", level: 6, tier: "vocab", th: "กลับ", lo: "ກັບ", thRoman: "klàp", loRoman: "kap", meaning: "return / go back", accept: ["klap", "glap", "kap", "return", "goback", "back"], ttsTh: "กลับ", ttsLo: "กับ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "True cluster kl-: both sounds spoken, the first sets the class.", trap: "Bangkok speech often drops the l: kàp.", bridge: "Lao drops the cluster in writing too: ກັບ." },
+  { id: "v-khwaa", level: 6, tier: "vocab", th: "ขวา", lo: "ຂວາ", thRoman: "khwǎa", loRoman: "khwa", meaning: "right (side)", accept: ["khwaa", "khwa", "kwa", "right"], ttsTh: "ขวา", ttsLo: "ขวา", tone: ["rising"], parts: { cls: "high", live: true, long: true, mark: "none" },
+    mnemonic: "kh + w cluster: ข leads, so High class rises.", trap: "ขวา (right) vs ซ้าย (left)." },
+  { id: "v-khwaam", level: 6, tier: "vocab", th: "ความ", lo: "ຄວາມ", thRoman: "khwaam", loRoman: "khwam", meaning: "-ness (makes nouns)", accept: ["khwaam", "khwam", "kwam", "ness", "meaning"], ttsTh: "ความ", ttsLo: "ความ", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "ความ turns words into nouns: ความรัก = love (the noun).", trap: "Same kw- cluster as ขวา, but ค is Low class." },
+  { id: "v-saai", level: 6, tier: "vocab", th: "ทราย", lo: "ຊາຍ", thRoman: "saai", loRoman: "xai", meaning: "sand", accept: ["saai", "sai", "xai", "sand"], ttsTh: "ทราย", ttsLo: "ซาย", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "False cluster: ทร is read s, like ซ. Low class still.", trap: "ทร = s in native words; in loans it can be tr (ทรัมเป็ต).", bridge: "Lao spells it as it sounds: ຊາຍ." },
+  { id: "v-saang", level: 6, tier: "vocab", th: "สร้าง", lo: "ສ້າງ", thRoman: "sâang", loRoman: "sang", meaning: "build", accept: ["saang", "sang", "build", "create"], ttsTh: "สร้าง", ttsLo: "ส้าง", tone: ["falling"], parts: { cls: "high", live: true, long: true, mark: "tho" },
+    mnemonic: "False cluster สร: the ร is silent. High + Mai Tho = Falling.", trap: "Read สร as s, not sr.", bridge: "Lao drops the silent ร: ສ້າງ." },
+  { id: "v-jing", level: 6, tier: "vocab", th: "จริง", lo: "ແທ້", thRoman: "jing", loRoman: "thae", meaning: "true / really", accept: ["jing", "ching", "thae", "true", "really"], ttsTh: "จริง", ttsLo: "แท้", tone: ["mid"], parts: { cls: "mid", live: true, long: false, mark: "none" },
+    mnemonic: "False cluster จร: the ร is silent. จริงๆ = really really.", trap: "จร = j; the ร is not spoken.", bridge: "Lao uses a different word: ແທ້." },
+  { id: "v-yaak", level: 6, tier: "vocab", th: "อยาก", lo: "ຢາກ", thRoman: "yàak", loRoman: "yak", meaning: "want to", accept: ["yaak", "yak", "want"], ttsTh: "อยาก", ttsLo: "หยาก", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "Silent อ leads ย into Middle class: dead → Low.", trap: "Only four words use อ นำ: อย่า อยู่ อย่าง อยาก.", bridge: "Lao has a Middle-class y letter, ຢ, so it needs no silent leader." },
+  { id: "v-yuu", level: 6, tier: "vocab", th: "อยู่", lo: "ຢູ່", thRoman: "yùu", loRoman: "yu", meaning: "be at / live (somewhere)", accept: ["yuu", "yu", "beat", "live", "stay"], ttsTh: "อยู่", ttsLo: "หยู่", tone: ["low"], parts: { cls: "mid", live: true, long: true, mark: "ek" },
+    mnemonic: "อ leads ย to Middle class; Mai Ek → Low.", trap: "Without the อ, ยู่ would be Low class and Falling.", bridge: "Thai อย ↔ Lao ຢ." },
+  { id: "v-talaat", level: 6, tier: "vocab", th: "ตลาด", lo: "ຕະຫຼາດ", thRoman: "tà-làat", loRoman: "talat", meaning: "market", accept: ["talaat", "talat", "dalat", "market"], ttsTh: "ตลาด", ttsLo: "ตะหลาด", tone: ["low", "low"],
+    mnemonic: "Leading consonant: ต lends a hidden 'a' and its Middle class to ลาด.", trap: "Not a cluster: tà-làat, two syllables.", bridge: "Lao writes the hidden a (ຕະ) and uses ຫຼ to make the l high." },
+  { id: "v-sanaam", level: 6, tier: "vocab", th: "สนาม", lo: "ສະໜາມ", thRoman: "sà-nǎam", loRoman: "sanam", meaning: "field / yard", accept: ["sanaam", "sanam", "field", "yard"], ttsTh: "สนาม", ttsLo: "สะหนาม", tone: ["low", "rising"],
+    mnemonic: "High-class ส leads น: นาม rises as if written หนาม.", trap: "The second syllable takes the leader's class.", bridge: "Lao writes it out: ສະ + ໜາມ." },
+  { id: "v-khanom", level: 6, tier: "vocab", th: "ขนม", lo: "ເຂົ້າໜົມ", thRoman: "khà-nǒm", loRoman: "khao nom", meaning: "snack / dessert", accept: ["khanom", "kanom", "khaonom", "snack", "dessert", "sweets"], ttsTh: "ขนม", ttsLo: "เข้าหนม", tone: ["low", "rising"],
+    mnemonic: "ข leads นม: the sweet rises (khà-nǒm).", trap: "Not ขน + ม: it's khà-nǒm.", bridge: "Lao says ເຂົ້າໜົມ and writes the ໜ explicitly." },
 ];
 
+// Each course has its own colour world (see the roadmap's course designs).
 const LEVELS = [
-  { n: 1, title: "The Golden Monks", sub: "Middle class · first syllables" },
-  { n: 2, title: "Sky Nagas vs River Spirits", sub: "High vs Low class · tone marks" },
-  { n: 3, title: "The Mekong Bridge", sub: "ห นำ · Thai ↔ Lao cognates" },
+  { n: 1, title: "The Golden Monks", sub: "Middle class · first syllables", accent: "#F5A524", bg: "linear-gradient(160deg, #2a1d0a, transparent 70%)" },
+  { n: 2, title: "Sky Nagas vs River Spirits", sub: "High vs Low class · tone marks", accent: "#9FE7FF", bg: "linear-gradient(180deg, #0b2a3a99 0%, #0b2a3a55 48%, #16113a77 52%, #0d0a2455 100%)" },
+  { n: 3, title: "The Mekong Bridge", sub: "ห นำ · Thai ↔ Lao cognates", accent: "#7FD1B0", bg: "radial-gradient(ellipse at 20% 100%, #3b6b5a44, transparent 60%), linear-gradient(160deg, #1d2a24, transparent 70%)" },
+  { n: 4, title: "Dead Endings", sub: "Final consonants · dead syllables", accent: "#FF8A6E", bg: "linear-gradient(160deg, #2a0f12, transparent 70%)" },
+  { n: 5, title: "Vowel Universe", sub: "Short, long and wrap-around vowels", accent: "#FFD166", bg: "radial-gradient(circle at 80% 30%, #FFD16618, transparent 55%), linear-gradient(160deg, #141a2e, transparent 70%)" },
+  { n: 6, title: "Clusters and Leaders", sub: "True and false clusters · leading consonants", accent: "#5EEAD4", bg: "linear-gradient(160deg, #10222a, transparent 70%)" },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -602,9 +685,9 @@ function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
   );
 }
 
-function Card({ children, className = "", glow }) {
+function Card({ children, className = "", glow, style }) {
   return (
-    <div className={`rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={glow ? { boxShadow: `0 0 40px ${glow}1f` } : undefined}>
+    <div className={`rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={{ ...(glow ? { boxShadow: `0 0 40px ${glow}1f` } : {}), ...style }}>
       {children}
     </div>
   );
@@ -1118,10 +1201,10 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         const unlocked = unlockedLevels.has(lvl.n);
         const done = items.filter((i) => stageOf(i.id) >= 2).length;
         return (
-          <Card key={lvl.n} className={`p-4 sm:p-5 ${unlocked ? "" : "opacity-60"}`}>
+          <Card key={lvl.n} className={`p-4 sm:p-5 ${unlocked ? "" : "opacity-60"}`} style={{ backgroundImage: lvl.bg }}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest" style={{ color: lvl.accent }}>
                   {unlocked ? <Unlock size={13} /> : <Lock size={13} />} Level {lvl.n}
                 </div>
                 <h3 className="text-base font-bold text-white">{lvl.title}</h3>
@@ -1302,7 +1385,7 @@ function diagnoseClass(item, picked) {
 
 /** Which second question an item gets after its reading: tone or class. */
 function secondPrompt(item) {
-  if (item.tier === "glyph") return "class";
+  if (item.tier === "glyph") return item.cls ? "class" : null;
   if (item.tone.length === 1) return "tone";
   return null;
 }
