@@ -345,6 +345,91 @@ const CURRICULUM = [
     mnemonic: "Middle + Mai Tho = Falling: ได้! Deal.", trap: "ได้ไหม? Can (you)? ได้ = yes; ไม่ได้ = no.", bridge: "Same word and spelling idea in Lao: ໄດ້." },
   { id: "p-you", level: 8, tier: "vocab", th: "คุณ", lo: "ທ່ານ", thRoman: "khun", loRoman: "than", meaning: "you (polite) / Mr, Ms", accept: ["khun", "kun", "you", "mr", "ms", "mrs"], ttsTh: "คุณ", ttsLo: "ท่าน", tone: ["mid"], parts: { cls: "low", live: true, long: false, mark: "none" },
     mnemonic: "Low class + live = Mid: neutral and polite.", trap: "Also a title before first names: คุณจอช.", bridge: "Lao uses ທ່ານ (than) formally and ເຈົ້າ (jao) everyday." },
+  // ---------------- Missing letters, added to the levels they belong in ----------------
+  // Level 2: the high/low partners not covered yet.
+  { id: "g-tho-thung", level: 2, tier: "glyph", th: "ถ", lo: "ຖ", thRoman: "th · thǎw thǔng", loRoman: "th · tho thong", meaning: "th sound · bag (ถุง)", accept: ["th", "t", "tho", "thor", "thaw", "bag"], ttsTh: "ถอ ถุง", ttsLo: "ถอ ถง", cls: "high", tone: ["rising"],
+    loop: "Like ก with a loop at its bottom-left foot. Start at the foot loop, climb the left wall, arch over and drop the right leg.", mnemonic: "A Sky Naga with a bag (ถุง) tied to its foot. High class, so its name rises.", street: "Street fonts shrink the foot loop to a hook, but it is still what separates ถ from ก.", trap: "ถ vs ก: only ถ has the foot loop. ถ (high) and ท (low) both say th.", bridge: "Lao ຖ, also high class." },
+  { id: "g-fo-fa", level: 2, tier: "glyph", th: "ฝ", lo: "ຝ", thRoman: "f · fǎw fǎa", loRoman: "f · fo fon", meaning: "f sound · lid (ฝา)", accept: ["f", "fo", "for", "faw", "lid"], ttsTh: "ฝอ ฝา", ttsLo: "ฝอ ฝน", cls: "high", tone: ["rising"],
+    loop: "The body of ผ plus a tall tail on the right. Start at the head loop.", mnemonic: "ผ grows a tall antenna to hold up the lid (ฝา).", street: "The tall right tail survives in every street font.", trap: "ฝ vs ฟ: both have the tall tail. ฝ has the low inner peak of ผ, ฟ the full-height peak of พ.", bridge: "Lao ຝ, high class: ຝົນ (rain)." },
+  { id: "g-so-so", level: 2, tier: "glyph", th: "ซ", lo: "ຊ", thRoman: "s · saw sôo", loRoman: "s · so sang", meaning: "s sound · chain (โซ่)", accept: ["s", "so", "sor", "saw", "chain"], ttsTh: "ซอ โซ่", ttsLo: "ซอ ซ้าง", cls: "low", tone: ["mid"],
+    loop: "ช with a second notch on the left shoulder. Start at the head loop.", mnemonic: "A River Spirit drags a chain (โซ่): the low-class s, partner of high ส.", street: "Notches on both shoulders mark ซ.", trap: "ซ vs ช: ซ has notches on both shoulders. ซ (low) and ส (high) share the s sound but not the tone rules.", bridge: "Lao ຊ covers both Thai ช and ซ, and is said s in Vientiane." },
+  { id: "g-ho-nokhuuk", level: 2, tier: "glyph", th: "ฮ", lo: "ຮ", thRoman: "h · haw nók-hûuk", loRoman: "h · ho huean", meaning: "h sound · owl (นกฮูก)", accept: ["h", "ho", "hor", "haw", "owl"], ttsTh: "ฮอ นกฮูก", ttsLo: "ฮอ เฮือน", cls: "low", tone: ["mid"],
+    loop: "Like อ with a notch in the top right. Start at the head loop inside.", mnemonic: "The owl (นกฮูก) is the River Spirits' h: low class, partner of high ห.", street: "The notch at the top is what separates ฮ from อ.", trap: "ฮ vs อ: look for the notch. ห (high) also leads other letters; ฮ never does.", bridge: "Lao ຮ is far more common: native Thai ร often becomes ຮ (รัก → ຮັກ)." },
+  { id: "g-tho-thahaan", level: 2, tier: "glyph", th: "ท", lo: "ທ", thRoman: "th · thaw thá-hǎan", loRoman: "th · tho thung", meaning: "th sound · soldier (ทหาร)", accept: ["th", "t", "tho", "thor", "thaw", "soldier"], ttsTh: "ทอ ทหาร", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Head loop top-left, down the left wall, up to a notch in the middle, down again and up the right wall.", mnemonic: "A soldier (ทหาร) of the River Spirits: the low-class th, partner of high ถ.", street: "The middle notch is the key; without it the letter reads as ห.", trap: "ท vs ห: ห's right side flicks out at the bottom; ท's middle dips. ท (low) and ถ (high) both say th.", bridge: "Lao ທ: ທາງ (way)." },
+  { id: "g-fo-fan", level: 2, tier: "glyph", th: "ฟ", lo: "ຟ", thRoman: "f · faw fan", loRoman: "f · fo fai", meaning: "f sound · tooth (ฟัน)", accept: ["f", "fo", "for", "faw", "tooth", "teeth"], ttsTh: "ฟอ ฟัน", ttsLo: "ฟอ ไฟ", cls: "low", tone: ["mid"],
+    loop: "The body of พ plus a tall tail on the right. Start at the head loop.", mnemonic: "พ grows a tall tooth (ฟัน): the low-class f.", street: "The tall right tail survives in street fonts.", trap: "ฟ vs ฝ: ฟ has the full-height inner peak of พ; ฝ has the low peak of ผ.", bridge: "Lao ຟ: ໄຟ (fire)." },
+  // Level 3: the sonorants, nearly identical across the Mekong.
+  { id: "g-ngo", level: 3, tier: "glyph", th: "ง", lo: "ງ", thRoman: "ng · ngaw nguu", loRoman: "ng · ngo ngua", meaning: "ng sound · snake (งู)", accept: ["ng", "ngo", "ngor", "ngaw", "snake"], ttsTh: "งอ งู", ttsLo: "งอ งัว", cls: "low", tone: ["mid"],
+    loop: "Start at the small head loop at the bottom left and sweep up and round to the right.", mnemonic: "A coiled snake (งู) ready to strike.", street: "Street fonts reduce it to a single hook.", trap: "ง vs จ: จ curls back over its own body; ง does not. ng can start a word: งู (nguu).", bridge: "Lao ງ looks almost the same: ງູ (snake), ງົວ (cow)." },
+  { id: "g-yo", level: 3, tier: "glyph", th: "ย", lo: "ຍ", thRoman: "y · yaw yák", loRoman: "ny · nyo nyung", meaning: "y sound · giant (ยักษ์)", accept: ["y", "yo", "yor", "yaw", "giant"], ttsTh: "ยอ ยักษ์", ttsLo: "ยอ ยุง", cls: "low", tone: ["mid"],
+    loop: "Head loop top-left, down the left wall, round the bottom and up the right wall, finishing with a small curl on top.", mnemonic: "A giant (ยักษ์) guarding the temple gate.", street: "Look for the little curl at the top right.", trap: "ย vs บ: บ's right wall goes straight up with no curl. ย also writes vowels: เ◌ีย, ◌ัย.", bridge: "Lao ຍ is nasal ny (ຍຸງ, mosquito) and stands for both Thai ย and ญ; plain y in Lao is ຢ." },
+  { id: "g-wo", level: 3, tier: "glyph", th: "ว", lo: "ວ", thRoman: "w · waw wɛ̌ɛn", loRoman: "w · wo wi", meaning: "w sound · ring (แหวน)", accept: ["w", "wo", "wor", "waw", "ring"], ttsTh: "วอ แหวน", ttsLo: "วอ วี", cls: "low", tone: ["mid"],
+    loop: "One hooked stroke: start at the head loop at the lower right and curve up and over to the left.", mnemonic: "A ring (แหวน) slipping off a finger.", street: "Loopless ว is a plain hook, easy to misread as ร.", trap: "ว vs ร: ร has a notch on its top left; ว is smooth. ว also writes the vowel ◌ัว and the final -w (ขาว).", bridge: "Lao ວ does the same three jobs: consonant, vowel ◌ົວ, final -w." },
+  { id: "g-yo-ying", level: 3, tier: "glyph", th: "ญ", lo: "ຍ", thRoman: "y · yaw yǐng", loRoman: "ny · nyo nyung", meaning: "y sound · woman (หญิง)", accept: ["y", "yo", "yor", "yaw", "woman"], ttsTh: "ญอ หญิง", ttsLo: "ยอ ยุง", cls: "low", tone: ["mid"],
+    loop: "Like ย with an extra tail tucked underneath. Start at the head loop.", mnemonic: "A woman (หญิง) with a long skirt trailing below.", street: "Seen in ใหญ่ (big) and ผู้หญิง (women) on every toilet door.", trap: "ญ vs ย: only ญ has the tail underneath. As a final it says -n.", bridge: "Lao ຍ (ny) covers both ย and ญ: ໃຫຍ່ (big)." },
+  // Level 4: Sanskrit letters that end so many words in -t or -s.
+  { id: "g-so-sala", level: 4, tier: "glyph", th: "ศ", lo: "ສ", thRoman: "s · sǎw sǎa-laa", loRoman: "s · so suea", meaning: "s sound · pavilion (ศาลา)", accept: ["s", "so", "sor", "saw", "pavilion"], ttsTh: "ศอ ศาลา", ttsLo: "สอ เสือ", cls: "high", tone: ["rising"],
+    loop: "Start at the head loop and finish with the small flag on the right shoulder.", mnemonic: "A pavilion (ศาลา) flying a little flag.", street: "The flag on the right shoulder is the tell.", trap: "ศ, ษ and ส all say s and are all high class. As finals ศ and ษ say -t: ประเทศ (prà-thêet).", bridge: "Lao merged all three into ສ: ປະເທດ." },
+  { id: "g-so-ruesi", level: 4, tier: "glyph", th: "ษ", lo: "ສ", thRoman: "s · sǎw rʉʉ-sǐi", loRoman: "s · so suea", meaning: "s sound · hermit (ฤๅษี)", accept: ["s", "so", "sor", "saw", "hermit"], ttsTh: "สอ ฤๅษี", ttsLo: "สอ เสือ", cls: "high", tone: ["rising"],
+    loop: "Start at the head loop; learn it by its silhouette beside ศ and ส.", mnemonic: "A hermit (ฤๅษี) meditating in Sanskrit words such as ภาษา (language).", street: "Mostly met in formal words: ภาษา, ษ in กษัตริย์ (king).", trap: "Final ษ says -t: โทษ (thôot).", bridge: "Lao writes ສ: ພາສາ." },
+  { id: "g-tho-thong", level: 4, tier: "glyph", th: "ธ", lo: "ທ", thRoman: "th · thaw thoŋ", loRoman: "th · tho thung", meaning: "th sound · flag (ธง)", accept: ["th", "t", "tho", "thor", "thaw", "flag"], ttsTh: "ธอ ธง", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the small bump at the top left is the flag on its pole.", mnemonic: "A flag (ธง) on a pole.", street: "Keep an eye on the top-left bump; without it the letter reads like ร.", trap: "Final ธ says -t: พุทธ (phút). ธ, ท and ฑ, ฒ are all low-class th.", bridge: "Lao writes ທ: ທຸງ (flag)." },
+  { id: "g-cho-ching", level: 4, tier: "glyph", th: "ฉ", lo: "ສ", thRoman: "ch · chǎw chìng", loRoman: "s · so suea", meaning: "ch sound · cymbals (ฉิ่ง)", accept: ["ch", "cho", "chor", "chaw", "cymbals"], ttsTh: "ฉอ ฉิ่ง", ttsLo: "สอ เสือ", cls: "high", tone: ["rising"],
+    loop: "Curl like จ from the head loop, then add the small tail at the bottom right.", mnemonic: "Cymbals (ฉิ่ง) crash high: the high-class ch, partner of low ช.", street: "The extra tail is what separates ฉ from จ.", trap: "ฉ vs จ: ฉ has the tail. ฉ (high) and ช (low) both say ch.", bridge: "Lao has no ฉ; those Thai words use ສ or ຊ in Lao." },
+  { id: "g-pho-samphao", level: 4, tier: "glyph", th: "ภ", lo: "ພ", thRoman: "ph · phaw sǎm-phao", loRoman: "ph · pho phu", meaning: "ph sound · junk boat (สำเภา)", accept: ["ph", "p", "pho", "phor", "phaw", "boat", "junk"], ttsTh: "ภอ สำเภา", ttsLo: "พอ พู", cls: "low", tone: ["mid"],
+    loop: "Like ถ but with the foot loop on the right. Start at the head loop.", mnemonic: "A junk boat (สำเภา) with its anchor hanging on the right.", street: "In ภาษา (language) and ภาพ (picture).", trap: "ภ vs ถ: the loop at the foot is on opposite sides. As a final ภ says -p.", bridge: "Lao writes ພ: ພາສາ." },
+  { id: "g-no-nen", level: 4, tier: "glyph", th: "ณ", lo: "ນ", thRoman: "n · naw neen", loRoman: "n · no nok", meaning: "n sound · novice monk (เณร)", accept: ["n", "no", "nor", "naw", "novice"], ttsTh: "ณอ เณร", ttsLo: "นอ นก", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the extra loop on the right is the novice's robe.", mnemonic: "A novice monk (เณร), as in คุณ.", street: "Mostly in Sanskrit loans and in คุณ.", trap: "Final ณ says -n: คุณ (khun).", bridge: "Lao writes ນ: ຄຸນ." },
+  // Level 5: the vowel patterns that were missing.
+  { id: "s-lung", level: 5, tier: "syllable", th: "ลุง", lo: "ລຸງ", thRoman: "luŋ", loRoman: "lung", meaning: "uncle (parent's older brother)", accept: ["lung", "loong", "uncle"], ttsTh: "ลุง", ttsLo: "ลุง", tone: ["mid"], parts: { cls: "low", live: true, long: false, mark: "none" },
+    mnemonic: "◌ุ hangs below the letter: a short u.", trap: "◌ุ (short u) vs ◌ู (long uu): ◌ู has the extra tail." },
+  { id: "s-thueng", level: 5, tier: "syllable", th: "ถึง", lo: "ເຖິງ", thRoman: "thʉ̌ŋ", loRoman: "thueng", meaning: "arrive / reach", accept: ["thueng", "thung", "tueng", "teung", "arrive", "reach"], ttsTh: "ถึง", ttsLo: "ถึง", tone: ["rising"], parts: { cls: "high", live: true, long: false, mark: "none" },
+    mnemonic: "◌ึ is ◌ิ with a tail: short ue, an unrounded u.", trap: "◌ึ (short) vs ◌ื (long, with two ticks).", bridge: "Lao writes this vowel ເ◌ິ: ເຖິງ." },
+  { id: "s-rian", level: 5, tier: "syllable", th: "เรียน", lo: "ຮຽນ", thRoman: "rian", loRoman: "hian", meaning: "study / learn", accept: ["rian", "rien", "lian", "study", "learn"], ttsTh: "เรียน", ttsLo: "เฮียน", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ีย wraps three ways: in front, on top and behind.", trap: "The ย here belongs to the vowel; there is no y sound.", bridge: "Lao squeezes เ◌ีย into ◌ຽ, and Thai ร becomes ຮ: ຮຽນ." },
+  { id: "s-khao", level: 5, tier: "syllable", th: "เขา", lo: "ເຂົາ", thRoman: "khǎw", loRoman: "khao", meaning: "he / she / they (also: horn)", accept: ["khao", "kao", "khaw", "he", "she", "they", "horn"], ttsTh: "เขา", ttsLo: "เขา", tone: ["rising"], parts: { cls: "high", live: true, long: false, mark: "none" },
+    mnemonic: "เ◌า: front and behind together make -ao.", trap: "เขา (he, rising) vs เข้า (enter, falling): one mark apart.", bridge: "Lao ເຂົາ adds ◌ົ inside the frame." },
+  { id: "s-kho", level: 5, tier: "syllable", th: "ขอ", lo: "ຂໍ", thRoman: "khɔ̌ɔ", loRoman: "kho", meaning: "ask for / may I", accept: ["kho", "khaw", "kor", "ko", "askfor", "please", "mayi"], ttsTh: "ขอ", ttsLo: "ขอ", tone: ["rising"], parts: { cls: "high", live: true, long: true, mark: "none" },
+    mnemonic: "The open long ɔɔ vowel is written with อ after the consonant.", trap: "Here อ is a vowel, not a consonant.", bridge: "Lao writes this vowel as ◌ໍ on top: ຂໍ." },
+  { id: "s-the", level: 5, tier: "syllable", th: "เท", lo: "ເທ", thRoman: "thee", loRoman: "the", meaning: "pour", accept: ["thee", "the", "tay", "pour"], ttsTh: "เท", ttsLo: "เท", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ on its own is long ee.", trap: "Add ะ and it turns short and dead: เตะ." },
+  { id: "s-mae", level: 5, tier: "syllable", th: "แม่", lo: "ແມ່", thRoman: "mɛ̂ɛ", loRoman: "mae", meaning: "mother", accept: ["mae", "maer", "mother", "mom"], ttsTh: "แม่", ttsLo: "แม่", tone: ["falling"], parts: { cls: "low", live: true, long: true, mark: "ek" },
+    mnemonic: "แ◌ is long ɛɛ; low class with Mai Ek falls.", trap: "แม่ (mother, falling) vs แม้ (even if, high)." },
+  { id: "s-too", level: 5, tier: "syllable", th: "โต", lo: "ໂຕ", thRoman: "too", loRoman: "to", meaning: "big / grow up", accept: ["too", "to", "toh", "big", "grow"], ttsTh: "โต", ttsLo: "โต", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "โ◌ is long oo.", trap: "Add ะ for the short version: โต๊ะ.", bridge: "Lao ໂຕ is spelled the same but means 'body / self' and counts animals." },
+  // Level 7: the rest of the digits.
+  { id: "n-6", level: 7, tier: "glyph", th: "๖", lo: "໖", thRoman: "hòk · 6", loRoman: "hok · 6", meaning: "6 (six)", accept: ["6", "six", "hok"], ttsTh: "หก", ttsLo: "หก", tone: ["low"],
+    mnemonic: "A curl with a tail kicked out to the left.", trap: "๖ (6) vs ๑ (1): the tail goes the other way.", street: "On menus: ๖๐ บาท." },
+  { id: "n-7", level: 7, tier: "glyph", th: "๗", lo: "໗", thRoman: "jèt · 7", loRoman: "chet · 7", meaning: "7 (seven)", accept: ["7", "seven", "jet", "chet"], ttsTh: "เจ็ด", ttsLo: "เจ็ด", tone: ["low"],
+    mnemonic: "๑ with a tall stem: 7 stands up.", trap: "๗ (7) vs ๑ (1): only 7 has the tall stem." },
+  { id: "n-8", level: 7, tier: "glyph", th: "๘", lo: "໘", thRoman: "pɛ̀ɛt · 8", loRoman: "paet · 8", meaning: "8 (eight)", accept: ["8", "eight", "paet", "pet"], ttsTh: "แปด", ttsLo: "แปด", tone: ["low"],
+    mnemonic: "A loop with a raised flag, like a fancy 8.", trap: "๘ (8) vs ๙ (9): 9's tail swings over the top.", street: "On menus: ๘๐ บาท." },
+  { id: "n-9", level: 7, tier: "glyph", th: "๙", lo: "໙", thRoman: "kâw · 9", loRoman: "kao · 9", meaning: "9 (nine)", accept: ["9", "nine", "kao", "gao"], ttsTh: "เก้า", ttsLo: "เก้า", tone: ["falling"],
+    mnemonic: "Nine is the lucky number (เก้า sounds like ก้าว, step forward).", trap: "๙ (9) vs ๘ (8): watch the tail over the top." },
+  // Level 9: Royal and Rare Letters.
+  { id: "g-kho-rakhang", level: 9, tier: "glyph", th: "ฆ", lo: "ຄ", thRoman: "kh · khaw rá-khaŋ", loRoman: "kh · kho khuai", meaning: "kh sound · temple bell (ระฆัง)", accept: ["kh", "k", "kho", "khor", "khaw", "bell"], ttsTh: "ฆอ ระฆัง", ttsLo: "คอ ควาย", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the notched top sets it apart from ม and ฃ.", mnemonic: "A temple bell (ระฆัง) for royal and religious words.", street: "Rare on shop signs, common in temple names.", trap: "Same kh sound and low class as ค; only the spelling differs.", bridge: "Lao writes ຄ." },
+  { id: "g-tho-than", level: 9, tier: "glyph", th: "ฐ", lo: "ຖ", thRoman: "th · thǎw thǎan", loRoman: "th · tho thong", meaning: "th sound · pedestal (ฐาน)", accept: ["th", "t", "tho", "thor", "thaw", "pedestal", "base"], ttsTh: "ฐอ ฐาน", ttsLo: "ถอ ถง", cls: "high", tone: ["rising"],
+    loop: "Start at the head loop; the separate tail underneath is its pedestal.", mnemonic: "A statue on its pedestal (ฐาน).", street: "Look for the detached tail below the body.", trap: "Same th sound and high class as ถ.", bridge: "Lao writes ຖ." },
+  { id: "g-tho-montho", level: 9, tier: "glyph", th: "ฑ", lo: "ທ", thRoman: "th / d · thaw mon-thoo", loRoman: "th · tho thung", meaning: "th (sometimes d) · Montho, a queen in the Ramakien", accept: ["th", "d", "tho", "thor", "thaw", "montho"], ttsTh: "ฑอ มณโฑ", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; its double-humped top is the queen's crown.", mnemonic: "Queen Montho of the Ramakien.", street: "Mostly in learned words: บัณฑิต (graduate).", trap: "In some words it says d: บัณฑิต (ban-dìt).", bridge: "Lao writes ທ or ດ." },
+  { id: "g-tho-phuthao", level: 9, tier: "glyph", th: "ฒ", lo: "ທ", thRoman: "th · thaw phûu-thâw", loRoman: "th · tho thung", meaning: "th sound · elder (ผู้เฒ่า)", accept: ["th", "t", "tho", "thor", "thaw", "elder", "oldman"], ttsTh: "ฒอ ผู้เฒ่า", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the wide, bent body is the old man's back.", mnemonic: "An old man (ผู้เฒ่า) with a bent back.", street: "Seen in เฒ่า and วัฒนธรรม (culture).", trap: "Low-class th, like ท and ธ.", bridge: "Lao writes ທ: ວັດທະນະທຳ." },
+  { id: "g-do-chada", level: 9, tier: "glyph", th: "ฎ", lo: "ດ", thRoman: "d · daw chá-daa", loRoman: "d · do dek", meaning: "d sound · headdress (ชฎา)", accept: ["d", "do", "dor", "daw", "headdress"], ttsTh: "ฎอ ชฎา", ttsLo: "ดอ เด็ก", cls: "mid", tone: ["mid"],
+    loop: "Start at the head loop; finish with the curled tail under the body.", mnemonic: "A dancer's tall headdress (ชฎา).", street: "Found in กฎ (rule) and กฎหมาย (law).", trap: "ฎ (d) and ฏ (t) differ only in the tail underneath.", bridge: "Lao writes ດ." },
+  { id: "g-to-patak", level: 9, tier: "glyph", th: "ฏ", lo: "ຕ", thRoman: "t · taw pà-tàk", loRoman: "t · to ta", meaning: "t sound · goad (ปฏัก)", accept: ["t", "to", "tor", "taw", "goad"], ttsTh: "ฏอ ปฏัก", ttsLo: "ตอ ตา", cls: "mid", tone: ["mid"],
+    loop: "Start at the head loop; the tail underneath cuts back like a goad.", mnemonic: "A cattle goad (ปฏัก) with a hooked point.", street: "Found in ปฏิทิน (calendar).", trap: "ฏ (t) and ฎ (d) differ only in the tail underneath.", bridge: "Lao writes ຕ." },
+  { id: "g-cho-choe", level: 9, tier: "glyph", th: "ฌ", lo: "ຊ", thRoman: "ch · chaw chəə", loRoman: "s · so sang", meaning: "ch sound · tree (เฌอ)", accept: ["ch", "cho", "chor", "chaw", "tree"], ttsTh: "ฌอ เฌอ", ttsLo: "ซอ ซ้าง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the long, branching body is the tree.", mnemonic: "A tree (เฌอ). The rarest letter you will still meet, in ฌาน (meditation).", street: "Almost never on signs.", trap: "Same ch sound and low class as ช.", bridge: "Lao writes ຊ." },
+  { id: "g-lo-chula", level: 9, tier: "glyph", th: "ฬ", lo: "ລ", thRoman: "l · law chù-laa", loRoman: "l · lo ling", meaning: "l sound · star-shaped kite (จุฬา)", accept: ["l", "lo", "lor", "law", "kite"], ttsTh: "ฬอ จุฬา", ttsLo: "ลอ ลิง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the extra flourish on the right is the kite's tail.", mnemonic: "A star kite (จุฬา) over Sanam Luang.", street: "In กีฬา (sport), on every stadium.", trap: "As a final it says -n: วาฬ (whale) is waan.", bridge: "Lao writes ລ: ກິລາ." },
+  { id: "sym-yamok", level: 9, tier: "glyph", th: "ๆ", lo: "ໆ", thRoman: "repeat · mái yá-mók", loRoman: "repeat · mai ya mok", meaning: "repeat the word before (ไม้ยมก)", accept: ["repeat", "yamok", "maiyamok", "again", "twice", "double"], ttsTh: "เด็กเด็ก", ttsLo: "เด็กเด็ก", tone: [],
+    mnemonic: "Say the word twice: เด็ก ๆ = dèk-dèk (children).", trap: "Repeats the whole word, not just the last letter.", bridge: "Lao uses the same mark: ໆ." },
+  { id: "sym-paiyannoi", level: 9, tier: "glyph", th: "ฯ", lo: "ຯ", thRoman: "abbreviation · pai-yaan-nɔ́ɔi", loRoman: "abbreviation", meaning: "abbreviation mark (ไปยาลน้อย)", accept: ["abbreviation", "abbr", "short", "etc", "paiyannoi"], ttsTh: "กรุงเทพ", ttsLo: "กรุงเทพ", tone: [],
+    mnemonic: "Like '…': กรุงเทพฯ is the short form of Bangkok's very long official name.", trap: "Read only the part before it; don't pronounce the mark.", bridge: "Lao has ຯ but rarely uses it." },
+  { id: "v-ruedu", level: 9, tier: "vocab", th: "ฤดู", lo: "ລະດູ", thRoman: "rʉ́-duu", loRoman: "la du", meaning: "season", accept: ["ruedu", "rudu", "reudu", "season"], ttsTh: "ฤดู", ttsLo: "ละดู", tone: ["high", "mid"],
+    mnemonic: "ฤ is a Sanskrit vowel-letter, read rʉ́ here (ri or rəə in other words).", trap: "ฤ is not ร: it carries its own vowel.", bridge: "Lao spells it out with ລ: ລະດູ." },
 ];
 
 // Each course has its own colour world (see the roadmap's course designs).
@@ -357,6 +442,7 @@ const LEVELS = [
   { n: 6, title: "Clusters and Leaders", sub: "True and false clusters · leading consonants", accent: "#5EEAD4", bg: "linear-gradient(160deg, #10222a, transparent 70%)" },
   { n: 7, title: "Street Signs and Numbers", sub: "Digits, prices and the words on every sign", accent: "#FFB86B", bg: "linear-gradient(160deg, #22222a, transparent 70%)" },
   { n: 8, title: "Particles and Politeness", sub: "ครับ, ค่ะ, นะ, ไหม and the phrases that carry them", accent: "#F472B6", bg: "linear-gradient(160deg, #3a1630, transparent 70%)" },
+  { n: 9, title: "Royal and Rare Letters", sub: "Pali and Sanskrit letters, ๆ, ฯ and ฤ", accent: "#C4B5FD", bg: "linear-gradient(160deg, #241a3a, transparent 70%)" },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -1118,7 +1204,9 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     const set = new Set([1]);
     for (let n = 2; n <= LEVELS.length; n += 1) {
       const prev = CURRICULUM.filter((i) => i.level === n - 1);
-      if (sandbox || prev.every((i) => stageOf(i.id) >= 2)) set.add(n);
+      // A level you have already started stays open when new items join the level before it.
+      const started = CURRICULUM.some((i) => i.level === n && stageOf(i.id) > 0);
+      if (sandbox || started || prev.every((i) => stageOf(i.id) >= 2)) set.add(n);
       else break;
     }
     if (sandbox) LEVELS.forEach((l) => set.add(l.n));
@@ -1126,7 +1214,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srs, sandbox]);
 
-  const lessonQueue = useMemo(() => CURRICULUM.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0), [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lessonQueue = useMemo(() => CURRICULUM.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0).sort((a, b) => a.level - b.level), [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
   const reviewQueue = useMemo(
     () => CURRICULUM.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
     [srs, now, sandbox]
