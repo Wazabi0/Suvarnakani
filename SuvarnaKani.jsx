@@ -41,6 +41,9 @@ const FONT_STACKS = {
   },
 };
 
+// UI text mixes Latin with Thai and Lao, so the UI stack falls back to Noto for both scripts.
+const UI_FONT = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Noto Sans Lao", sans-serif';
+
 const GOOGLE_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;600&family=Noto+Serif+Lao:wght@400;600&family=Sarabun:wght@400;600&family=Kanit:wght@300;500&family=Noto+Sans+Thai:wght@400;600&family=Noto+Sans+Lao:wght@400;600&display=swap";
 
@@ -2556,6 +2559,227 @@ function Slicer({ mode, font }) {
 }
 
 /* ============================================================================
+ * Module: Mekong Predictor (build the Lao spelling from the Thai, or back)
+ * ========================================================================== */
+const BRIDGE_LAWS = [
+  { id: "cluster", name: "Clusters drop", rule: "Thai keeps old pl-, kr-, kl- clusters. Lao drops the second consonant.", words: [
+    { th: "ปลา", lo: "ປາ", r: "plaa → paa", m: "fish", tl: "ปา", naive: [["ປລາ", "You kept the l. Lao drops the second consonant of a cluster."]] },
+    { th: "ครู", lo: "ຄູ", r: "khruu → khuu", m: "teacher", tl: "คู", naive: [["ຄຣູ", "You kept the r. Lao drops it: ຄູ."], ["ຄລູ", "Lao drops the second consonant entirely."]] },
+    { th: "กลาง", lo: "ກາງ", r: "klaang → kaang", m: "middle", tl: "กาง", naive: [["ກລາງ", "You kept the l. Lao drops the second consonant of a cluster."]] },
+    { th: "ใกล้", lo: "ໃກ້", r: "klâi → kai", m: "near", tl: "ใก้", naive: [["ໃກລ້", "You kept the l. Lao drops it, and the tone mark moves onto ກ."]] },
+  ] },
+  { id: "r-h", name: "ร becomes ຮ", rule: "In native words Thai r usually corresponds to Lao h (ຮ).", words: [
+    { th: "รัก", lo: "ຮັກ", r: "rák → hak", m: "love", tl: "ฮัก", naive: [["ລັກ", "Here Lao uses ຮ (h), not ລ. ລັກ means 'steal'."], ["ຣັກ", "Lao ຣ is for names and loans. Native words use ຮ."]] },
+    { th: "ร้อน", lo: "ຮ້ອນ", r: "ráwn → hon", m: "hot", tl: "ฮ้อน", naive: [["ລ້ອນ", "Native Thai ร → Lao ຮ here."]] },
+    { th: "เรือน", lo: "ເຮືອນ", r: "rʉan → heuan", m: "house", tl: "เฮือน", naive: [["ເລືອນ", "Native Thai ร → Lao ຮ here."]] },
+    { th: "รู้", lo: "ຮູ້", r: "rúu → hu", m: "know", tl: "ฮู้", naive: [["ລູ້", "Native Thai ร → Lao ຮ here."]] },
+  ] },
+  { id: "ch-x", name: "ช and ซ become ຊ", rule: "Thai ch (ช) and s (ซ) both correspond to Lao ຊ, pronounced s or x.", words: [
+    { th: "ช้าง", lo: "ຊ້າງ", r: "cháang → xang", m: "elephant", tl: "ซ้าง", naive: [["ຈ້າງ", "Thai ช is not Lao ຈ. Use ຊ."], ["ສ້າງ", "ສ is the high-class s. Thai ช (low) → Lao ຊ (low)."]] },
+    { th: "ชื่อ", lo: "ຊື່", r: "chʉ̂ʉ → xeu", m: "name", tl: "ซื่อ", naive: [["ຊື່ອ", "Lao drops the silent อ that Thai writes after ื."]] },
+    { th: "ซื้อ", lo: "ຊື້", r: "sʉ́ʉ → xeu", m: "buy", tl: "ซื้อ", naive: [["ຊື້ອ", "Lao drops the silent อ that Thai writes after ื."]] },
+    { th: "ชาย", lo: "ຊາຍ", r: "chaai → xai", m: "man / male", tl: "ซาย", naive: [["ຈາຍ", "Thai ช → Lao ຊ, not ຈ."]] },
+  ] },
+  { id: "silent", name: "Silent letters vanish", rule: "Thai keeps etymological letters and silences them with ◌์. Lao writes only what is spoken.", words: [
+    { th: "เบียร์", lo: "ເບຍ", r: "bia", m: "beer", tl: "เบีย", naive: [["ເບຍຣ໌", "Lao has no silent letters here. Drop the ร์."]] },
+    { th: "ศูนย์", lo: "ສູນ", r: "sǔun → sun", m: "zero / centre", tl: "สูน", naive: [["ສູນຍ໌", "Drop the silent ย์. And ศ becomes plain ສ."]] },
+    { th: "อาทิตย์", lo: "ອາທິດ", r: "aa-thít → athit", m: "sun / week", tl: "อาทิด", naive: [["ອາທິຕ", "Lao spells the final t sound with ດ."]] },
+    { th: "ไปรษณีย์", lo: "ໄປສະນີ", r: "prai-sà-nii → paisanii", m: "post office", tl: "ไปสะนี", naive: [["ໄປຣສະນີ", "Drop the r of the cluster too."]] },
+  ] },
+  { id: "hn", name: "ห นำ becomes one letter", rule: "Lao fuses silent h + n and h + m into single letters ໜ and ໝ. Other combinations stay as two letters.", words: [
+    { th: "หมา", lo: "ໝາ", r: "mǎa → maa", m: "dog", tl: "หมา", naive: [["ຫມາ", "Lao writes ຫ + ມ as the single letter ໝ."]] },
+    { th: "หนาว", lo: "ໜາວ", r: "nǎaw → nao", m: "cold", tl: "หนาว", naive: [["ຫນາວ", "Lao writes ຫ + ນ as the single letter ໜ."]] },
+    { th: "หมู", lo: "ໝູ", r: "mǔu → mu", m: "pig / pork", tl: "หมู", naive: [["ຫມູ", "Lao writes ຫ + ມ as ໝ."]] },
+    { th: "หนึ่ง", lo: "ໜຶ່ງ", r: "nʉ̀ng → neung", m: "one", tl: "หนึ่ง", naive: [["ຫນຶ່ງ", "Lao writes ຫ + ນ as ໜ."]] },
+  ] },
+  { id: "sanskrit", name: "Sanskrit letters merge", rule: "Thai keeps several letters for one sound (ศ ษ ส, ภ พ, ธ ท, ณ น). Lao uses one: ສ, ພ, ທ, ນ.", words: [
+    { th: "ภาษา", lo: "ພາສາ", r: "phaa-sǎa → phasa", m: "language", tl: "พาสา", naive: [["ພາຊາ", "ษ is an s sound: Lao ສ."]] },
+    { th: "ศาลา", lo: "ສາລາ", r: "sǎa-laa → sala", m: "pavilion", tl: "สาลา", naive: [["ຊາລາ", "ศ is the high-class s: Lao ສ."]] },
+    { th: "พิเศษ", lo: "ພິເສດ", r: "phí-sèet → phiset", m: "special", tl: "พิเสด", naive: [["ພິເສສ", "As a final, ษ sounds -t. Lao spells final t with ດ."]] },
+    { th: "ธรรมดา", lo: "ທຳມະດາ", r: "tham-má-daa → thammada", m: "ordinary", tl: "ทำมะดา", naive: [["ທັມມະດາ", "Lao writes the -am syllable with ຳ."]] },
+  ] },
+  { id: "ua", name: "◌ัว becomes ◌ົວ", rule: "The Thai vowel -ua written ◌ัว is written ◌ົວ in Lao.", words: [
+    { th: "บัว", lo: "ບົວ", r: "bua", m: "lotus", tl: "บัว", naive: [["ບັວ", "Lao uses ◌ົ (mai kon) for -ua, not ◌ັ."]] },
+    { th: "หัว", lo: "ຫົວ", r: "hǔa → hua", m: "head", tl: "หัว", naive: [["ຫັວ", "Lao uses ◌ົ for -ua."]] },
+    { th: "ผัว", lo: "ຜົວ", r: "phǔa → phua", m: "husband", tl: "ผัว", naive: [["ຜັວ", "Lao uses ◌ົ for -ua."]] },
+  ] },
+  { id: "o", name: "Hidden o gets written", rule: "Thai leaves the short o between consonants unwritten (นก). Lao writes it with ◌ົ.", words: [
+    { th: "นก", lo: "ນົກ", r: "nók → nok", m: "bird", tl: "นก", naive: [["ນກ", "Lao always writes the short o: ◌ົ."]] },
+    { th: "คน", lo: "ຄົນ", r: "khon", m: "person", tl: "คน", naive: [["ຄນ", "Lao writes the hidden o with ◌ົ."]] },
+    { th: "ผม", lo: "ຜົມ", r: "phǒm → phom", m: "hair", tl: "ผม", naive: [["ຜມ", "Lao writes the hidden o with ◌ົ."]] },
+    { th: "รถ", lo: "ລົດ", r: "rót → lot", m: "car", tl: "ลด", exception: "Law breaker: here Thai ร becomes ລ, not ຮ, and final ถ becomes ດ.", naive: [["ຮົດ", "This one breaks the ร → ຮ law: it's ລົດ."]] },
+  ] },
+  { id: "ia", name: "เ◌ีย becomes ເ◌ຍ or ◌ຽ", rule: "Open -ia (เ◌ีย) is ເ◌ຍ in Lao. With a final consonant it becomes ◌ຽ◌.", words: [
+    { th: "เมีย", lo: "ເມຍ", r: "mia", m: "wife", tl: "เมีย", naive: [["ເມີຍ", "Lao doesn't write the ◌ີ: just ເ◌ຍ."]] },
+    { th: "เสีย", lo: "ເສຍ", r: "sǐa → sia", m: "broken / lose", tl: "เสีย", naive: [["ເສີຍ", "Lao doesn't write the ◌ີ: just ເ◌ຍ."]] },
+    { th: "เรียน", lo: "ຮຽນ", r: "rian → hian", m: "study", tl: "เฮียน", naive: [["ເຮຍນ", "With a final consonant, -ia is written ◌ຽ: ຮຽນ."], ["ເລຍນ", "Native ร → ຮ, and closed -ia is ◌ຽ: ຮຽນ."]] },
+    { th: "เขียน", lo: "ຂຽນ", r: "khǐan → khian", m: "write", tl: "เขียน", naive: [["ເຂຍນ", "With a final consonant, -ia is written ◌ຽ: ຂຽນ."]] },
+  ] },
+  { id: "ao", name: "เ◌า becomes ເ◌ົາ", rule: "Thai -ao (เ◌า) is written ເ◌ົາ in Lao, with ◌ົ on top.", words: [
+    { th: "เขา", lo: "ເຂົາ", r: "khǎo → khao", m: "he / she", tl: "เขา", naive: [["ເຂາ", "Lao adds ◌ົ: ເຂົາ."]] },
+    { th: "เรา", lo: "ເຮົາ", r: "rao → hao", m: "we", tl: "เฮา", naive: [["ເລົາ", "Native ร → ຮ: ເຮົາ."], ["ເຮາ", "Lao adds ◌ົ: ເຮົາ."]] },
+    { th: "เมา", lo: "ເມົາ", r: "mao", m: "drunk", tl: "เมา", naive: [["ເມາ", "Lao adds ◌ົ: ເມົາ."]] },
+  ] },
+];
+
+const LAO_FILLERS = ["ກ", "ຂ", "ຄ", "ດ", "ຕ", "ນ", "ບ", "ມ", "ລ", "ສ", "ຫ", "ອ", "າ", "ິ", "ີ", "ັ", "່", "້"];
+const THAI_FILLERS = ["ก", "ข", "ค", "ด", "ต", "น", "บ", "ม", "ร", "ล", "ส", "ห", "อ", "า", "ิ", "ี", "ั", "่", "้", "์"];
+const isMark = (ch) => COMBINING.test(ch);
+const showTile = (ch) => (isMark(ch) ? `◌${ch}` : ch);
+
+function buildTiles(target, naive, fillers) {
+  const need = [...target];
+  const extra = new Set();
+  naive.forEach(([w]) => [...w].forEach((ch) => { if (!need.includes(ch)) extra.add(ch); }));
+  const pool = shuffle(fillers.filter((f) => !need.includes(f) && !extra.has(f))).slice(0, Math.max(2, 6 - extra.size));
+  return shuffle([...need, ...extra, ...pool].map((ch, i) => ({ ch, key: `${i}-${ch}` })));
+}
+
+const emptyBridge = () => Object.fromEntries(BRIDGE_LAWS.map((l) => [l.id, [0, 0]]));
+
+function MekongPredictor({ mode, font, bridge, setBridge }) {
+  const [dir, setDir] = useState(mode === "lo" ? "lo2th" : "th2lo");
+  const [lawId, setLawId] = useState(BRIDGE_LAWS[0].id);
+  const [wi, setWi] = useState(0);
+  const [built, setBuilt] = useState([]);
+  const [result, setResult] = useState(null);
+  const law = BRIDGE_LAWS.find((l) => l.id === lawId);
+  const word = law.words[wi % law.words.length];
+  const toLao = dir === "th2lo";
+  const source = toLao ? word.th : word.lo;
+  const target = toLao ? word.lo : word.th;
+  const tiles = useMemo(
+    () => buildTiles(target, toLao ? word.naive : [], toLao ? LAO_FILLERS : THAI_FILLERS),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lawId, wi, dir]
+  );
+  const audio = getAudio();
+
+  useEffect(() => { setBuilt([]); setResult(null); }, [lawId, wi, dir]);
+
+  const answer = built.map((t) => t.ch).join("");
+  const check = () => {
+    if (!built.length) return;
+    const ok = answer === target;
+    const naiveHit = toLao ? word.naive.find(([w]) => w === answer) : null;
+    setResult({ ok, note: ok ? null : naiveHit ? naiveHit[1] : null });
+    setBridge((prev) => {
+      const cur = prev[law.id] || [0, 0];
+      return { ...prev, [law.id]: [cur[0] + (ok ? 1 : 0), cur[1] + 1] };
+    });
+    audio.speakHumanVoice(word.tl, word.lo);
+  };
+  const next = () => {
+    const nextIdx = wi + 1;
+    if (nextIdx >= law.words.length) {
+      const li = BRIDGE_LAWS.findIndex((l) => l.id === law.id);
+      setLawId(BRIDGE_LAWS[(li + 1) % BRIDGE_LAWS.length].id);
+      setWi(0);
+    } else setWi(nextIdx);
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Languages} title="Mekong Predictor" sub="Apply the bridge laws to spell a word on the other side of the river. Building the answer yourself makes the rule stick." color={COLORS.purple} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip active={dir === "th2lo"} color={COLORS.purple} onClick={() => setDir("th2lo")}>ไทย → ລາວ</Chip>
+        <Chip active={dir === "lo2th"} color={COLORS.purple} onClick={() => setDir("lo2th")}>ລາວ → ไทย</Chip>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <Card className="p-5" glow={COLORS.purple}>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">Law {BRIDGE_LAWS.findIndex((l) => l.id === law.id) + 1} · {law.name}</div>
+          <div className="mt-3 text-center">
+            <div className="text-xs text-slate-400">{toLao ? "Thai" : "Lao"}</div>
+            <Glyph text={source} script={toLao ? "th" : "lo"} font={font} className="text-6xl leading-[1.5] text-white" />
+            <div className="text-sm text-slate-300">{word.m}</div>
+          </div>
+          <div className="my-3 text-center text-2xl text-purple-300">⇣</div>
+          <div className={`mx-auto flex min-h-[84px] max-w-sm items-center justify-center rounded-2xl border-2 border-dashed px-4 ${result ? (result.ok ? "border-emerald-400 bg-emerald-500/10" : "border-rose-400 bg-rose-500/10") : "border-purple-400/50"}`}>
+            {built.length ? (
+              <Glyph text={answer} script={toLao ? "lo" : "th"} font={font} className="text-5xl leading-[1.6] text-white" />
+            ) : (
+              <span className="text-sm text-slate-400">Tap tiles in reading order</span>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {tiles.map((t) => {
+              const used = built.some((b) => b.key === t.key);
+              return (
+                <button
+                  key={t.key}
+                  disabled={used || !!result}
+                  onClick={() => setBuilt([...built, t])}
+                  className="min-w-[48px] rounded-xl border border-purple-400/40 bg-purple-500/15 px-2 py-1 text-3xl leading-[1.5] text-white transition active:scale-95 disabled:opacity-25"
+                  style={{ fontFamily: FONT_STACKS[font][toLao ? "lo" : "th"] }}
+                >
+                  {showTile(t.ch)}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {!result ? (
+              <>
+                <button onClick={() => setBuilt(built.slice(0, -1))} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-200"><ChevronLeft size={14} className="mr-1 inline" />Undo</button>
+                <button onClick={() => setBuilt([])} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-200"><Eraser size={14} className="mr-1 inline" />Clear</button>
+                <button onClick={check} className="rounded-xl bg-purple-500 px-5 py-2 text-sm font-bold text-white"><Check size={14} className="mr-1 inline" />Check</button>
+              </>
+            ) : (
+              <button onClick={next} className="rounded-xl bg-amber-500 px-5 py-2 text-sm font-bold text-black">Next word <ChevronRight size={14} className="inline" /></button>
+            )}
+          </div>
+          {result && (
+            <div className="mt-4 space-y-1 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className={`font-bold ${result.ok ? "text-emerald-300" : "text-rose-300"}`}>{result.ok ? "Correct" : "Not quite"}</div>
+              {!result.ok && (
+                <div className="text-slate-200">Answer: <Glyph text={target} script={toLao ? "lo" : "th"} font={font} className="text-2xl" /></div>
+              )}
+              {result.note && <p className="text-rose-200">{result.note}</p>}
+              <p className="text-slate-300">{word.r} · {law.rule}</p>
+              {word.exception && <p className="text-amber-300">{word.exception}</p>}
+              <AudioButtons ttsTh={word.th} ttsLo={word.tl} loRaw={word.lo} mode="dual" compact />
+            </div>
+          )}
+        </Card>
+        <Card className="p-4">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">The ten laws</div>
+          <div className="space-y-1.5">
+            {BRIDGE_LAWS.map((l, i) => {
+              const [r, n] = bridge[l.id] || [0, 0];
+              const acc = n ? r / n : 0;
+              return (
+                <button key={l.id} onClick={() => { setLawId(l.id); setWi(0); }} className={`w-full rounded-xl px-2.5 py-1.5 text-left transition ${l.id === law.id ? "bg-purple-500/20" : "hover:bg-white/5"}`}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-100">{i + 1}. {l.name}</span>
+                    <span className="tabular-nums text-slate-400">{n ? `${Math.round(acc * 100)}%` : "–"}</span>
+                  </div>
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-purple-400" style={{ width: `${acc * 100}%` }} /></div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Hub tabs: Lab (Reactor, Orbit, Bridge) and Read (Slicer, Street Reader)
+ * ========================================================================== */
+function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+      {tabs.map((t) => (
+        <button key={t.id} onClick={() => onChange(t.id)} className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${active === t.id ? "bg-white/10 text-amber-300" : "text-slate-400 hover:text-white"}`}>
+          <t.icon size={15} /> {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================================
  * Audio Studio drawer
  * ========================================================================== */
 function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
@@ -2598,18 +2822,31 @@ function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
 /* ============================================================================
  * App shell
  * ========================================================================== */
+const LAB_TABS = [
+  { id: "reactor", label: "Tone Reactor", icon: FlaskConical },
+  { id: "orbit", label: "Vowel Orbit", icon: Orbit },
+  { id: "bridge", label: "Mekong Predictor", icon: Languages },
+];
+const READ_TABS = [
+  { id: "slicer", label: "Script Slicer", icon: Scissors },
+];
+// Older saved tabs map onto the new hubs.
+const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"] };
+
 const TABS = [
   { id: "shrine", label: "Shrine", icon: Landmark },
   { id: "ear", label: "Ear", icon: Ear },
   { id: "tracer", label: "Tracer", icon: PenTool },
-  { id: "reactor", label: "Reactor", icon: FlaskConical },
-  { id: "orbit", label: "Orbit", icon: Orbit },
-  { id: "slicer", label: "Slicer", icon: Scissors },
+  { id: "lab", label: "Lab", icon: FlaskConical },
+  { id: "read", label: "Read", icon: BookOpen },
 ];
 
 export default function SuvarnaKani() {
   const initial = useMemo(() => loadState() || {}, []);
-  const [tab, setTab] = useState(initial.tab || "shrine");
+  const [tab, setTab] = useState(LEGACY_TAB[initial.tab]?.[0] || initial.tab || "shrine");
+  const [labTab, setLabTab] = useState(LEGACY_TAB[initial.tab]?.[1] === "reactor" || LEGACY_TAB[initial.tab]?.[1] === "orbit" ? LEGACY_TAB[initial.tab][1] : initial.labTab || "reactor");
+  const [readTab, setReadTab] = useState(initial.readTab || "slicer");
+  const [bridge, setBridge] = useState(() => ({ ...emptyBridge(), ...(initial.bridge || {}) }));
   const [mode, setMode] = useState(initial.mode || "dual");
   const [font, setFont] = useState(initial.font || "loop");
   const [sandbox, setSandbox] = useState(!!initial.sandbox);
@@ -2668,8 +2905,8 @@ export default function SuvarnaKani() {
   }, []);
 
   useEffect(() => {
-    saveState({ tab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded });
-  }, [tab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded]);
+    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge });
+  }, [tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge]);
 
   // Two taps instead of window.confirm, which embedded viewers block.
   const [confirmReset, setConfirmReset] = useState(false);
@@ -2682,11 +2919,12 @@ export default function SuvarnaKani() {
     setSrs({});
     setEar(emptyEar());
     setLog({});
+    setBridge(emptyBridge());
     setConfirmReset(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] pb-24 text-slate-100 sm:pb-8" style={{ backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
+    <div className="min-h-screen bg-[#0B0F19] pb-24 text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
       <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0B0F19]/85 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <div className="mr-auto flex items-center gap-2">
@@ -2724,9 +2962,20 @@ export default function SuvarnaKani() {
         {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} />}
         {tab === "ear" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
         {tab === "tracer" && <Tracer />}
-        {tab === "reactor" && <Reactor mode={mode} font={font} />}
-        {tab === "orbit" && <OrbitModule mode={mode} font={font} />}
-        {tab === "slicer" && <Slicer mode={mode} font={font} />}
+        {tab === "lab" && (
+          <>
+            <SubTabs tabs={LAB_TABS} active={labTab} onChange={setLabTab} />
+            {labTab === "reactor" && <Reactor mode={mode} font={font} />}
+            {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
+            {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} />}
+          </>
+        )}
+        {tab === "read" && (
+          <>
+            <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
+            {readTab === "slicer" && <Slicer mode={mode} font={font} />}
+          </>
+        )}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
           <span><Zap size={12} className="mr-1 inline text-amber-400" />Progress is saved on this device.</span>
           <span className="flex items-center gap-1">
@@ -2739,7 +2988,7 @@ export default function SuvarnaKani() {
         </footer>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold ${tab === t.id ? "text-amber-400" : "text-slate-400"}`}>
             <t.icon size={20} />
