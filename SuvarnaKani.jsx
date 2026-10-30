@@ -924,7 +924,7 @@ const EAR_DAILY_TRIALS = 20;
 
 function computeStreak(log) {
   let streak = 0;
-  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) > 0);
+  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) + (log[k].traces || 0) + (log[k].bridge || 0) + (log[k].signs || 0) > 0);
   let t = Date.now();
   if (!active(todayKey(t))) t -= DAY;
   while (active(todayKey(t))) {
@@ -976,7 +976,42 @@ function ForecastChart({ days }) {
   );
 }
 
-function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech }) {
+
+const PRACTICE_GOALS = { trace: 3, mekong: 4, sign: 1, shadow: 5 };
+/**
+ * The fourth Today Path step rotates by day so writing, the Mekong laws, street signs and
+ * speaking each come round. What is due wins the day: write reviews first, then Mekong laws.
+ * Once picked, today's activity stays put even after its due list empties.
+ */
+function todayPractice({ srs, mode, bridgeSched, log, now = Date.now() }) {
+  const today = log[todayKey(now)] || {};
+  const writes = writeDue(srs, mode, now);
+  const laws = lawsDue(bridgeSched, now);
+  const startedGlyphs = traceTargets(mode).some((t) => srs[t.id]);
+  const dayNo = Math.floor(new Date(todayKey(now)).getTime() / DAY);
+  const rotation = ["trace", "mekong", "sign", "shadow"].filter((k) => k !== "trace" || startedGlyphs);
+  let kind = rotation[dayNo % rotation.length];
+  // Keep whatever was already started today.
+  const begun = ["trace", "mekong", "sign", "shadow"].find((k) => (today[{ trace: "traces", mekong: "bridge", sign: "signs", shadow: "shadow" }[k]] || 0) > 0);
+  if (begun) kind = begun;
+  else if (writes.length >= 3) kind = "trace";
+  else if (laws.length) kind = "mekong";
+  const count = today[{ trace: "traces", mekong: "bridge", sign: "signs", shadow: "shadow" }[kind]] || 0;
+  const goal = PRACTICE_GOALS[kind];
+  const done = count >= goal;
+  if (kind === "trace") {
+    const show = writes.slice(0, 3).map((t) => t.g).join(" ");
+    return { kind, label: show ? `Trace 3 letters: ${show}` : "Trace 3 letters", thai: !!show, done, note: `${Math.min(count, goal)} / ${goal} traced${writes.length ? ` · ${writes.length} due` : ""}` };
+  }
+  if (kind === "mekong") {
+    const law = laws[0] || nextNewLaw(bridgeSched);
+    return { kind, label: `Mekong law: ${law ? law.name : "review"}`, done, note: `${Math.min(count, goal)} / ${goal} words${laws.length ? ` · ${laws.length} law${laws.length > 1 ? "s" : ""} due` : law ? " · new law" : ""}` };
+  }
+  if (kind === "sign") return { kind, label: "Read a street sign against the clock", done, note: done ? "Read today" : "Street Reader" };
+  return { kind, label: "Shadow 5 syllables", done, note: `${Math.min(count, goal)} / ${goal} attempts` };
+}
+
+function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech, practice, onPractice }) {
   const today = log[todayKey()] || {};
   const acc = weekAccuracy(log);
   const streak = computeStreak(log);
@@ -998,6 +1033,7 @@ function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinu
       disabled: lessonsPaused && !(today.lessons > 0),
     });
   }
+  if (practice) steps.push({ id: `practice-${practice.kind}`, label: practice.label, thai: practice.thai, min: 3, done: practice.done, note: practice.note, onClick: () => onPractice?.(practice.kind) });
   let budget = dailyMinutes;
   const planned = steps.filter((s) => { const keep = s.id === "reviews" || budget - s.min >= 0; if (keep) budget -= s.min; return keep; });
   const total = planned.reduce((n, s) => n + s.min, 0);
@@ -1224,7 +1260,7 @@ function Onboarding({ onDone }) {
 /* ============================================================================
  * Module 1: SRS Shrine
  * ========================================================================== */
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes }) {
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice }) {
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -1321,6 +1357,8 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         onLessons={() => setLessonOpen(true)}
         onEar={onOpenEar}
         onLeech={() => setLeechOpen(true)}
+        practice={todayPractice({ srs, mode, bridgeSched, log })}
+        onPractice={onPractice}
       />
       <Card className="overflow-hidden">
         <div className="relative p-5">
@@ -2413,9 +2451,10 @@ function detectHeadStart(g, script) {
   return start;
 }
 
-function Tracer({ mode = "dual", srs = {}, setSrs }) {
+function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
   const targets = useMemo(() => traceTargets(mode), [mode]);
-  const [sel, setSel] = useState(0);
+  // Open on the first letter due to write, so the Today Path lands on real work.
+  const [sel, setSel] = useState(() => Math.max(0, targets.findIndex((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= Date.now())));
   const [result, setResult] = useState(null);
   const [auto, setAuto] = useState({});
   const canvasRef = useRef(null);
@@ -2565,6 +2604,7 @@ function Tracer({ mode = "dual", srs = {}, setSrs }) {
     // Starting away from the head loop costs points: the habit is the point of the drill.
     const score = Math.round(100 * (0.55 * coverage + 0.45 * accuracy) - (startOk === false ? 10 : 0));
     const write = recordWrite(score);
+    logActivity?.({ traces: 1 });
     setResult({ coverage, accuracy, score, startOk, write });
     haptic(score >= 70 ? "ok" : "bad");
     const audio = getAudio();
@@ -3294,10 +3334,14 @@ function buildTiles(target, naive, fillers) {
 }
 
 const emptyBridge = () => Object.fromEntries(BRIDGE_LAWS.map((l) => [l.id, [0, 0]]));
+// Each law gets an FSRS track once you first try it; due laws come back like any review.
+const lawDueAt = (t) => t.last + fsrsInterval(t.S) * DAY;
+const lawsDue = (sched, now = Date.now()) => BRIDGE_LAWS.filter((l) => sched[l.id] && lawDueAt(sched[l.id]) <= now).sort((a, b) => lawDueAt(sched[a.id]) - lawDueAt(sched[b.id]));
+const nextNewLaw = (sched) => BRIDGE_LAWS.find((l) => !sched[l.id]) || null;
 
-function MekongPredictor({ mode, font, bridge, setBridge }) {
+function MekongPredictor({ mode, font, bridge, setBridge, sched = {}, setSched, logActivity }) {
   const [dir, setDir] = useState(mode === "lo" ? "lo2th" : "th2lo");
-  const [lawId, setLawId] = useState(BRIDGE_LAWS[0].id);
+  const [lawId, setLawId] = useState(() => (lawsDue(sched)[0] || nextNewLaw(sched) || BRIDGE_LAWS[0]).id);
   const [wi, setWi] = useState(0);
   const [built, setBuilt] = useState([]);
   const [result, setResult] = useState(null);
@@ -3325,13 +3369,16 @@ function MekongPredictor({ mode, font, bridge, setBridge }) {
       const cur = prev[law.id] || [0, 0];
       return { ...prev, [law.id]: [cur[0] + (ok ? 1 : 0), cur[1] + 1] };
     });
+    setSched?.((prev) => ({ ...prev, [law.id]: fsrsUpdate(prev[law.id], ok ? 3 : 1) }));
+    logActivity?.({ bridge: 1 });
     audio.speakHumanVoice(word.tl, word.lo);
   };
   const next = () => {
     const nextIdx = wi + 1;
     if (nextIdx >= law.words.length) {
       const li = BRIDGE_LAWS.findIndex((l) => l.id === law.id);
-      setLawId(BRIDGE_LAWS[(li + 1) % BRIDGE_LAWS.length].id);
+      const due = lawsDue(sched).find((l) => l.id !== law.id);
+      setLawId((due || BRIDGE_LAWS[(li + 1) % BRIDGE_LAWS.length]).id);
       setWi(0);
     } else setWi(nextIdx);
   };
@@ -3401,15 +3448,21 @@ function MekongPredictor({ mode, font, bridge, setBridge }) {
         </Card>
         <Card className="p-4">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">The ten laws</div>
+          <p className="mb-2 text-[11px] text-slate-400">Each law you try comes back on its own schedule. Due laws open first and show up on the Today Path.</p>
           <div className="space-y-1.5">
             {BRIDGE_LAWS.map((l, i) => {
               const [r, n] = bridge[l.id] || [0, 0];
               const acc = n ? r / n : 0;
+              const t = sched[l.id];
+              const isDue = t && lawDueAt(t) <= Date.now();
               return (
                 <button key={l.id} onClick={() => { setLawId(l.id); setWi(0); }} className={`w-full rounded-xl px-2.5 py-1.5 text-left transition ${l.id === law.id ? "bg-purple-500/20" : "hover:bg-white/5"}`}>
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-slate-100">{i + 1}. {l.name}</span>
-                    <span className="tabular-nums text-slate-400">{n ? `${Math.round(acc * 100)}%` : "–"}</span>
+                    <span className="flex items-center gap-1.5 tabular-nums text-slate-400">
+                      {isDue && <span data-law-due className="rounded-full bg-amber-400/20 px-1.5 text-[10px] font-bold text-amber-300">due</span>}
+                      {n ? `${Math.round(acc * 100)}%` : "–"}
+                    </span>
                   </div>
                   <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-purple-400" style={{ width: `${acc * 100}%` }} /></div>
                 </button>
@@ -3493,7 +3546,7 @@ function resolveToken(tok, script) {
   };
 }
 
-function StreetReader({ mode, srs, setSrs, best, setBest }) {
+function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
   const packs = STREET_PACKS.filter((p) => mode === "dual" || p.script === mode);
   const [pid, setPid] = useState(packs[0]?.id);
   const pack = packs.find((p) => p.id === pid) || packs[0];
@@ -3520,6 +3573,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest }) {
     if (!timer.start) return setTimer({ start: Date.now(), last: null });
     const secs = (Date.now() - timer.start) / 1000;
     setTimer({ start: null, last: secs });
+    logActivity?.({ signs: 1 });
     if (!best[pack.id] || secs < best[pack.id]) {
       setBest({ ...best, [pack.id]: secs });
     }
@@ -4067,6 +4121,7 @@ export default function SuvarnaKani() {
   const [earTab, setEarTab] = useState(initial.earTab || "dojo");
   const [shadow, setShadow] = useState(() => ({ ...emptyShadow(), ...(initial.shadow || {}) }));
   const [bridge, setBridge] = useState(() => ({ ...emptyBridge(), ...(initial.bridge || {}) }));
+  const [bridgeSched, setBridgeSched] = useState(() => initial.bridgeSched || {});
   const [streetBest, setStreetBest] = useState(() => initial.streetBest || {});
   const [mode, setMode] = useState(initial.mode || "dual");
   const [font, setFont] = useState(initial.font || "loop");
@@ -4101,6 +4156,13 @@ export default function SuvarnaKani() {
     setOnboarded(true);
   };
   const [studio, setStudio] = useState(false);
+  const goPractice = (kind) => {
+    if (kind === "trace") setTab("tracer");
+    if (kind === "mekong") { setTab("lab"); setLabTab("bridge"); }
+    if (kind === "sign") { setTab("read"); setReadTab("street"); }
+    if (kind === "shadow") { setTab("ear"); setEarTab("shadow"); }
+    window.scrollTo?.(0, 0);
+  };
   const [inspect, setInspect] = useState(null);
 
   useEffect(() => {
@@ -4126,8 +4188,8 @@ export default function SuvarnaKani() {
   }, []);
 
   useEffect(() => {
-    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest, earTab, shadow });
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest]);
+    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow });
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest]);
 
   // Two taps instead of window.confirm, which embedded viewers block.
   const [confirmReset, setConfirmReset] = useState(false);
@@ -4141,6 +4203,7 @@ export default function SuvarnaKani() {
     setEar(emptyEar());
     setLog({});
     setBridge(emptyBridge());
+    setBridgeSched({});
     setStreetBest({});
     setShadow(emptyShadow());
     setConfirmReset(false);
@@ -4182,7 +4245,7 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} />}
         {tab === "ear" && (
           <>
             <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
@@ -4190,20 +4253,20 @@ export default function SuvarnaKani() {
             {earTab === "shadow" && <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />}
           </>
         )}
-        {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} />}
+        {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} />}
         {tab === "lab" && (
           <>
             <SubTabs tabs={LAB_TABS} active={labTab} onChange={setLabTab} />
             {labTab === "reactor" && <Reactor mode={mode} font={font} />}
             {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
-            {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} />}
+            {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} />}
           </>
         )}
         {tab === "read" && (
           <>
             <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
             {readTab === "slicer" && <Slicer mode={mode} font={font} />}
-            {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} />}
+            {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} />}
           </>
         )}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
