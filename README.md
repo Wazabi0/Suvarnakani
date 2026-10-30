@@ -24,6 +24,11 @@ The app then opens full screen and works offline after the first load.
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.17.0**: Dialogue shadowing. The Shadow Mirror has a new Dialogue view with two short Bangkok dialogues, *At the counter* and *Asking the way*, 12 lines in all.
+  - You can hear one line or play the dialogue from the top up to your line, then say it.
+  - Your pitch over the whole line is octave-fixed and lined up with the chained Chao contours of its syllables by dynamic time warping. People never give every syllable the same length, so the warping matters.
+  - Each syllable is scored on its own and drawn in its own box over its tone colour. The tip names the syllable that is furthest off and says which way to move it.
+  - Your best score on each line is saved.
 - **0.16.0**: Ear Dojo decks. Pick a deck before a session:
   - **Single syllables**: the original minimal sets.
   - **Two-syllable words**: 27 everyday words such as ข้าวผัด, ผู้หญิง and หนังสือ, in three themed sets. You name the tone of each syllable in turn. Both answers count towards your per-tone scores and confusions, and the trial picker leans towards words that contain your weak tones.

@@ -3899,7 +3899,7 @@ const CHAO_ST = 2.5; // semitones per Chao step, so 1–5 spans a 10-semitone vo
 const SHADOW_PASS = 70;
 const SHADOW_UNLOCK = { acc: 0.8, trials: 10 };
 
-const emptyShadow = () => ({ base: null, tones: Object.fromEntries(TONE_ORDER.map((t) => [t, { best: 0, tries: 0 }])) });
+const emptyShadow = () => ({ base: null, tones: Object.fromEntries(TONE_ORDER.map((t) => [t, { best: 0, tries: 0 }])), lines: {} });
 
 /** YIN pitch estimate for one frame, in Hz, or null when unvoiced. */
 function detectPitch(buf, sr) {
@@ -4108,6 +4108,232 @@ function ShadowPlot({ tone, trace, live, height = 200 }) {
   );
 }
 
+
+/* ============================================================================
+ * Dialogue shadowing: say whole lines and see every syllable's contour.
+ * ========================================================================== */
+const SHADOW_DIALOGUES = [
+  { id: "counter", title: "At the counter", lines: [
+    { who: "Barista", th: "สวัสดีค่ะ รับอะไรคะ", r: "sà-wàt-dii khâ, ráp à-rai khá", m: "Hello, what would you like?", syl: ["sà", "wàt", "dii", "khâ", "ráp", "à", "rai", "khá"], tones: ["low", "low", "mid", "falling", "high", "low", "mid", "high"] },
+    { who: "You", th: "กาแฟเย็นครับ", r: "kaa-fɛɛ yen khráp", m: "An iced coffee, please.", syl: ["kaa", "fɛɛ", "yen", "khráp"], tones: ["mid", "mid", "mid", "high"] },
+    { who: "Barista", th: "อะไรอีกไหมคะ", r: "à-rai ìik mǎi khá", m: "Anything else?", syl: ["à", "rai", "ìik", "mǎi", "khá"], tones: ["low", "mid", "low", "rising", "high"] },
+    { who: "You", th: "ไม่ครับ เท่าไรครับ", r: "mâi khráp, thâo-rai khráp", m: "No thanks. How much?", syl: ["mâi", "khráp", "thâo", "rai", "khráp"], tones: ["falling", "high", "falling", "mid", "high"] },
+    { who: "Barista", th: "ห้าสิบห้าบาทค่ะ", r: "hâa-sìp-hâa bàat khâ", m: "Fifty-five baht.", syl: ["hâa", "sìp", "hâa", "bàat", "khâ"], tones: ["falling", "low", "falling", "low", "falling"] },
+    { who: "You", th: "ขอบคุณครับ", r: "khɔ̀ɔp-khun khráp", m: "Thank you.", syl: ["khɔ̀ɔp", "khun", "khráp"], tones: ["low", "mid", "high"] },
+  ] },
+  { id: "way", title: "Asking the way", lines: [
+    { who: "You", th: "ขอโทษครับ", r: "khɔ̌ɔ-thôot khráp", m: "Excuse me.", syl: ["khɔ̌ɔ", "thôot", "khráp"], tones: ["rising", "falling", "high"] },
+    { who: "You", th: "ห้องน้ำอยู่ที่ไหน", r: "hɔ̂ng-náam yùu thîi-nǎi", m: "Where is the bathroom?", syl: ["hɔ̂ng", "náam", "yùu", "thîi", "nǎi"], tones: ["falling", "high", "low", "falling", "rising"] },
+    { who: "Local", th: "ตรงไปค่ะ", r: "trong pai khâ", m: "Go straight.", syl: ["trong", "pai", "khâ"], tones: ["mid", "mid", "falling"] },
+    { who: "You", th: "พูดช้าๆ หน่อยครับ", r: "phûut cháa-cháa nɔ̀i khráp", m: "Please speak slowly.", syl: ["phûut", "cháa", "cháa", "nɔ̀i", "khráp"], tones: ["falling", "high", "high", "low", "high"] },
+    { who: "Local", th: "ตรงไป แล้วเลี้ยวซ้าย", r: "trong pai, lɛ́ɛo líao sáai", m: "Straight on, then turn left.", syl: ["trong", "pai", "lɛ́ɛo", "líao", "sáai"], tones: ["mid", "mid", "high", "high", "high"] },
+    { who: "You", th: "ขอบคุณมากครับ", r: "khɔ̀ɔp-khun mâak khráp", m: "Thank you very much.", syl: ["khɔ̀ɔp", "khun", "mâak", "khráp"], tones: ["low", "mid", "falling", "high"] },
+  ] },
+];
+const PHRASE_PTS = 12; // contour points per syllable
+
+/** Every voiced frame from the first to the last, octave-fixed and smoothed, in semitones. */
+function voicedRun(frames) {
+  const v = frames.filter((f) => f.hz);
+  if (v.length < 8) return null;
+  const mid = median(v.map((f) => f.hz));
+  const st = [];
+  v.forEach((f, i) => {
+    let x = toSt(f.hz, mid);
+    if (i) {
+      while (x - st[i - 1] > 7) x -= 12;
+      while (st[i - 1] - x > 7) x += 12;
+    }
+    st.push(x);
+  });
+  const smooth = st.map((_, i) => median(st.slice(Math.max(0, i - 2), i + 3)));
+  return { st: smooth, hz: smooth.map((x) => mid * 2 ** (x / 12)) };
+}
+
+/**
+ * Score a spoken line against the chained Chao contours of its syllables. Dynamic time
+ * warping lines the two up, since nobody gives every syllable the same length; each
+ * syllable is then scored by how far your warped pitch sits from its own contour.
+ */
+function scorePhrase(line, run, base) {
+  const T = line.tones.flatMap((t) => targetSt(t, PHRASE_PTS));
+  const n = T.length;
+  const raw = base ? run.hz.map((h) => toSt(h, base)) : run.st;
+  const L = resample(raw, Math.max(n, Math.min(raw.length, n * 2)));
+  const mean = (xs) => xs.reduce((a, x) => a + x, 0) / xs.length;
+  const mT = mean(T);
+  const mL = mean(L);
+  const t0 = T.map((x) => x - mT);
+  const l0 = L.map((x) => x - mL);
+  const m = l0.length;
+  const band = Math.max(PHRASE_PTS * 2, Math.abs(m - n) + PHRASE_PTS);
+  const D = Array.from({ length: n + 1 }, () => new Float64Array(m + 1).fill(Infinity));
+  D[0][0] = 0;
+  for (let i = 1; i <= n; i += 1) {
+    const centre = Math.round((i * m) / n);
+    for (let j = Math.max(1, centre - band); j <= Math.min(m, centre + band); j += 1) {
+      D[i][j] = Math.abs(t0[i - 1] - l0[j - 1]) + Math.min(D[i - 1][j - 1], D[i - 1][j], D[i][j - 1]);
+    }
+  }
+  // Walk back to find which of your frames match each target point.
+  const matched = Array.from({ length: n }, () => []);
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    matched[i - 1].push(l0[j - 1]);
+    const opts = [[D[i - 1][j - 1], i - 1, j - 1], [D[i - 1][j], i - 1, j], [D[i][j - 1], i, j - 1]];
+    opts.sort((a, b) => a[0] - b[0]);
+    [, i, j] = opts[0];
+  }
+  const warped = matched.map((xs, k) => (xs.length ? mean(xs) : t0[k]));
+  const perSyl = line.tones.map((tone, k) => {
+    const seg = warped.slice(k * PHRASE_PTS, (k + 1) * PHRASE_PTS);
+    const tgt = t0.slice(k * PHRASE_PTS, (k + 1) * PHRASE_PTS);
+    const err = mean(seg.map((x, q) => Math.abs(x - tgt[q])));
+    const slope = (xs) => mean(xs.slice(-4)) - mean(xs.slice(0, 4));
+    return { tone, score: Math.round(Math.max(0, Math.min(100, 100 - (err - 0.5) * 22))), dir: slope(seg) - slope(tgt), off: mean(seg) - mean(tgt) };
+  });
+  const score = Math.round(mean(perSyl.map((p) => p.score)));
+  const worst = perSyl.reduce((w, p, k) => (p.score < perSyl[w].score ? k : w), 0);
+  const w = perSyl[worst];
+  const name = TONES[w.tone].name;
+  let tip;
+  if (score >= SHADOW_PASS) tip = "Every syllable follows its contour. Try it at full speed.";
+  else if (Math.abs(w.dir) > 2) tip = `"${line.syl[worst]}" is ${name}: ${w.dir > 0 ? "yours rose where it should" : "yours fell where it should"} ${w.dir > 0 ? (TONES[w.tone].chao.endsWith("1") ? "fall" : "stay level") : "rise or stay level"}.`;
+  else if (Math.abs(w.off) > 1.5) tip = `"${line.syl[worst]}" is ${name}: pitch it ${w.off > 0 ? "lower" : "higher"} than you did.`;
+  else tip = `Closest to fix: "${line.syl[worst]}" (${name}). Listen to the line again and copy that syllable.`;
+  return { score, perSyl, warped, target: t0, tip };
+}
+
+function PhrasePlot({ line, result, live, height = 190 }) {
+  const width = 360;
+  const pad = { l: 8, r: 8, t: 22, b: 10 };
+  const range = 8;
+  const y = (st) => pad.t + ((range - Math.max(-range, Math.min(range, st))) / (2 * range)) * (height - pad.t - pad.b);
+  const k = line.tones.length;
+  const segW = (width - pad.l - pad.r) / k;
+  const T = line.tones.map((t) => targetSt(t, PHRASE_PTS));
+  const meanT = T.flat().reduce((a, x) => a + x, 0) / (k * PHRASE_PTS);
+  const segPath = (xs, s) => xs.map((v, i) => `${i ? "L" : "M"} ${(pad.l + s * segW + 6 + (i / (xs.length - 1)) * (segW - 12)).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const liveXs = (live || []).filter((v) => v != null);
+  const livePath = liveXs.length > 1 ? liveXs.map((v, i) => `${i ? "L" : "M"} ${(pad.l + (i / (liveXs.length - 1)) * (width - pad.l - pad.r)).toFixed(1)} ${y(v).toFixed(1)}`).join(" ") : null;
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto mt-3 w-full" role="img" aria-label="Target contour for each syllable, with your pitch">
+      {line.tones.map((tone, s) => {
+        const ps = result?.perSyl[s];
+        return (
+          <g key={s}>
+            {s > 0 && <line x1={pad.l + s * segW} x2={pad.l + s * segW} y1={pad.t - 4} y2={height - pad.b} stroke="#ffffff1a" />}
+            <text x={pad.l + s * segW + segW / 2} y={13} textAnchor="middle" fontSize="11" fill={ps ? (ps.score >= SHADOW_PASS ? "#6EE7B7" : "#FDA4AF") : "#CBD5E1"}>{line.syl[s]}</text>
+            <path d={segPath(T[s].map((v) => v - meanT), s)} fill="none" stroke={TONES[tone].color} strokeOpacity="0.35" strokeWidth="16" strokeLinecap="round" />
+            {result && <path data-phrase-trace d={segPath(result.warped.slice(s * PHRASE_PTS, (s + 1) * PHRASE_PTS), s)} fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
+          </g>
+        );
+      })}
+      {!result && livePath && <path d={livePath} fill="none" stroke="#fff" strokeOpacity="0.7" strokeWidth="2.5" />}
+    </svg>
+  );
+}
+
+function DialogueShadow({ shadow, setShadow, logActivity }) {
+  const audio = getAudio();
+  const mic = useMicPitch();
+  const [did, setDid] = useState(SHADOW_DIALOGUES[0].id);
+  const dlg = SHADOW_DIALOGUES.find((d) => d.id === did);
+  const [li, setLi] = useState(0);
+  const line = dlg.lines[li];
+  const key = `${dlg.id}:${li}`;
+  const [phase, setPhase] = useState("idle");
+  const [live, setLive] = useState([]);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setResult(null); setLive([]); setErr(null); }, [did, li]);
+
+  const record = async () => {
+    audio.cancelSpeech();
+    audio.stopTones();
+    setErr(null);
+    setResult(null);
+    setLive([]);
+    setPhase("recording");
+    try {
+      const frames = await mic.capture(1200 + line.tones.length * 450, (fr) => {
+        const v = fr.filter((f) => f.hz).map((f) => f.hz);
+        const ref = shadow.base || median(v);
+        setLive(v.map((h) => toSt(h, ref)));
+      });
+      const run = voicedRun(frames);
+      if (!run) setErr("I couldn't hear the line. Say it a little louder, close to the microphone.");
+      else {
+        const r = scorePhrase(line, run, shadow.base);
+        setResult(r);
+        setShadow((s) => ({ ...s, lines: { ...(s.lines || {}), [key]: Math.max(s.lines?.[key] || 0, r.score) } }));
+        logActivity?.({ shadow: 1 });
+        haptic(r.score >= SHADOW_PASS ? "ok" : "bad");
+      }
+    } catch (e) {
+      setErr(micErrorText(e));
+    }
+    setPhase("idle");
+  };
+
+  const playUpTo = () => audio.speakSequence(dlg.lines.slice(0, li + 1).map((l) => ({ th: l.th })), 500);
+  const busy = phase !== "idle";
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+      <Card className="p-5" glow={TONES.high.color}>
+        <div className="flex flex-wrap gap-2">
+          {SHADOW_DIALOGUES.map((d) => <Chip key={d.id} active={d.id === did} color={TONES.high.color} onClick={() => { setDid(d.id); setLi(0); }}>{d.title}</Chip>)}
+        </div>
+        <ol className="mt-3 space-y-1.5">
+          {dlg.lines.map((l, i) => {
+            const best = shadow.lines?.[`${dlg.id}:${i}`];
+            return (
+              <li key={i}>
+                <button data-dialogue-line={i} onClick={() => setLi(i)} className={`flex w-full items-baseline gap-2 rounded-xl px-3 py-1.5 text-left transition ${i === li ? "bg-white/10" : "hover:bg-white/5"} ${l.who === "You" ? "" : "pl-6"}`}>
+                  <span className={`w-14 shrink-0 text-[11px] font-bold uppercase ${l.who === "You" ? "text-amber-300" : "text-slate-400"}`}>{l.who}</span>
+                  <span className="flex-1 text-lg text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{l.th}</span>
+                  {best != null && <span className={`text-xs tabular-nums ${best >= SHADOW_PASS ? "text-emerald-300" : "text-slate-400"}`}>{best}</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="mt-4 rounded-2xl bg-white/[0.04] p-3">
+          <div className="text-2xl leading-[1.6] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{line.th}</div>
+          <div className="text-sm text-slate-200">{line.r}</div>
+          <div className="text-xs text-slate-400">{line.m}</div>
+          <PhrasePlot line={line} result={result} live={phase === "recording" ? live : null} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={() => audio.speakHumanVoice(line.th)} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50"><Volume2 size={16} /> Hear line</button>
+          <button onClick={playUpTo} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-sm text-slate-200 disabled:opacity-50"><Play size={14} /> From the top</button>
+          {phase === "recording" ? (
+            <button onClick={mic.stop} className="flex items-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white"><Mic size={16} className="animate-pulse" /> Listening… tap to stop</button>
+          ) : (
+            <button data-dialogue-say onClick={record} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50"><Mic size={16} /> Say the line</button>
+          )}
+        </div>
+        {result && (
+          <div className="mt-4 rounded-2xl bg-white/[0.04] p-3 text-sm">
+            <div className="flex items-baseline gap-3">
+              <span data-dialogue-score className={`text-3xl font-black tabular-nums ${result.score >= SHADOW_PASS ? "text-emerald-300" : "text-amber-300"}`}>{result.score}</span>
+              <span className="flex flex-wrap gap-1">{result.perSyl.map((p, k) => <span key={k} className={`rounded-md px-1.5 text-xs ${p.score >= SHADOW_PASS ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>{line.syl[k]} {p.score}</span>)}</span>
+            </div>
+            <p className="mt-1 text-slate-200">{result.tip}</p>
+            {li < dlg.lines.length - 1 && <button onClick={() => setLi(li + 1)} className="mt-2 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">Next line <ChevronRight size={12} className="inline" /></button>}
+          </div>
+        )}
+        {err && <p className="mt-3 flex gap-2 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{err}</p>}
+      </Card>
+      <Card className="p-4 text-xs leading-relaxed text-slate-400">
+        Each box is one syllable's contour, coloured by tone. After you speak, your pitch is stretched to line up with the syllables (people never give every syllable the same length) and each one is scored on its own. Real speech flattens tones a little and pitch drifts down over a sentence, so aim for the direction of each syllable rather than a perfect copy. {shadow.base ? `Height is scored against your voice at ${shadow.base} Hz.` : "Set your voice under Syllables to score height too."}
+      </Card>
+    </div>
+  );
+}
+
 function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
   const audio = getAudio();
   const mic = useMicPitch();
@@ -4125,6 +4351,7 @@ function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
   const [result, setResult] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => { setResult(null); setLive([]); setWi(0); }, [tone]);
+  const [view, setView] = useState("syllables");
 
   const liveSt = (frames) => {
     const voiced = frames.filter((f) => f.hz).map((f) => f.hz);
@@ -4168,6 +4395,11 @@ function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
   return (
     <div className="space-y-4">
       <SectionTitle icon={Mic} title="Shadow Mirror" sub="Hear the model, say it back, and see your pitch drawn over the target contour. Analysis runs on this device; no audio is sent anywhere." color={TONES.falling.color} />
+      <div className="flex gap-2">
+        <Chip active={view === "syllables"} color={TONES.falling.color} onClick={() => setView("syllables")}>Syllables</Chip>
+        <Chip active={view === "dialogue"} color={TONES.falling.color} onClick={() => setView("dialogue")}><span data-shadow-dialogue>Dialogue</span></Chip>
+      </div>
+      {view === "dialogue" ? <DialogueShadow shadow={shadow} setShadow={setShadow} logActivity={logActivity} /> : (<>
       <div className="grid grid-cols-5 gap-2">
         {TONE_ORDER.map((tn) => {
           const open = unlocked(tn);
@@ -4253,6 +4485,7 @@ function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }
