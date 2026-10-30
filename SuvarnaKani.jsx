@@ -1058,15 +1058,47 @@ function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinu
   );
 }
 
+/**
+ * Three items most easily confused with `item` in the given script: a lookalike set first,
+ * then same tier, shared letters, similar length, same first tone and nearby level.
+ */
+function confusables(item, mode = "th") {
+  const text = (c) => (mode === "lo" ? c.lo : c.th);
+  const mine = text(item);
+  const group = TRAPS.find((g) => g.items.some((x) => x.th === item.th));
+  const seen = new Set([mine]);
+  const scored = CURRICULUM.filter((c) => c.id !== item.id).map((c) => {
+    const t = text(c);
+    let score = Math.random();
+    if (group && group.items.some((x) => x.th === c.th)) score += 6;
+    if (c.tier === item.tier) score += 3;
+    score += [...new Set(t)].filter((ch) => mine.includes(ch)).length * 1.5;
+    if (Math.abs(t.length - mine.length) <= 1) score += 1;
+    if (c.tone[0] && c.tone[0] === item.tone[0]) score += 0.5;
+    if (Math.abs(c.level - item.level) <= 1) score += 1;
+    return { c, t, score };
+  }).sort((a, b) => b.score - a.score);
+  const out = [];
+  for (const { c, t } of scored) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(c);
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
 /** Contrast drill for leeches: pick the item among its lookalikes. */
 function leechOptions(item) {
-  const group = TRAPS.find((g) => g.items.some((x) => x.th === item.th));
-  let pool = group ? CURRICULUM.filter((c) => c.id !== item.id && group.items.some((x) => x.th === c.th)) : [];
-  if (pool.length < 3) {
-    const extra = shuffle(CURRICULUM.filter((c) => c.id !== item.id && c.tier === item.tier && !pool.includes(c)));
-    pool = [...pool, ...extra].slice(0, 3);
-  }
-  return shuffle([item, ...pool.slice(0, 3)]);
+  return shuffle([item, ...confusables(item)]);
+}
+
+/** Which direction to review: "spell" (sound → Thai) once an item is known, alternating by due date. */
+function reviewDirection(st) {
+  if (!st || st.stage < 2 || !st.fsrs?.read) return "read";
+  const due = (t) => t.last + fsrsInterval(t.S) * DAY;
+  if (!st.fsrs.spell) return "spell";
+  return due(st.fsrs.spell) <= due(st.fsrs.read) ? "spell" : "read";
 }
 
 function LeechDrill({ open, leeches, mode, font, onClose, onFinish }) {
@@ -1224,6 +1256,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     () => CURRICULUM.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
     [srs, now, sandbox]
   );
+  const reviewDirections = useMemo(() => Object.fromEntries(reviewQueue.map((i) => [i.id, reviewDirection(srs[i.id])])), [reviewQueue]); // eslint-disable-line react-hooks/exhaustive-deps
   const nextReview = useMemo(() => {
     const times = CURRICULUM.map((i) => srs[i.id]).filter((s) => s && s.stage >= 1 && s.stage < 5 && s.next > now).map((s) => s.next);
     return times.length ? Math.min(...times) : null;
@@ -1261,7 +1294,8 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       const bump = (pair, ok) => [pair[0] + (ok ? 1 : 0), pair[1] + 1];
       if (parts.read != null) stats.read = bump(stats.read, parts.read);
       if (parts.second != null) stats.second = bump(stats.second, parts.second);
-      return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second) }), stats } };
+      if (parts.spell != null) stats.spell = bump(stats.spell || [0, 0], parts.spell);
+      return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second), spell: grade(parts.spell) }), stats } };
     });
     logActivity({ reviews: 1, reviewsRight: correct ? 1 : 0 });
   };
@@ -1404,7 +1438,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       })}
 
       <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
-      <ReviewModal open={reviewOpen} queue={reviewQueue} mode={mode} font={font} onClose={() => setReviewOpen(false)} onAnswer={answer} />
+      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} onClose={() => setReviewOpen(false)} onAnswer={answer} />
       <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
     </div>
   );
@@ -1699,7 +1733,7 @@ function ClassChoice({ onPick, picked, correct, disabled }) {
   );
 }
 
-function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
+function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer }) {
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
@@ -1707,6 +1741,8 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   const [readOk, setReadOk] = useState(null);
   const [pick, setPick] = useState(null);
   const [tonePicks, setTonePicks] = useState([]);
+  const [dirs, setDirs] = useState({});
+  const [spell, setSpell] = useState(null); // { options, pick }
   const [score, setScore] = useState({ right: 0, wrong: 0 });
   const inputRef = useRef(null);
   const pending = useRef(null);
@@ -1728,6 +1764,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
     if (open) {
       pending.current = null;
       setList(shuffle(queue));
+      setDirs(directions);
       setIdx(0);
       setInput("");
       setPhase("read");
@@ -1742,6 +1779,27 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   useEffect(() => {
     if (open && phase === "read") inputRef.current?.focus();
   }, [open, idx, phase]);
+
+  // Reverse reviews: hear the word, see its reading and meaning, pick the spelling.
+  useEffect(() => {
+    const it = list[idx];
+    if (!open || !it || dirs[it.id] !== "spell") return setSpell(null);
+    setSpell({ id: it.id, options: shuffle([it, ...confusables(it, mode === "lo" ? "lo" : "th")]), pick: null });
+    const audio = getAudio();
+    if (mode === "lo") audio.speakHumanVoice(it.ttsLo || it.ttsTh, it.lo);
+    else audio.speakHumanVoice(it.ttsTh);
+    return undefined;
+  }, [open, idx, list, dirs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!spell || spell.pick) return undefined;
+    const onKey = (e) => {
+      const n = Number(e.key);
+      if (n >= 1 && n <= spell.options.length) document.querySelectorAll("[data-spell-opt]")[n - 1]?.click();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [spell]);
 
   if (!open) return null;
   const item = list[idx];
@@ -1768,6 +1826,16 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
     pending.current = { id: item.id, ok, parts: { read: rOk, second: sOk, kind } };
     setPhase("result");
     speak();
+  };
+
+  const pickSpelling = (opt) => {
+    if (!spell || spell.pick) return;
+    const ok = opt.id === item.id;
+    haptic(ok ? "ok" : "miss");
+    setSpell({ ...spell, pick: opt.id });
+    setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
+    pending.current = { id: item.id, ok, parts: { spell: ok } };
+    setPhase("result");
   };
 
   const next = (guessed = false) => {
@@ -1822,6 +1890,52 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
           <div className="mt-3 text-2xl font-black text-white">{score.right} / {score.right + score.wrong}</div>
           <p className="mt-1 text-sm text-slate-400">Each item's reading and its tone (or class) are scheduled separately, for about 90% recall. Missed items come back in 10 minutes, then sooner than before.</p>
           <button onClick={close} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
+        </div>
+      ) : spell && spell.id === item.id ? (
+        <div>
+          <div className="text-center text-xs font-bold uppercase tracking-widest text-slate-400">Which spelling? (keys 1–4)</div>
+          <div className="mt-3 flex items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+            <button type="button" onClick={speak} aria-label="Play again" className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-amber-500 text-black active:scale-95"><Volume2 size={28} /></button>
+            <div>
+              <div className="text-2xl font-bold text-white">{mode === "lo" ? item.loRoman : item.thRoman.split(" ·")[0]}</div>
+              {/* Thai in brackets (e.g. "child (เด็ก)") would give the spelling away. */}
+              <div className="text-slate-300">{item.meaning.replace(/\s*\([^)]*[\u0E00-\u0EFF][^)]*\)/g, "")}</div>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {spell.options.map((o, i) => {
+              const right = o.id === item.id;
+              const picked = spell.pick === o.id;
+              const state = !spell.pick ? "border-white/10 bg-white/[0.04]" : right ? "border-emerald-400 bg-emerald-500/20" : picked ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
+              return (
+                <button key={o.id} data-spell-opt type="button" onClick={() => pickSpelling(o)} disabled={!!spell.pick} className={`relative rounded-2xl border-2 px-2 py-4 text-center transition ${state}`}>
+                  <span className="absolute left-2 top-1.5 text-[11px] text-slate-500">{i + 1}</span>
+                  <span className={`${(mode === "lo" ? o.lo : o.th).length > 5 ? "text-3xl" : "text-5xl"} leading-[1.5] text-white`} style={{ fontFamily: FONT_STACKS[font][mode === "lo" ? "lo" : "th"] }}>{mode === "lo" ? o.lo : o.th}</span>
+                </button>
+              );
+            })}
+          </div>
+          {phase === "result" && (
+            <div className="mt-3 space-y-1 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              {spell.pick === item.id ? (
+                <div className="font-bold text-emerald-300">Correct</div>
+              ) : (
+                <>
+                  <div className="font-bold text-rose-300">Spelling missed</div>
+                  {(() => { const o = spell.options.find((x) => x.id === spell.pick); return o ? <p className="text-rose-200">{mode === "lo" ? o.lo : o.th} is {mode === "lo" ? o.loRoman : o.thRoman.split(" ·")[0]}, "{o.meaning}". {item.trap || ""}</p> : null; })()}
+                </>
+              )}
+              <div className="text-slate-300"><DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-3xl leading-[1.5] text-white" /></div>
+            </div>
+          )}
+          {phase === "result" && (
+            <div className="mt-4 flex gap-2">
+              {spell.pick === item.id && (
+                <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5">I guessed</button>
+              )}
+              <button type="button" onClick={() => next()} className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">Next</button>
+            </div>
+          )}
         </div>
       ) : (
         <form onSubmit={submit}>
