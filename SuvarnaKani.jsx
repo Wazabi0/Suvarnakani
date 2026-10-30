@@ -62,6 +62,20 @@ const TONES = {
 };
 const TONE_ORDER = ["mid", "low", "falling", "high", "rising"];
 
+/*
+ * Vientiane Lao has its own tone values. Contours follow the common five-way
+ * description for learners coming from Thai (rising, high, mid, low falling,
+ * high falling). Some speakers split the rising tone by class; we don't.
+ */
+Object.assign(TONES, {
+  lo_rising: { name: "Rising", th: "ສຽງຂຶ້ນ", chao: "24", color: "#4FA3FF", ink: "#7DBBFF", grad: ["#2A5FA8", "#BFE0FF"], notes: ["A3", "E4"], lao: true },
+  lo_high: { name: "High", th: "ສຽງສູງ", chao: "45", color: "#FFE27A", ink: "#FFE27A", grad: ["#F5C842", "#FFF0B8"], notes: ["G4", "A4"], lao: true },
+  lo_mid: { name: "Mid", th: "ສຽງກາງ", chao: "33", color: "#22C3A6", ink: "#3DDBBE", grad: ["#22C3A6", "#22C3A6"], notes: ["C4", "C4"], lao: true },
+  lo_lowfall: { name: "Low falling", th: "ສຽງຕ່ຳຕົກ", chao: "31", color: "#6E5CE6", ink: "#A99DF7", grad: ["#8577EE", "#4D3FC4"], notes: ["C4", "F3"], lao: true },
+  lo_highfall: { name: "High falling", th: "ສຽງສູງຕົກ", chao: "52", color: "#FF6B4A", ink: "#FF8A6E", grad: ["#FFB199", "#C2381D"], notes: ["A4", "E4"], lao: true },
+});
+const LAO_TONE_ORDER = ["lo_mid", "lo_lowfall", "lo_highfall", "lo_high", "lo_rising"];
+
 const NOTE_FREQ = { F3: 174.61, G3: 196.0, A3: 220.0, C4: 261.63, E4: 329.63, F4: 349.23, G4: 392.0, A4: 440.0 };
 
 /* Classes use an "altitude" ramp of temple gold (pale = high, bronze = low)
@@ -467,6 +481,188 @@ const DAY = 24 * HOUR;
  * ------------------------------------------------------------------------- */
 const FSRS_W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
 const FSRS_DECAY = -0.5;
+
+/* ============================================================================
+ * Lao course: Vientiane tones from Lao spelling, and the Lao item list.
+ * ========================================================================== */
+const LAO_HIGH = "ຂສຖຜຝຫໜໝ";
+const LAO_MID = "ກຈດຕບປຢອ";
+const LAO_LOW = "ຄງຊຍທນພຟມຣລວຮ";
+const SONORANT_LEAD = "ງຍນມລວຣ";
+const PRE = "ເແໂໄໃ";
+const EK = "່";
+const THO = "້";
+const LO_SUB = "ຼ"; // ◌ຼ
+const SHORT_MARKS = "ະັິຶຸົ"; // ະ ັ ິ ຶ ຸ ົ
+const LONG_MARKS = "າີືູໍ"; // າ ີ ື ູ ໍ
+const STOP_FINAL = "ກດບ";
+const SON_FINAL = "ງນມຍວ";
+const isCons = (c) => (LAO_HIGH + LAO_MID + LAO_LOW).includes(c);
+
+function laoClassOf(ch) {
+  if (LAO_HIGH.includes(ch)) return "high";
+  if (LAO_MID.includes(ch)) return "mid";
+  if (LAO_LOW.includes(ch)) return "low";
+  return null;
+}
+
+/** Returns { cls, live, long, mark, tone } for a single Lao syllable, or null if it can't be parsed. */
+function laoSyllable(syl) {
+  const s = [...syl.normalize("NFC")].filter((c) => c !== "​");
+  if (!s.length) return null;
+  let i = 0;
+  const pre = PRE.includes(s[0]) ? s[i++] : null;
+  let init = s[i++];
+  if (!isCons(init)) return null;
+  let cls = laoClassOf(init);
+  // ຫ leading a sonorant (ຫຍ, ຫລ, ຫຼ) makes it high class.
+  if (init === "ຫ" && s[i] === LO_SUB) { i += 1; }
+  else if (init === "ຫ" && SONORANT_LEAD.includes(s[i] || "") ) { i += 1; }
+  else if (s[i] === LO_SUB) { i += 1; }
+  const rest = s.slice(i);
+  let mark = "none";
+  if (rest.includes(EK)) mark = "ek";
+  if (rest.includes(THO)) mark = "tho";
+  if (rest.includes("໊") || rest.includes("໋")) return null;
+  const body = rest.filter((c) => c !== EK && c !== THO);
+  const last = body[body.length - 1];
+  // Live endings that are vowels themselves: ໄ◌ ໃ◌ ◌ຳ ເ◌ົາ
+  const am = body.includes("ຳ");
+  const ao = pre === "ເ" && body.includes("ົ") && last === "າ";
+  let finalC = null;
+  if (last && isCons(last) && body.length >= 1) {
+    // ອ / ວ / ຍ as the only following letter can be a vowel (◌ອ = ɔɔ, ◌ົວ, ເ◌ຍ); treat ວ ຍ as sonorant finals (live) anyway.
+    if (!(last === "ອ" && body.length === 1)) finalC = last;
+  }
+  let live; let long;
+  const hasShort = body.some((c) => SHORT_MARKS.includes(c));
+  const hasLong = body.some((c) => LONG_MARKS.includes(c)) || body.includes("ອ") || body.includes("ຽ") || (pre && pre !== "ໄ" && pre !== "ໃ" && !hasShort);
+  if (pre === "ໄ" || pre === "ໃ" || am || ao) { live = true; long = false; }
+  else if (finalC && STOP_FINAL.includes(finalC)) { live = false; long = !hasShort || body.includes("ົ") && body.includes("ວ"); }
+  else if (finalC && SON_FINAL.includes(finalC)) { live = true; long = !hasShort; }
+  else if (!finalC) {
+    if (body.includes("ະ") || (hasShort && !hasLong)) { live = false; long = false; }
+    else if (hasLong || body.length === 0 && pre) { live = true; long = true; }
+    else if (body.length === 0) { live = true; long = true; } // bare consonant = ◌ໍ / ◌ົ inherent; treat as letter name
+    else return null;
+  } else return null;
+  const tone = laoTone({ cls, live, long, mark });
+  return { cls, live, long, mark, tone };
+}
+
+function laoTone({ cls, live, long, mark }) {
+  if (mark === "ek") return "lo_mid";
+  if (mark === "tho") return cls === "high" ? "lo_lowfall" : "lo_highfall";
+  if (live) return cls === "low" ? "lo_high" : "lo_rising";
+  if (!long) return cls === "low" ? "lo_mid" : "lo_high";
+  return cls === "low" ? "lo_highfall" : "lo_lowfall";
+}
+
+const DEP = "ັິີຶືຸູົຼ່້໊໋໌ໍາຳະຽ";
+/** Split unspaced Lao into written syllables (good enough for the curriculum's words). */
+function laoSyllables(word) {
+  const out = [];
+  word.split(/\s+/).filter(Boolean).forEach((w) => {
+    const s = [...w.normalize("NFC")];
+    let cur = "";
+    let hasNucleus = false;
+    for (let k = 0; k < s.length; k += 1) {
+      const c = s[k];
+      const next = s[k + 1];
+      if (PRE.includes(c)) {
+        if (cur) out.push(cur);
+        cur = c; hasNucleus = false; continue;
+      }
+      if (isCons(c)) {
+        const startsNew = cur && (hasNucleus || (cur && !PRE.includes(cur) && [...cur].some(isCons) && !(cur === "ຫ" && SONORANT_LEAD.includes(c))));
+        if (!cur) { cur += c; continue; }
+        // A front vowel (ເ ແ ໂ ໄ ໃ) plus its consonant already has its nucleus.
+        if (PRE.includes(cur) && cur.length === 1) { cur += c; hasNucleus = true; continue; }
+        // ◌ວ / ◌ລ clusters (ຂວາ, ຄວາມ): a bare consonant then ວ with a vowel sign after it.
+        if (!hasNucleus && [...cur].length === 1 && (c === "ວ") && next && DEP.includes(next)) { cur += c; continue; }
+        // ເ◌ືອ / ເ◌ຍ keep their ອ / ຍ inside the vowel.
+        if (c === "ອ" && /[\u0EB7\u0EB5]$/.test(cur)) { cur += c; continue; }
+        if (cur === "ຫ" && SONORANT_LEAD.includes(c)) { cur += c; continue; }
+        // a consonant directly after a vowel is a final unless a dependent sign follows it
+        if (hasNucleus && (SON_FINAL + STOP_FINAL).includes(c) && !(next && DEP.includes(next)) && !cur.endsWith("ະ")) {
+          // ◌ອ / ◌ວ as vowel carriers stay in the syllable
+          cur += c; out.push(cur); cur = ""; hasNucleus = false; continue;
+        }
+        if (c === "ອ" && !hasNucleus) { cur += c; hasNucleus = true; continue; }
+        if (c === "ວ" && cur.endsWith("ົ")) { cur += c; hasNucleus = true; continue; }
+        if (startsNew || hasNucleus) { out.push(cur); cur = c; hasNucleus = false; continue; }
+        // bare consonant followed by consonant: inherent vowel syllable
+        out.push(cur); cur = c; hasNucleus = false; continue;
+      }
+      cur += c;
+      if (!"່້໊໋ຼ".includes(c)) hasNucleus = true;
+      if (c === "ະ") { out.push(cur); cur = ""; hasNucleus = false; }
+    }
+    if (cur) out.push(cur);
+  });
+  return out;
+}
+
+const LAO_CLASS_RULE = {
+  high: "High class (ຂ ສ ຖ ຜ ຝ ຫ, and ໜ ໝ ຫຼ).",
+  mid: "Middle class (ກ ຈ ດ ຕ ບ ປ ຢ ອ).",
+  low: "Low class (ຄ ງ ຊ ຍ ທ ນ ພ ຟ ມ ລ ວ ຮ).",
+};
+
+/** One line on why a Lao syllable has its tone, in the same order as the Thai rule. */
+function explainLaoTone(p) {
+  const kind = p.live ? "live" : `dead ${p.long ? "long" : "short"}`;
+  const mark = p.mark === "ek" ? "ໄມ້ເອກ (◌່)" : p.mark === "tho" ? "ໄມ້ໂທ (◌້)" : "no mark";
+  return `${CLASSES[p.cls].name} class + ${kind} + ${mark} = ${TONES[p.tone].name} (${TONES[p.tone].chao}, Vientiane).`;
+}
+
+// Letters and vowels Lao has and Thai doesn't. They appear only in the Lao course.
+const LAO_ONLY_ITEMS = [
+  { id: "lo-yo", level: 1, tier: "glyph", th: "", lo: "ຢ", thRoman: "", loRoman: "y · yo yaa", meaning: "y sound, Middle class · medicine (ຢາ)", accept: ["y", "yo", "ya", "yaa", "medicine"], ttsTh: "ยา", ttsLo: "ยา", cls: "mid", tone: [],
+    mnemonic: "ຢ is the Middle-class y. Thai needs a silent อ in front of ย for the same job (อยู่); Lao just writes ຢູ່.", bridge: "Thai อย ↔ Lao ຢ: อยู่ ↔ ຢູ່, อยาก ↔ ຢາກ." },
+  { id: "lo-no-h", level: 3, tier: "glyph", th: "", lo: "ໜ", thRoman: "", loRoman: "n (high) · no nuu", meaning: "n with High-class tones (ຫ + ນ in one letter) · mouse (ໜູ)", accept: ["n", "no", "nuu", "nu", "mouse", "hno", "honam"], ttsTh: "หนู", ttsLo: "หนู", cls: "high", tone: [],
+    mnemonic: "ຫ climbed inside ນ: one letter, High class.", bridge: "Thai หน ↔ Lao ໜ: หนาว ↔ ໜາວ." },
+  { id: "lo-mo-h", level: 3, tier: "glyph", th: "", lo: "ໝ", thRoman: "", loRoman: "m (high) · mo maa", meaning: "m with High-class tones (ຫ + ມ in one letter) · dog (ໝາ)", accept: ["m", "mo", "maa", "ma", "dog", "hmo", "homam"], ttsTh: "หมา", ttsLo: "หมา", cls: "high", tone: [],
+    mnemonic: "The dog's ຫ is tucked into ມ: ໝາ rises like a howl.", bridge: "Thai หม ↔ Lao ໝ: หมา ↔ ໝາ." },
+  { id: "lo-lo-h", level: 3, tier: "glyph", th: "", lo: "ຫຼ", thRoman: "", loRoman: "l (high) · lo", meaning: "l with High-class tones (ຫ + ◌ຼ)", accept: ["l", "lo", "hlo", "highl"], ttsTh: "หลอ", ttsLo: "หลอ", cls: "high", tone: [],
+    mnemonic: "The little ◌ຼ hanging under ຫ is a folded ລ: together they make a High-class l.", bridge: "Thai หล ↔ Lao ຫຼ: ตลาด ↔ ຕະຫຼາດ." },
+  { id: "lo-v-o", level: 5, tier: "glyph", th: "", lo: "◌ົ", thRoman: "", loRoman: "o (short) · mai kong", meaning: "short o before a final (ໄມ້ກົງ)", accept: ["o", "shorto", "maikong", "kong"], ttsTh: "โอะ", ttsLo: "โอะ", tone: [],
+    mnemonic: "Thai hides the short o (นก); Lao writes it on top: ນົກ.", bridge: "นก ↔ ນົກ, รถ ↔ ລົດ: the hidden o law." },
+  { id: "lo-v-ia", level: 5, tier: "glyph", th: "", lo: "◌ຽ", thRoman: "", loRoman: "ia · before a final", meaning: "ia vowel when a final follows (Thai เ◌ีย)", accept: ["ia", "ie", "iya", "iia"], ttsTh: "เอีย", ttsLo: "เอีย", tone: [],
+    mnemonic: "ເ◌ຍ folds into ◌ຽ once a final consonant joins: ຮຽນ (study).", bridge: "เรียน ↔ ຮຽນ, เปลี่ยน ↔ ປ່ຽນ." },
+];
+
+const courseCache = {};
+/**
+ * The item list for a mode. Thai and dual use the curriculum as written. The Lao course
+ * drops Thai-only letters (they collapse onto Lao letters you already have), adds the
+ * Lao-only ones, gives glyphs their Lao class, and gives every word Vientiane tones read
+ * from its Lao spelling.
+ */
+function courseItems(mode) {
+  const key = mode === "lo" ? "lo" : "th";
+  if (courseCache[key]) return courseCache[key];
+  if (key === "th") return (courseCache.th = CURRICULUM);
+  const seen = new Set();
+  const out = [];
+  [...CURRICULUM, ...LAO_ONLY_ITEMS].forEach((it) => {
+    if (it.tier === "glyph") {
+      if (seen.has(it.lo)) return;
+      seen.add(it.lo);
+      const cls = it.cls ? laoClassOf([...it.lo][0]) || it.cls : it.cls;
+      out.push({ ...it, cls, tone: [], parts: undefined, toneSet: "lo" });
+      return;
+    }
+    const syl = laoSyllables(it.lo);
+    const parsed = syl.map(laoSyllable);
+    const ok = parsed.length && parsed.every(Boolean);
+    out.push({ ...it, tone: ok ? parsed.map((p) => p.tone) : [], parts: undefined, loParts: ok ? parsed : null, loSyl: syl, toneSet: "lo" });
+  });
+  out.sort((a, b) => a.level - b.level);
+  courseCache.lo = out;
+  return out;
+}
+
 const FSRS_FACTOR = 19 / 81;
 const TARGET_RETENTION = 0.9;
 const BURN_STABILITY_DAYS = 120;
@@ -1103,7 +1299,7 @@ function confusables(item, mode = "th") {
   const mine = text(item);
   const group = TRAPS.find((g) => g.items.some((x) => x.th === item.th));
   const seen = new Set([mine]);
-  const scored = CURRICULUM.filter((c) => c.id !== item.id).map((c) => {
+  const scored = courseItems(mode).filter((c) => c.id !== item.id).map((c) => {
     const t = text(c);
     let score = Math.random();
     if (group && group.items.some((x) => x.th === c.th)) score += 6;
@@ -1186,7 +1382,7 @@ function LeechDrill({ open, leeches, mode, font, onClose, onFinish }) {
               return (
                 <button key={o.id} onClick={() => choose(o)} className={`rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center transition active:scale-95 ${state}`}>
                   <Glyph text={scriptText(o)} script={mode === "lo" ? "lo" : "th"} font={font} className="text-5xl leading-[1.4] text-white" />
-                  {pick && <div className="text-xs text-slate-300">{o.thRoman.split(" ·")[0]} · {o.meaning.split(" ·")[0]}</div>}
+                  {pick && <div className="text-xs text-slate-300">{mode === "lo" ? o.loRoman.split(" ·")[0] : o.thRoman.split(" ·")[0]} · {o.meaning.split(" ·")[0]}</div>}
                 </button>
               );
             })}
@@ -1261,6 +1457,7 @@ function Onboarding({ onDone }) {
  * Module 1: SRS Shrine
  * ========================================================================== */
 function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice }) {
+  const course = useMemo(() => courseItems(mode), [mode]);
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -1276,9 +1473,9 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const unlockedLevels = useMemo(() => {
     const set = new Set([1]);
     for (let n = 2; n <= LEVELS.length; n += 1) {
-      const prev = CURRICULUM.filter((i) => i.level === n - 1);
+      const prev = course.filter((i) => i.level === n - 1);
       // A level you have already started stays open when new items join the level before it.
-      const started = CURRICULUM.some((i) => i.level === n && stageOf(i.id) > 0);
+      const started = course.some((i) => i.level === n && stageOf(i.id) > 0);
       if (sandbox || started || prev.every((i) => stageOf(i.id) >= 2)) set.add(n);
       else break;
     }
@@ -1287,20 +1484,20 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srs, sandbox]);
 
-  const lessonQueue = useMemo(() => CURRICULUM.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0).sort((a, b) => a.level - b.level), [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lessonQueue = useMemo(() => course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0).sort((a, b) => a.level - b.level), [srs, unlockedLevels, course]); // eslint-disable-line react-hooks/exhaustive-deps
   const reviewQueue = useMemo(
-    () => CURRICULUM.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
-    [srs, now, sandbox]
+    () => course.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
+    [srs, now, sandbox, course]
   );
   const reviewDirections = useMemo(() => Object.fromEntries(reviewQueue.map((i) => [i.id, reviewDirection(srs[i.id])])), [reviewQueue]); // eslint-disable-line react-hooks/exhaustive-deps
   const nextReview = useMemo(() => {
-    const times = CURRICULUM.map((i) => srs[i.id]).filter((s) => s && s.stage >= 1 && s.stage < 5 && s.next > now).map((s) => s.next);
+    const times = course.map((i) => srs[i.id]).filter((s) => s && s.stage >= 1 && s.stage < 5 && s.next > now).map((s) => s.next);
     return times.length ? Math.min(...times) : null;
   }, [srs, now]);
 
-  const counts = SRS_STAGES.map((_, idx) => CURRICULUM.filter((i) => stageOf(i.id) === idx).length);
+  const counts = SRS_STAGES.map((_, idx) => course.filter((i) => stageOf(i.id) === idx).length);
 
-  const leeches = useMemo(() => CURRICULUM.filter((i) => isLeech(srs[i.id])), [srs]);
+  const leeches = useMemo(() => course.filter((i) => isLeech(srs[i.id])), [srs, course]);
 
   const finishLessons = (ids) => {
     setSrs((prev) => {
@@ -1427,7 +1624,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       </Card>
 
       {LEVELS.map((lvl) => {
-        const items = CURRICULUM.filter((i) => i.level === lvl.n);
+        const items = course.filter((i) => i.level === lvl.n);
         const unlocked = unlockedLevels.has(lvl.n);
         const done = items.filter((i) => stageOf(i.id) >= 2).length;
         return (
@@ -1571,7 +1768,7 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
           {quiz.result && (
             <div className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-sm">
               <div className={`font-bold ${quiz.result === "ok" ? "text-emerald-300" : "text-rose-300"}`}>{quiz.result === "ok" ? "Got it" : "Not yet: it comes back at the end of this quiz"}</div>
-              <div className="mt-1 text-slate-200"><span className="text-slate-400">Reading:</span> {qItem.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{qItem.loRoman}</span></>} · <span className="text-slate-400">Meaning:</span> {qItem.meaning}</div>
+              <div className="mt-1 text-slate-200"><span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{qItem.loRoman}</span> : <>{qItem.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{qItem.loRoman}</span></>}</>} · <span className="text-slate-400">Meaning:</span> {qItem.meaning}</div>
               {quiz.result === "miss" && <p className="mt-1 text-slate-400">{qItem.mnemonic}</p>}
             </div>
           )}
@@ -1649,6 +1846,7 @@ function diagnoseReading(item, input) {
 function diagnoseTone(item, picked) {
   const right = item.tone[0];
   if (picked === right) return null;
+  if (item.toneSet === "lo") return item.loParts ? `${item.loSyl[0]}: ${explainLaoTone(item.loParts[0])}` : `This word is ${TONES[right].name} (${TONES[right].chao}).`;
   const p = item.parts;
   if (!p) return `This word is ${TONES[right].name} (${TONES[right].chao}). Listen and compare with ${TONES[picked].name}.`;
   const res = computeTone(p);
@@ -1676,6 +1874,7 @@ function diagnoseTone(item, picked) {
 
 function diagnoseClass(item, picked) {
   if (picked === item.cls) return null;
+  if (item.toneSet === "lo") return `${item.lo} is ${CLASSES[item.cls].name} class, not ${CLASSES[picked].name}. ${LAO_CLASS_RULE[item.cls]}`;
   return `${item.th} is ${CLASSES[item.cls].name} class, not ${CLASSES[picked].name}. ${CLASSES[item.cls].rule}`;
 }
 
@@ -1687,6 +1886,10 @@ function secondPrompt(item) {
 
 /** Romanised syllables with the tone diacritics stripped, so the label can't give the tone away. */
 function syllableLabels(item) {
+  if (item.toneSet === "lo") {
+    const lp = item.loRoman.split(" ·")[0].split(/[-\s]+/).filter(Boolean);
+    return lp.length === item.tone.length ? lp : item.loSyl?.length === item.tone.length ? item.loSyl : item.tone.map((_, i) => `syllable ${i + 1}`);
+  }
   const parts = item.thRoman.split(" ·")[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[-\s]+/).filter(Boolean);
   return parts.length === item.tone.length ? parts : item.tone.map((_, i) => `syllable ${i + 1}`);
 }
@@ -1915,7 +2118,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const readingNote = phase === "result" && !readOk ? diagnoseReading(item, input) : null;
   const secondNote = phase === "result" && secondOk === false
     ? multi
-      ? sylTones.map((t, i) => (tonePicks[i] === t ? null : `${sylLabels[i]} is ${TONES[t].name} (${TONES[t].chao}), not ${TONES[tonePicks[i]].name}.`)).filter(Boolean).join(" ")
+      ? sylTones.map((t, i) => (tonePicks[i] === t ? null : `${sylLabels[i]} is ${TONES[t].name} (${TONES[t].chao}), not ${TONES[tonePicks[i]].name}.${item.loParts ? ` ${explainLaoTone(item.loParts[i])}` : ""}`)).filter(Boolean).join(" ")
       : kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
     : null;
   const allOk = phase === "result" && readOk && secondOk !== false;
@@ -2017,7 +2220,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
                 </div>
               )}
               {multi && phase === "result" ? null : kind === "tone"
-                ? <ToneChoice key={tonePicks.length} onPick={onPick} picked={multi ? null : pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />
+                ? <ToneChoice key={tonePicks.length} onPick={onPick} picked={multi ? null : pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} options={item.toneSet === "lo" ? LAO_TONE_ORDER : TONE_ORDER} />
                 : <ClassChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />}
             </div>
           )}
@@ -2029,7 +2232,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
               {readingNote && <p className="text-rose-200">{readingNote}</p>}
               {secondNote && <p className="text-rose-200">{secondNote}</p>}
               <div className="text-slate-200">
-                <span className="text-slate-400">Reading:</span> {item.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}
+                <span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{item.loRoman}</span> : <>{item.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}</>}
                 <br /><span className="text-slate-400">Meaning:</span> {item.meaning}
               </div>
               <div className="flex flex-wrap gap-1.5">{item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}{item.cls && <ClassBadge cls={item.cls} small />}</div>
@@ -2493,6 +2696,7 @@ function EarDojo({ ear, setEar, logActivity }) {
                   <button key={w.lo} data-ear-lao={i} disabled={!!pick} onClick={() => answerLao(w)} className={`rounded-2xl border p-2 text-center transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"}`}>
                     <div className="text-3xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.lo }}>{w.lo}</div>
                     <div className="text-[11px] text-slate-400">{w.m}</div>
+                    {pick && laoSyllable(w.lo) && <div className="mt-1"><ToneBadge tone={laoSyllable(w.lo).tone} small /></div>}
                   </button>
                 );
               })}
@@ -2587,7 +2791,7 @@ function traceTargets(mode) {
   const script = mode === "lo" ? "lo" : "th";
   const seen = new Set();
   const out = [];
-  CURRICULUM.forEach((it) => {
+  courseItems(mode).forEach((it) => {
     const g = it[script];
     if (it.tier !== "glyph" || [...g].length !== 1 || seen.has(g)) return;
     seen.add(g);
