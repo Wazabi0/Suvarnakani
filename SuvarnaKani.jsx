@@ -504,6 +504,11 @@ function stageFromStability(S) {
 
 function scheduleItem(cur, ratings, now = Date.now()) {
   const fsrs = { ...(cur.fsrs || {}) };
+  // A track added to an item you already know (e.g. tone questions on words) starts
+  // from the read track's memory when answered right, instead of dragging the item back to stage 1.
+  Object.entries(ratings).forEach(([track, g]) => {
+    if (g >= 3 && !fsrs[track] && fsrs.read) fsrs[track] = { ...fsrs.read };
+  });
   Object.entries(ratings).forEach(([track, g]) => { if (g) fsrs[track] = fsrsUpdate(fsrs[track], g, now); });
   const tracks = Object.values(fsrs);
   const weakest = Math.min(...tracks.map((t) => t.S));
@@ -1539,8 +1544,13 @@ function diagnoseClass(item, picked) {
 /** Which second question an item gets after its reading: tone or class. */
 function secondPrompt(item) {
   if (item.tier === "glyph") return item.cls ? "class" : null;
-  if (item.tone.length === 1) return "tone";
-  return null;
+  return item.tone.length ? "tone" : null;
+}
+
+/** Romanised syllables with the tone diacritics stripped, so the label can't give the tone away. */
+function syllableLabels(item) {
+  const parts = item.thRoman.split(" ·")[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[-\s]+/).filter(Boolean);
+  return parts.length === item.tone.length ? parts : item.tone.map((_, i) => `syllable ${i + 1}`);
 }
 
 function ToneChoice({ onPick, picked, correct, disabled, options = TONE_ORDER }) {
@@ -1630,6 +1640,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   const [phase, setPhase] = useState("read"); // read → second → result
   const [readOk, setReadOk] = useState(null);
   const [pick, setPick] = useState(null);
+  const [tonePicks, setTonePicks] = useState([]);
   const [score, setScore] = useState({ right: 0, wrong: 0 });
   const inputRef = useRef(null);
   const pending = useRef(null);
@@ -1656,6 +1667,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
       setPhase("read");
       setReadOk(null);
       setPick(null);
+      setTonePicks([]);
       setScore({ right: 0, wrong: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1669,8 +1681,13 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   const item = list[idx];
   const finished = idx >= list.length;
   const kind = item ? secondPrompt(item) : null;
-  const secondRight = kind === "tone" ? item.tone[0] : kind === "class" ? item.cls : null;
-  const secondOk = pick == null ? null : pick === secondRight;
+  const sylTones = kind === "tone" ? item.tone : [];
+  const multi = sylTones.length > 1;
+  const sylLabels = multi ? syllableLabels(item) : [];
+  const secondRight = kind === "tone" ? item.tone[tonePicks.length] ?? item.tone[0] : kind === "class" ? item.cls : null;
+  const secondOk = multi
+    ? (tonePicks.length < sylTones.length ? null : tonePicks.every((t, i) => t === sylTones[i]))
+    : pick == null ? null : pick === secondRight;
 
   const speak = () => {
     const audio = getAudio();
@@ -1693,6 +1710,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
     setPhase("read");
     setReadOk(null);
     setPick(null);
+    setTonePicks([]);
     setIdx(idx + 1);
   };
 
@@ -1709,13 +1727,24 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
 
   const onPick = (k) => {
     if (phase !== "second") return;
+    if (multi) {
+      // Words are asked one syllable at a time; the tone track passes only if every syllable is right.
+      const picks = [...tonePicks, k];
+      setTonePicks(picks);
+      if (picks.length < sylTones.length) return;
+      setPick(k);
+      finish(readOk, picks.every((t, i) => t === sylTones[i]));
+      return;
+    }
     setPick(k);
     finish(readOk, k === secondRight);
   };
 
   const readingNote = phase === "result" && !readOk ? diagnoseReading(item, input) : null;
   const secondNote = phase === "result" && secondOk === false
-    ? kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
+    ? multi
+      ? sylTones.map((t, i) => (tonePicks[i] === t ? null : `${sylLabels[i]} is ${TONES[t].name} (${TONES[t].chao}), not ${TONES[tonePicks[i]].name}.`)).filter(Boolean).join(" ")
+      : kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
     : null;
   const allOk = phase === "result" && readOk && secondOk !== false;
 
@@ -1731,7 +1760,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
       ) : (
         <form onSubmit={submit}>
           <div className="rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
-            <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35] text-white" />
+            <DualText th={item.th} lo={item.lo} mode={mode} font={font} className={`${item.th.length + item.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
           </div>
           <label htmlFor="review-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">1 · Type the reading or the meaning</label>
           <input
@@ -1751,10 +1780,26 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
           {kind && phase !== "read" && (
             <div className="mt-4">
               <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
-                2 · {kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
+                2 · {multi ? "Tone of each syllable (keys 1–5)" : kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
               </div>
-              {kind === "tone"
-                ? <ToneChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />
+              {multi && (
+                <div className="mb-3 flex flex-wrap justify-center gap-2">
+                  {sylLabels.map((label, i) => {
+                    const picked = tonePicks[i];
+                    const current = phase === "second" && i === tonePicks.length;
+                    const shown = phase === "result" ? sylTones[i] : picked;
+                    const wrong = phase === "result" && picked !== sylTones[i];
+                    return (
+                      <div key={i} className={`flex min-w-[64px] flex-col items-center rounded-xl border px-3 py-1.5 text-sm ${current ? "border-amber-400 bg-amber-500/15 text-white" : wrong ? "border-rose-400/60 bg-rose-500/10 text-rose-100" : "border-white/10 bg-white/[0.04] text-slate-200"}`}>
+                        <span className="font-semibold">{label}</span>
+                        <span className="text-[11px]" style={{ color: shown ? TONES[shown].ink : "#94A3B8" }}>{shown ? TONES[shown].name : current ? "?" : "…"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {multi && phase === "result" ? null : kind === "tone"
+                ? <ToneChoice key={tonePicks.length} onPick={onPick} picked={multi ? null : pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />
                 : <ClassChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />}
             </div>
           )}
