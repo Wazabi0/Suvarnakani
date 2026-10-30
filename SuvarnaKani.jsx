@@ -648,7 +648,7 @@ class SuvarnaMobileAudioEngine {
         const u = new SpeechSynthesisUtterance(text);
         u.lang = lv ? "lo-LA" : "th-TH";
         const voice = lv || e.voice || this.thaiVoice();
-        if (voice) u.voice = voice;
+        try { if (voice) u.voice = voice; } catch { /* stale voice object */ }
         u.rate = e.rate || this.rate;
         return u;
       })
@@ -2143,10 +2143,89 @@ const EAR_SETS = [
     { th: "ป๋า", tone: "rising", r: "pǎa", m: "dad / patron (slang)" },
   ] },
 ];
+// Two-syllable words: one tone question per syllable, so the ear learns tones in running speech.
+const EAR_WORD_SETS = [
+  { id: "w-food", label: "Food", words: [
+    { th: "ข้าวผัด", r: "khâaw-phàt", m: "fried rice", tones: ["falling", "low"] },
+    { th: "ไก่ย่าง", r: "kài-yâang", m: "grilled chicken", tones: ["low", "falling"] },
+    { th: "มะม่วง", r: "má-mûang", m: "mango", tones: ["high", "falling"] },
+    { th: "มะนาว", r: "má-naaw", m: "lime", tones: ["high", "mid"] },
+    { th: "ทุเรียน", r: "thú-rian", m: "durian", tones: ["high", "mid"] },
+    { th: "กาแฟ", r: "kaa-fɛɛ", m: "coffee", tones: ["mid", "mid"] },
+    { th: "อาหาร", r: "aa-hǎan", m: "food", tones: ["mid", "rising"] },
+    { th: "น้ำแข็ง", r: "náam-khɛ̌ng", m: "ice", tones: ["high", "rising"] },
+    { th: "อร่อย", r: "à-rɔ̀i", m: "delicious", tones: ["low", "low"] },
+  ] },
+  { id: "w-people", label: "People and places", words: [
+    { th: "ผู้หญิง", r: "phûu-yǐng", m: "woman", tones: ["falling", "rising"] },
+    { th: "ผู้ชาย", r: "phûu-chaai", m: "man", tones: ["falling", "mid"] },
+    { th: "พี่น้อง", r: "phîi-nɔ́ɔng", m: "siblings", tones: ["falling", "high"] },
+    { th: "แม่น้ำ", r: "mɛ̂ɛ-náam", m: "river", tones: ["falling", "high"] },
+    { th: "ห้องน้ำ", r: "hɔ̂ng-náam", m: "bathroom", tones: ["falling", "high"] },
+    { th: "ตลาด", r: "tà-làat", m: "market", tones: ["low", "low"] },
+    { th: "ประเทศ", r: "prà-thêet", m: "country", tones: ["low", "falling"] },
+    { th: "โรงเรียน", r: "roong-rian", m: "school", tones: ["mid", "mid"] },
+    { th: "เชียงใหม่", r: "chiang-mài", m: "Chiang Mai", tones: ["mid", "low"] },
+  ] },
+  { id: "w-talk", label: "Everyday talk", words: [
+    { th: "ขอบคุณ", r: "khɔ̀ɔp-khun", m: "thank you", tones: ["low", "mid"] },
+    { th: "ขอโทษ", r: "khɔ̌ɔ-thôot", m: "sorry", tones: ["rising", "falling"] },
+    { th: "สบาย", r: "sà-baai", m: "comfortable, well", tones: ["low", "mid"] },
+    { th: "สนุก", r: "sà-nùk", m: "fun", tones: ["low", "low"] },
+    { th: "ภาษา", r: "phaa-sǎa", m: "language", tones: ["mid", "rising"] },
+    { th: "หนังสือ", r: "nǎng-sʉ̌ʉ", m: "book", tones: ["rising", "rising"] },
+    { th: "เท่าไร", r: "thâo-rai", m: "how much", tones: ["falling", "mid"] },
+    { th: "ไม่ใช่", r: "mâi-châi", m: "it isn't", tones: ["falling", "falling"] },
+    { th: "ร้อนมาก", r: "rɔ́ɔn-mâak", m: "very hot", tones: ["high", "falling"] },
+  ] },
+];
+
+// Lao sets ask which word you heard, by spelling. They play only with a real Lao voice:
+// a Thai voice reading Lao would teach Bangkok tones, and Vientiane tones differ.
+const EAR_LAO_SETS = [
+  { id: "l-maa", label: "ມາ · ມ້າ · ໝາ", words: [
+    { lo: "ມາ", r: "maa", m: "come" },
+    { lo: "ມ້າ", r: "maa", m: "horse" },
+    { lo: "ໝາ", r: "maa", m: "dog" },
+  ] },
+  { id: "l-khaa", label: "ຂາ · ຂ່າ · ຂ້າ", words: [
+    { lo: "ຂາ", r: "khaa", m: "leg" },
+    { lo: "ຂ່າ", r: "khaa", m: "galangal" },
+    { lo: "ຂ້າ", r: "khaa", m: "kill" },
+  ] },
+  { id: "l-naa", label: "ນາ · ນ້າ · ໜ້າ · ໜາ", words: [
+    { lo: "ນາ", r: "naa", m: "rice field" },
+    { lo: "ນ້າ", r: "naa", m: "aunt / uncle (parent's younger sibling)" },
+    { lo: "ໜ້າ", r: "naa", m: "face" },
+    { lo: "ໜາ", r: "naa", m: "thick" },
+  ] },
+  { id: "l-paa", label: "ປາ · ປ່າ · ປ້າ", words: [
+    { lo: "ປາ", r: "paa", m: "fish" },
+    { lo: "ປ່າ", r: "paa", m: "forest" },
+    { lo: "ປ້າ", r: "paa", m: "aunt (parent's older sister)" },
+  ] },
+  { id: "l-suea", label: "ເສືອ · ເສື່ອ · ເສື້ອ", words: [
+    { lo: "ເສືອ", r: "sʉa", m: "tiger" },
+    { lo: "ເສື່ອ", r: "sʉa", m: "mat" },
+    { lo: "ເສື້ອ", r: "sʉa", m: "shirt" },
+  ] },
+  { id: "l-mai", label: "ໄມ້ · ໃໝ່ · ໄໝ", words: [
+    { lo: "ໄມ້", r: "mai", m: "wood" },
+    { lo: "ໃໝ່", r: "mai", m: "new" },
+    { lo: "ໄໝ", r: "mai", m: "silk" },
+  ] },
+];
+
+const EAR_DECKS = [
+  { id: "single", label: "Single syllables", sub: "Minimal sets like มา · ม้า · หมา" },
+  { id: "words", label: "Two-syllable words", sub: "Name the tone of each syllable" },
+  { id: "lao", label: "Lao sets", sub: "Which Lao word did you hear?" },
+];
+
 const EAR_TRIALS = 20;
 const EAR_RATES = [0.8, 0.95, 1.05];
 
-const emptyEar = () => ({ tones: Object.fromEntries(TONE_ORDER.map((t) => [t, [0, 0]])), confusions: {}, sessions: 0 });
+const emptyEar = () => ({ tones: Object.fromEntries(TONE_ORDER.map((t) => [t, [0, 0]])), confusions: {}, sessions: 0, lao: {} });
 
 function earAccuracy(ear, tone) {
   const [r, n] = ear.tones[tone] || [0, 0];
@@ -2154,9 +2233,24 @@ function earAccuracy(ear, tone) {
 }
 
 /** Pick the next trial, favouring tones and confusions the learner gets wrong. */
-function pickEarTrial(ear, prevKey) {
+function pickEarTrial(ear, prevKey, deck = "single") {
   const options = [];
-  EAR_SETS.forEach((set) => set.words.forEach((w) => {
+  if (deck === "words") {
+    EAR_WORD_SETS.forEach((set) => set.words.forEach((w) => {
+      const accs = w.tones.map((t) => earAccuracy(ear, t));
+      const weight = 1 + accs.reduce((n, a) => n + (a == null ? 0.5 : (1 - a) * 1.5), 0);
+      const key = `${set.id}:${w.th}`;
+      if (key !== prevKey) options.push({ set, word: w, key, weight });
+    }));
+  } else if (deck === "lao") {
+    EAR_LAO_SETS.forEach((set) => set.words.forEach((w) => {
+      const [r, n] = ear.lao?.[set.id] || [0, 0];
+      const weight = 1 + (n ? (1 - r / n) * 3 : 1);
+      const key = `${set.id}:${w.lo}`;
+      if (key !== prevKey) options.push({ set, word: w, key, weight });
+    }));
+  }
+  if (deck === "single") EAR_SETS.forEach((set) => set.words.forEach((w) => {
     const acc = earAccuracy(ear, w.tone);
     const confusion = Object.entries(ear.confusions)
       .filter(([k]) => k.startsWith(`${w.tone}>`) && set.words.some((o) => k.endsWith(`>${o.tone}`)))
@@ -2182,17 +2276,24 @@ function EarDojo({ ear, setEar, logActivity }) {
   const [count, setCount] = useState(0);
   const [pick, setPick] = useState(null);
   const [session, setSession] = useState({ right: 0, total: 0 });
+  const [deck, setDeck] = useState("single");
+  const [sylPicks, setSylPicks] = useState([]);
   const voices = audio.thaiVoices();
+  const laoVoice = audio.laoVoice();
+  const isLao = deck === "lao";
+  const isWords = deck === "words";
 
+  const say = (w, voice, rate) => (w.lo ? audio.speakHumanVoice(w.lo, w.lo, { rate }) : audio.speakHumanVoice(w.th, undefined, { voice, rate }));
   const playTrial = (t) => {
     const voice = voices.length ? voices[Math.floor(Math.random() * voices.length)] : undefined;
     const rate = EAR_RATES[Math.floor(Math.random() * EAR_RATES.length)];
-    audio.speakHumanVoice(t.word.th, undefined, { voice, rate });
+    say(t.word, voice, rate);
     return { voice, rate };
   };
 
   const nextTrial = (prevKey) => {
-    const t = pickEarTrial(ear, prevKey);
+    setSylPicks([]);
+    const t = pickEarTrial(ear, prevKey, deck);
     const meta = playTrial(t);
     setTrial({ ...t, ...meta });
     setPick(null);
@@ -2203,6 +2304,44 @@ function EarDojo({ ear, setEar, logActivity }) {
     setCount(0);
     setSession({ right: 0, total: 0 });
     nextTrial(null);
+  };
+
+  // Two-syllable words: collect one tone per syllable, then score the word as a whole.
+  const answerSyllable = (tone) => {
+    if (pick || !trial) return;
+    const picks = [...sylPicks, tone];
+    setSylPicks(picks);
+    if (picks.length < trial.word.tones.length) return;
+    const ok = picks.every((p, i) => p === trial.word.tones[i]);
+    setPick(ok ? "right" : "wrong");
+    setSession((s) => ({ right: s.right + (ok ? 1 : 0), total: s.total + 1 }));
+    logActivity({ ear: 1 });
+    setEar((prev) => {
+      const tones = { ...prev.tones };
+      const confusions = { ...prev.confusions };
+      trial.word.tones.forEach((t, i) => {
+        const hit = picks[i] === t;
+        tones[t] = [tones[t][0] + (hit ? 1 : 0), tones[t][1] + 1];
+        if (!hit) confusions[`${t}>${picks[i]}`] = (confusions[`${t}>${picks[i]}`] || 0) + 1;
+      });
+      return { ...prev, tones, confusions };
+    });
+    if (ok) audio.playRanatToneChime(trial.word.tones);
+    else say(trial.word, trial.voice, trial.rate);
+  };
+
+  const answerLao = (w) => {
+    if (pick || !trial) return;
+    const ok = w.lo === trial.word.lo;
+    setPick(w.lo);
+    setSession((s) => ({ right: s.right + (ok ? 1 : 0), total: s.total + 1 }));
+    logActivity({ ear: 1 });
+    setEar((prev) => {
+      const cur = prev.lao?.[trial.set.id] || [0, 0];
+      return { ...prev, lao: { ...(prev.lao || {}), [trial.set.id]: [cur[0] + (ok ? 1 : 0), cur[1] + 1] } };
+    });
+    if (!ok) audio.speakSequence([{ th: w.lo, lo: w.lo, rate: trial.rate }, { th: trial.word.lo, lo: trial.word.lo, rate: trial.rate }], 600);
+    else haptic("ok");
   };
 
   const answer = (tone) => {
@@ -2241,8 +2380,10 @@ function EarDojo({ ear, setEar, logActivity }) {
   };
 
   const topConfusions = Object.entries(ear.confusions).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  const setTones = trial ? TONE_ORDER.filter((t) => trial.set.words.some((w) => w.tone === t)) : TONE_ORDER;
-  const chosenWord = trial && pick ? trial.set.words.find((w) => w.tone === pick) : null;
+  const setTones = trial && !isWords && !isLao ? TONE_ORDER.filter((t) => trial.set.words.some((w) => w.tone === t)) : TONE_ORDER;
+  const chosenWord = trial && pick && !isWords && !isLao ? trial.set.words.find((w) => w.tone === pick) : null;
+  const laoBlocked = isLao && !laoVoice;
+  const laoSetStats = EAR_LAO_SETS.map((set) => ({ set, stat: ear.lao?.[set.id] || [0, 0] }));
 
   return (
     <div className="space-y-4">
@@ -2250,15 +2391,34 @@ function EarDojo({ ear, setEar, logActivity }) {
       {!running ? (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
           <Card className="p-5" glow={TONES.rising.color}>
-            <h3 className="text-lg font-bold text-white">{session.total ? `Session done: ${session.right} / ${session.total}` : "Train your ear on minimal sets"}</h3>
-            <p className="mt-1 max-w-prose text-sm text-slate-300">
+            <div className="mb-4 grid gap-2 sm:grid-cols-3">
+              {EAR_DECKS.map((d) => (
+                <button key={d.id} data-ear-deck={d.id} onClick={() => { setDeck(d.id); setSession({ right: 0, total: 0 }); }} className={`rounded-2xl border px-3 py-2 text-left transition ${deck === d.id ? "border-amber-400 bg-amber-400/10" : "border-white/10 hover:bg-white/5"}`}>
+                  <div className="text-sm font-bold text-white">{d.label}</div>
+                  <div className="text-[11px] text-slate-400">{d.sub}</div>
+                </button>
+              ))}
+            </div>
+            <h3 className="text-lg font-bold text-white">{session.total ? `Session done: ${session.right} / ${session.total}` : isWords ? "Hear tones in running words" : isLao ? "Hear Vientiane tones" : "Train your ear on minimal sets"}</h3>
+            {isWords && (
+              <p className="mt-1 max-w-prose text-sm text-slate-300">
+                Each trial plays a two-syllable word such as <span style={{ fontFamily: FONT_STACKS.loop.th }}>ข้าวผัด</span>. Pick the tone of the first syllable, then the second. The word stays hidden until you finish, and both answers feed your per-tone scores below.
+              </p>
+            )}
+            {isLao && (
+              <p className="mt-1 max-w-prose text-sm text-slate-300">
+                Each trial plays one Lao word from a set like <span style={{ fontFamily: FONT_STACKS.loop.lo }}>ມາ · ມ້າ · ໝາ</span>. Pick the spelling you heard. Vientiane tones are not the Bangkok ones, so this deck needs a Lao voice; it never falls back to Thai.
+                <span className="mt-2 block text-xs text-slate-400">{laoVoice ? `Lao voice: ${laoVoice.name}.` : "No Lao voice on this device. Lao voices are rare on phones; Microsoft Edge on a computer usually offers one. Until then this deck stays locked."}</span>
+              </p>
+            )}
+            <p className={`mt-1 max-w-prose text-sm text-slate-300 ${isWords || isLao ? "hidden" : ""}`}>
               Each trial plays one word from a set like <span style={{ fontFamily: FONT_STACKS.loop.th }}>มา · ม้า · หมา</span> with a random speed{voices.length > 1 ? " and voice" : ""}. The word stays hidden until you answer, so you train your ear, not your reading. If you miss, you hear your choice and then the right answer, back to back.
             </p>
-            <p className="mt-3 text-xs text-slate-400">
+            <p className={`mt-3 text-xs text-slate-400 ${isLao ? "hidden" : ""}`}>
               {voices.length ? `${voices.length} Thai voice${voices.length > 1 ? "s" : ""} on this device.` : (IS_ANDROID ? `No Thai voice found. ${ANDROID_VOICE_HINT}` : "No Thai voice found on this device. Install one in your text-to-speech settings first.")}{" "}
               Device voices sometimes blur tones; recorded native audio is planned.
             </p>
-            <button onClick={start} className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black active:scale-[0.98]">
+            <button data-ear-start onClick={start} disabled={laoBlocked} className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black active:scale-[0.98] disabled:opacity-40">
               <Play size={18} /> {session.total ? "Another 20" : `Start ${EAR_TRIALS} trials`}
             </button>
           </Card>
@@ -2279,6 +2439,14 @@ function EarDojo({ ear, setEar, logActivity }) {
                 );
               })}
             </div>
+            {laoSetStats.some(({ stat }) => stat[1]) && (
+              <div className="mt-4 text-xs text-slate-300">
+                <div className="mb-1 font-bold uppercase tracking-wider text-slate-400">Lao sets</div>
+                {laoSetStats.filter(({ stat }) => stat[1]).map(({ set, stat }) => (
+                  <div key={set.id} className="flex justify-between"><span style={{ fontFamily: FONT_STACKS.loop.lo }}>{set.label}</span><span className="tabular-nums">{Math.round((stat[0] / stat[1]) * 100)}% /{stat[1]}</span></div>
+                ))}
+              </div>
+            )}
             {topConfusions.length > 0 && (
               <div className="mt-4 text-xs text-slate-300">
                 <div className="mb-1 font-bold uppercase tracking-wider text-slate-400">Most confused</div>
@@ -2293,18 +2461,73 @@ function EarDojo({ ear, setEar, logActivity }) {
       ) : (
         <Card className="mx-auto max-w-xl p-5" glow={TONES.rising.color}>
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>{trial?.set.label && <span style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.set.label}</span>}</span>
+            <span>{trial?.set.label && <span style={isWords ? undefined : { fontFamily: FONT_STACKS.loop[isLao ? "lo" : "th"] }}>{trial.set.label}</span>}</span>
             <span className="tabular-nums">{count + 1} / {EAR_TRIALS}</span>
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400" style={{ width: `${(count / EAR_TRIALS) * 100}%` }} /></div>
           <div className="my-6 flex flex-col items-center gap-3">
-            <button onClick={() => trial && audio.speakHumanVoice(trial.word.th, undefined, { voice: trial.voice, rate: trial.rate })} className="flex h-24 w-24 items-center justify-center rounded-full bg-amber-500 text-black shadow-[0_0_40px_#F59E0B66] active:scale-95" aria-label="Play the syllable again">
+            <button onClick={() => trial && say(trial.word, trial.voice, trial.rate)} className="flex h-24 w-24 items-center justify-center rounded-full bg-amber-500 text-black shadow-[0_0_40px_#F59E0B66] active:scale-95" aria-label="Play the syllable again">
               <Volume2 size={40} />
             </button>
-            <div className="text-xs text-slate-400">{pick ? "" : "Tap to hear it again. Which contour?"}{trial ? ` · ${trial.rate}×` : ""}</div>
+            <div className="text-xs text-slate-400">{pick ? "" : isLao ? "Tap to hear it again. Which word?" : isWords ? `Tap to hear it again. Syllable ${Math.min(sylPicks.length + 1, trial?.word.tones?.length || 2)} of ${trial?.word.tones?.length || 2}: which contour?` : "Tap to hear it again. Which contour?"}{trial ? ` · ${trial.rate}×` : ""}</div>
           </div>
-          <ToneChoice onPick={answer} picked={pick} correct={pick ? trial.word.tone : null} disabled={!!pick} options={setTones} />
-          {pick && (
+          {isWords && trial && (
+            <div className="mb-3 flex justify-center gap-2">
+              {trial.word.tones.map((t, i) => {
+                const p = sylPicks[i];
+                const state = !pick ? (i === sylPicks.length ? "now" : p ? "set" : "wait") : p === t ? "right" : "wrong";
+                return (
+                  <span key={i} data-ear-syl={state} className={`flex min-w-[88px] items-center justify-center gap-1 rounded-xl border px-2 py-1 text-xs ${state === "now" ? "border-amber-400 text-amber-200" : state === "right" ? "border-emerald-400 text-emerald-200" : state === "wrong" ? "border-rose-400 text-rose-200" : "border-white/10 text-slate-400"}`}>
+                    {i + 1}. {p ? TONES[p].name : "?"}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {isWords && trial && <ToneChoice key={`${trial.key}-${sylPicks.length}`} onPick={answerSyllable} picked={null} correct={null} disabled={!!pick} options={TONE_ORDER} />}
+          {isLao && trial && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {trial.set.words.map((w, i) => {
+                const state = !pick ? "idle" : w.lo === trial.word.lo ? "right" : w.lo === pick ? "wrong" : "idle";
+                return (
+                  <button key={w.lo} data-ear-lao={i} disabled={!!pick} onClick={() => answerLao(w)} className={`rounded-2xl border p-2 text-center transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"}`}>
+                    <div className="text-3xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.lo }}>{w.lo}</div>
+                    <div className="text-[11px] text-slate-400">{w.m}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!isWords && !isLao && <ToneChoice onPick={answer} picked={pick} correct={pick ? trial.word.tone : null} disabled={!!pick} options={setTones} />}
+          {pick && isWords && (
+            <div className="mt-4 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className="flex flex-wrap items-baseline gap-3">
+                <span className="text-4xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.word.th}</span>
+                <span className="text-slate-200">{trial.word.r} · {trial.word.m}</span>
+                <span className="flex gap-1">{trial.word.tones.map((t, i) => <ToneBadge key={i} tone={t} small />)}</span>
+              </div>
+              <p className={pick === "right" ? "font-semibold text-emerald-300" : "text-rose-200"}>
+                {pick === "right" ? "Both syllables right." : `Missed: ${trial.word.tones.map((t, i) => (sylPicks[i] === t ? null : `syllable ${i + 1} is ${TONES[t].name}, not ${TONES[sylPicks[i]].name}`)).filter(Boolean).join("; ")}. You just heard it again.`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => audio.playRanatToneChime(trial.word.tones)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5"><Music size={13} className="mr-1 inline" />Hear the contours</button>
+                <button onClick={() => say(trial.word, trial.voice, trial.rate)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5"><Volume2 size={13} className="mr-1 inline" />Hear the word</button>
+                <button onClick={advance} className="ml-auto rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+              </div>
+            </div>
+          )}
+          {pick && isLao && (
+            <div className="mt-4 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <p className={pick === trial.word.lo ? "font-semibold text-emerald-300" : "text-rose-200"}>
+                {pick === trial.word.lo ? "Correct." : <>You heard <span style={{ fontFamily: FONT_STACKS.loop.lo }}>{trial.word.lo}</span> ({trial.word.m}). You just heard your pick, then the right one.</>}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => audio.speakSequence(trial.set.words.map((w) => ({ th: w.lo, lo: w.lo, rate: trial.rate })), 500)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5"><Volume2 size={13} className="mr-1 inline" />Hear the whole set</button>
+                <button onClick={advance} className="ml-auto rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+              </div>
+            </div>
+          )}
+          {pick && !isWords && !isLao && (
             <div className="mt-4 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
               <div className="flex flex-wrap items-baseline gap-3">
                 <span className="text-4xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.word.th}</span>
