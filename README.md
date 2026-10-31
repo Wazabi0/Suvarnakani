@@ -5,11 +5,14 @@ A single-file React app for learning to read Thai and Lao script: an SRS "Shrine
 ## Files
 - `SuvarnaKani.jsx`: the React app (hooks, Tailwind, lucide-react). Use it as the default export in any React + Tailwind project.
 - `SuvarnaKani.html`: standalone build. Open it in a browser (internet is needed only for Google Fonts).
+- `tailwind.preset.cjs`: colour tokens. Add it as a Tailwind preset if you use the JSX in another project.
+- `tests/run.mjs`: tone, course and backup checks (`npm test`).
 - `NOTES.md`: build notes, feature list and linguistic corrections to the original spec.
 
 ## Build
 ```
 npm install
+npm test        # tone and course checks
 npm run build   # writes SuvarnaKani.html
 ```
 
@@ -26,6 +29,14 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.20.0**: Safe ground (Roadmap III, wave A).
+  - **Backups.** Settings → Backup shares a backup file through the Android share sheet (or downloads it), and Restore a file brings it back on any phone or browser. The app also keeps one snapshot a day for the last seven days in IndexedDB, taken as the app opens, so you can roll back to the start of any of those days. A restore saves the current state as a snapshot first.
+  - **Back gesture.** Every sheet (reviews, lessons, the Inspector, Settings) adds a history entry, so Android's back gesture closes the sheet instead of leaving the app. Back from any other tab returns to the Shrine.
+  - **Settings sheet.** The header keeps the logo, the script switch and a gear. Font, unlock-all, daily goal, audio, reset and the new settings live in one sheet: your polite particle (ครับ, ค่ะ/คะ, or both shown until you choose), text size and haptics. With ค่ะ/คะ chosen, your lines in the Shadow Mirror dialogues and the Street Reader chat use ค่ะ for statements and คะ for questions, with the right tones for scoring.
+  - **Screen stays on** during any sheet, the Tracer and the Shadow Mirror (Screen Wake Lock).
+  - **Updates.** When a new build takes over, a bar offers Reload, and What's new lists the changes once.
+  - **Tests.** `npm test` checks every toned item against the tone engine, the Bangkok rule table, Lao syllable splits and Vientiane tones, course ids, scheduling, particles and backups (341 checks). The Pages workflow runs it on pull requests and before every deploy.
+  - **Design tokens.** Tailwind's slate, white and black, and the app surfaces, now read CSS variables defined in the app (`THEME_CSS`), ready for a daylight theme. When dropping the JSX into another project, add `tailwind.preset.cjs` as a Tailwind preset.
 - **0.19.0**: Install on the phone. A GitHub Actions workflow publishes `dist/` to GitHub Pages. The build now bundles the Thai, Lao and Latin fonts into `dist/fonts` (about 430 KB) and the service worker precaches them, so the installed app works offline from its first launch with no requests to Google. The app also asks the browser for persistent storage, so Android does not clear saved progress when space runs low.
 - **0.18.0**: Lao as a full course. Lao mode now has its own item list:
   - **Fewer duplicates.** Thai-only letters such as ศ ษ ฉ ฆ ฐ, and the Thai final-consonant groups, collapse onto Lao letters you already have, so they are dropped.

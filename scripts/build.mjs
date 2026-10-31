@@ -29,7 +29,7 @@ const result = await build({
 const js = result.outputFiles[0].text.replaceAll("</script", "<\\/script");
 
 writeFileSync(join(tmp, "in.css"), "@tailwind base; @tailwind components; @tailwind utilities;");
-writeFileSync(join(tmp, "tailwind.config.cjs"), `module.exports = { content: [${JSON.stringify(join(root, "SuvarnaKani.jsx"))}] };`);
+writeFileSync(join(tmp, "tailwind.config.cjs"), `module.exports = { presets: [require(${JSON.stringify(join(root, "tailwind.preset.cjs"))})], content: [${JSON.stringify(join(root, "SuvarnaKani.jsx"))}] };`);
 execFileSync(join(root, "node_modules/.bin/tailwindcss"), ["-c", join(tmp, "tailwind.config.cjs"), "-i", join(tmp, "in.css"), "-o", join(tmp, "out.css"), "--minify"], { stdio: "inherit" });
 const css = readFileSync(join(tmp, "out.css"), "utf8");
 

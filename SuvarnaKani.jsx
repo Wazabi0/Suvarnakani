@@ -4,6 +4,7 @@ import {
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
   Cloud, Sun, Waves, Ear, Target, Flame, Mic,
+  Settings, Download, Upload, History, RefreshCw,
 } from "lucide-react";
 
 /* ============================================================================
@@ -13,6 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
+const APP_VERSION = "0.20.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -43,6 +45,17 @@ const FONT_STACKS = {
 
 // UI text mixes Latin with Thai and Lao, so the UI stack falls back to Noto for both scripts.
 const UI_FONT = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Noto Sans Lao", sans-serif';
+
+/* Design tokens. Tailwind's slate, white and black, and the sk-* colours, read
+ * these variables (see tailwind.preset.cjs). Values are space-separated RGB. */
+const THEME_CSS = `:root{
+--sk-bg:11 15 25;--sk-panel:15 23 42;--sk-ink:241 245 249;--sk-gold:245 158 11;
+--sk-white:255 255 255;--sk-black:0 0 0;
+--sk-slate-50:248 250 252;--sk-slate-100:241 245 249;--sk-slate-200:226 232 240;--sk-slate-300:203 213 225;--sk-slate-400:148 163 184;
+--sk-slate-500:100 116 139;--sk-slate-600:71 85 105;--sk-slate-700:51 65 85;--sk-slate-800:30 41 59;--sk-slate-900:15 23 42;--sk-slate-950:2 6 23;
+--sk-script-leading:1.7;
+}
+.sk-script{line-height:var(--sk-script-leading)}`;
 
 const GOOGLE_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;600&family=Noto+Serif+Lao:wght@400;600&family=Sarabun:wght@400;600&family=Kanit:wght@300;500&family=Noto+Sans+Thai:wght@400;600&family=Noto+Sans+Lao:wght@400;600&display=swap";
@@ -757,6 +770,212 @@ function saveState(state) {
 }
 
 /* ---------------------------------------------------------------------------
+ * Backups. A backup file is the saved state wrapped with the app name and a
+ * date. Seven daily snapshots also live in IndexedDB on the phone, so a bad day
+ * (or a cleared review queue) can be rolled back without a file.
+ * ------------------------------------------------------------------------- */
+const BACKUP_APP = "suvarnakani";
+const SNAPSHOT_DAYS = 7;
+let restoringState = false; // set while a restore reloads the page, so nothing overwrites it
+
+function backupSummary(state) {
+  const srs = state?.srs || {};
+  const started = Object.values(srs).filter((v) => (v?.stage || 0) >= 1).length;
+  const burned = Object.values(srs).filter((v) => (v?.stage || 0) >= 5).length;
+  return { started, burned, days: Object.keys(state?.log || {}).length };
+}
+
+function makeBackup(state) {
+  return { app: BACKUP_APP, version: APP_VERSION, exportedAt: new Date().toISOString(), summary: backupSummary(state), state };
+}
+
+/** Returns the state inside a backup file, or throws with a message to show. */
+function readBackup(text) {
+  let obj;
+  try { obj = JSON.parse(text); } catch { throw new Error("That file isn't a SuvarṇaKani backup (it isn't JSON)."); }
+  if (!obj || obj.app !== BACKUP_APP || !obj.state || typeof obj.state !== "object") throw new Error("That file isn't a SuvarṇaKani backup.");
+  return obj;
+}
+
+/** Share the backup through the Android share sheet, or download it where sharing files isn't possible. */
+async function deliverBackup(state) {
+  const day = new Date().toISOString().slice(0, 10);
+  const name = `suvarnakani-backup-${day}.json`;
+  const blob = new Blob([JSON.stringify(makeBackup(state))], { type: "application/json" });
+  try {
+    const file = new File([blob], name, { type: "application/json" });
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: "SuvarṇaKani backup" });
+      return "shared";
+    }
+  } catch (e) {
+    if (e?.name === "AbortError") return "cancelled";
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return "downloaded";
+}
+
+/** Replace the saved state and reload, so every component starts from it. */
+function restoreState(state) {
+  restoringState = true;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    restoringState = false;
+    throw new Error("The browser refused to save. Free some space and try again.");
+  }
+  window.location.reload();
+}
+
+const IDB_NAME = "suvarnakani";
+const IDB_VERSION = 1;
+function openDb() {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") { reject(new Error("no IndexedDB")); return; }
+    const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains("snapshots")) db.createObjectStore("snapshots", { keyPath: "key" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbRequest(store, mode, fn) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, mode);
+    const out = fn(tx.objectStore(store));
+    tx.oncomplete = () => { db.close(); resolve(out?.result); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  }));
+}
+async function listSnapshots() {
+  try {
+    const all = (await idbRequest("snapshots", "readonly", (s) => s.getAll())) || [];
+    return all.sort((a, b) => b.key.localeCompare(a.key));
+  } catch {
+    return [];
+  }
+}
+/** One snapshot per day, taken the first time the app saves that day (so it holds the end of the day before). */
+async function snapshotToday(state) {
+  const key = todayKey();
+  try {
+    const existing = await listSnapshots();
+    if (existing.some((s) => s.key === key)) return;
+    await idbRequest("snapshots", "readwrite", (s) => s.put({ key, at: Date.now(), summary: backupSummary(state), state: JSON.parse(JSON.stringify(state)) }));
+    const old = [...existing.map((s) => s.key), key].sort().slice(0, -SNAPSHOT_DAYS);
+    if (old.length) await idbRequest("snapshots", "readwrite", (s) => old.forEach((k) => s.delete(k)));
+  } catch {
+    /* no IndexedDB (private window): the backup file still works */
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Android back gesture. Each open sheet (and leaving the Shrine) pushes one
+ * history entry; back pops the top one and closes it instead of leaving the app.
+ * ------------------------------------------------------------------------- */
+const backStack = [];
+let ignorePops = 0;
+if (typeof window !== "undefined") {
+  window.addEventListener("popstate", () => {
+    if (ignorePops > 0) { ignorePops -= 1; return; }
+    const top = backStack.pop();
+    if (top) { top.popped = true; top.close.current?.(); }
+  });
+}
+function useBackClose(open, onClose) {
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    if (!open) return undefined;
+    const entry = { close, popped: false };
+    backStack.push(entry);
+    try { window.history.pushState({ suvarnakani: backStack.length }, ""); } catch { /* sandboxed frame */ }
+    return () => {
+      const i = backStack.indexOf(entry);
+      if (i >= 0) backStack.splice(i, 1);
+      if (!entry.popped) {
+        ignorePops += 1;
+        try { window.history.back(); } catch { ignorePops -= 1; }
+      }
+    };
+  }, [open]);
+}
+
+/** Keep the screen on while `active` (reviews, tracing, shadowing). */
+function useWakeLock(active) {
+  useEffect(() => {
+    if (!active || typeof navigator === "undefined" || !navigator.wakeLock) return undefined;
+    let lock = null;
+    let gone = false;
+    const take = () => {
+      if (gone || document.visibilityState !== "visible") return;
+      navigator.wakeLock.request("screen").then((l) => { if (gone) l.release(); else lock = l; }).catch(() => {});
+    };
+    take();
+    document.addEventListener("visibilitychange", take);
+    return () => {
+      gone = true;
+      document.removeEventListener("visibilitychange", take);
+      lock?.release().catch(() => {});
+    };
+  }, [active]);
+}
+
+/* ---------------------------------------------------------------------------
+ * Preferences shared by many screens.
+ * ------------------------------------------------------------------------- */
+const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true };
+const PrefsContext = React.createContext(DEFAULT_PREFS);
+const usePrefs = () => React.useContext(PrefsContext);
+const runtimePrefs = { haptics: true };
+
+const QUESTION_WORDS = ["ไหม", "อะไร", "เท่าไร", "เท่าไหร่", "ที่ไหน", "ไหน", "ใคร", "เมื่อไร", "เมื่อไหร่", "ยังไง", "อย่างไร", "หรือ", "กี่", "มั้ย"];
+/**
+ * Your own lines in dialogues use your polite particle. Written lines carry ครับ;
+ * "female" turns it into ค่ะ (statements) or คะ (questions); "unset" shows both.
+ */
+function politeLine(line, particle) {
+  if (!line || !line.th || !line.th.includes("ครับ") || particle === "male") return line;
+  const chunks = line.th.split("ครับ");
+  if (particle === "unset") return { ...line, th: line.th.replaceAll("ครับ", "ครับ/ค่ะ"), r: line.r?.replaceAll("khráp", "khráp/khâ") };
+  const forms = chunks.slice(0, -1).map((c) => (QUESTION_WORDS.some((q) => c.trim().endsWith(q) || c.includes(q)) ? "คะ" : "ค่ะ"));
+  const th = chunks.reduce((acc, c, i) => acc + c + (i < forms.length ? forms[i] : ""), "");
+  let k = 0;
+  const r = line.r?.replace(/khráp/g, () => (forms[k++] === "คะ" ? "khá" : "khâ"));
+  let j = 0;
+  const syl = line.syl?.map((s) => (s === "khráp" ? (forms[j++] === "คะ" ? "khá" : "khâ") : s));
+  const tones = line.tones && line.syl ? line.tones.map((t, i) => (line.syl[i] === "khráp" && syl[i] === "khâ" ? "falling" : t)) : line.tones;
+  return { ...line, th, r, syl, tones };
+}
+
+const verCmp = (a, b) => {
+  const x = String(a).split(".").map(Number), y = String(b).split(".").map(Number);
+  for (let i = 0; i < 3; i += 1) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0);
+  return 0;
+};
+
+/* What's new, newest first. Shown once after an update. */
+const WHATS_NEW = [
+  { v: "0.20.0", title: "Safe ground", points: [
+    "Back up your progress to a file and restore it on any phone (Settings → Backup).",
+    "The phone keeps seven daily snapshots, so you can roll back to yesterday.",
+    "The Android back gesture closes sheets instead of leaving the app.",
+    "One Settings sheet: script, font, daily goal, audio, your polite particle, text size and haptics.",
+    "The screen stays on during reviews, lessons, tracing and shadowing.",
+    "A bar tells you when a new version is ready.",
+  ] },
+];
+
+/* ---------------------------------------------------------------------------
  * Audio engine: speech and Web Audio are never active at the same time.
  * ------------------------------------------------------------------------- */
 const sanitizeThai = (s) => (s || "").replace(/[^฀-๿\s]/g, "").replace(/\s+/g, " ").trim();
@@ -915,6 +1134,7 @@ class SuvarnaMobileAudioEngine {
 
 /** Short vibration on Android (Galaxy and others); iOS ignores it. */
 const haptic = (kind) => {
+  if (!runtimePrefs.haptics) return;
   try {
     navigator.vibrate?.(kind === "ok" ? 12 : [28, 40, 28]);
   } catch {
@@ -1011,6 +1231,8 @@ function AudioButtons({ ttsTh, ttsLo, loRaw, tones, mode, compact }) {
 }
 
 function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
+  useBackClose(open, onClose);
+  useWakeLock(open);
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -1021,11 +1243,11 @@ function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
       <div
-        className={`relative w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"} max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-3xl pb-[env(safe-area-inset-bottom)] sm:pb-0 sm:rounded-3xl border border-white/10 bg-[#0F172A]/95 shadow-2xl`}
+        className={`relative w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"} max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-3xl pb-[env(safe-area-inset-bottom)] sm:pb-0 sm:rounded-3xl border border-white/10 bg-sk-panel/95 shadow-2xl`}
         style={{ boxShadow: `0 0 60px ${accent}22` }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/5 bg-[#0F172A]/95 px-5 py-3 backdrop-blur">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/5 bg-sk-panel/95 px-5 py-3 backdrop-blur">
           <div className="text-sm font-semibold tracking-wide text-slate-200">{title}</div>
           <button aria-label="Close" className="rounded-full p-1.5 text-slate-400 hover:bg-white/10 hover:text-white" onClick={onClose}>
             <X size={18} />
@@ -1432,7 +1654,7 @@ function Onboarding({ onDone }) {
   };
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur sm:items-center sm:p-4">
-      <div className="w-full max-w-lg rounded-t-3xl border border-white/10 bg-[#0F172A] p-6 sm:rounded-3xl">
+      <div className="w-full max-w-lg rounded-t-3xl border border-white/10 bg-sk-panel p-6 sm:rounded-3xl">
         <div className="flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 text-lg font-black text-black" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
           <div className="text-sm font-semibold text-amber-300">Welcome to SuvarṇaKani</div>
@@ -2879,6 +3101,7 @@ function detectHeadStart(g, script) {
 }
 
 function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
+  useWakeLock(true);
   const targets = useMemo(() => traceTargets(mode), [mode]);
   // Open on the first letter due to write, so the Today Path lands on real work.
   const [sel, setSel] = useState(() => Math.max(0, targets.findIndex((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= Date.now())));
@@ -3949,6 +4172,17 @@ const STREET_PACKS = [
   ] },
 ];
 
+/** Thai chat packs: your lines use ค่ะ / คะ when you've set a female particle. */
+function politePack(pack, particle) {
+  if (!pack?.speakers || pack.script !== "th" || particle !== "female") return pack;
+  const lines = pack.lines.map((line, li) => {
+    if (pack.speakers[li] !== "You") return line;
+    const question = line.some((t) => QUESTION_WORDS.includes(t.t) || t.id === "p-howmuch");
+    return line.map((t) => (t.id === "p-khrap" ? (question ? { t: "คะ", id: "p-kha-q" } : { t: "ค่ะ", id: "p-kha" }) : t));
+  });
+  return { ...pack, lines };
+}
+
 const STREET_STYLES = {
   cafe: { card: "linear-gradient(170deg, #3a1f0e, #1d1009)", ink: "#FFE7C2", accent: "#FFB86B", border: "#ffb86b44" },
   transit: { card: "linear-gradient(170deg, #0e3b2a, #08241a)", ink: "#F2FFF8", accent: "#7CF0B0", border: "#7cf0b044" },
@@ -3976,7 +4210,8 @@ function resolveToken(tok, script) {
 function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
   const packs = STREET_PACKS.filter((p) => mode === "dual" || p.script === mode);
   const [pid, setPid] = useState(packs[0]?.id);
-  const pack = packs.find((p) => p.id === pid) || packs[0];
+  const { particle } = usePrefs();
+  const pack = politePack(packs.find((p) => p.id === pid) || packs[0], particle);
   const [sel, setSel] = useState(null);
   const [timer, setTimer] = useState({ start: null, last: null });
   const [, tick] = useState(0);
@@ -4445,7 +4680,11 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
   const [did, setDid] = useState(SHADOW_DIALOGUES[0].id);
   const dlg = SHADOW_DIALOGUES.find((d) => d.id === did);
   const [li, setLi] = useState(0);
-  const line = dlg.lines[li];
+  const { particle } = usePrefs();
+  // Audio and scoring need one particle; until you pick one, your lines are read with ครับ and shown with both.
+  const lines = useMemo(() => dlg.lines.map((l) => (l.who === "You" ? politeLine(l, particle === "unset" ? "male" : particle) : l)), [dlg, particle]);
+  const shown = (i) => (dlg.lines[i].who === "You" && particle === "unset" ? politeLine(dlg.lines[i], "unset") : lines[i]);
+  const line = lines[li];
   const key = `${dlg.id}:${li}`;
   const [phase, setPhase] = useState("idle");
   const [live, setLive] = useState([]);
@@ -4481,7 +4720,7 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
     setPhase("idle");
   };
 
-  const playUpTo = () => audio.speakSequence(dlg.lines.slice(0, li + 1).map((l) => ({ th: l.th })), 500);
+  const playUpTo = () => audio.speakSequence(lines.slice(0, li + 1).map((l) => ({ th: l.th })), 500);
   const busy = phase !== "idle";
 
   return (
@@ -4491,13 +4730,13 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
           {SHADOW_DIALOGUES.map((d) => <Chip key={d.id} active={d.id === did} color={TONES.high.color} onClick={() => { setDid(d.id); setLi(0); }}>{d.title}</Chip>)}
         </div>
         <ol className="mt-3 space-y-1.5">
-          {dlg.lines.map((l, i) => {
+          {lines.map((l, i) => {
             const best = shadow.lines?.[`${dlg.id}:${i}`];
             return (
               <li key={i}>
                 <button data-dialogue-line={i} onClick={() => setLi(i)} className={`flex w-full items-baseline gap-2 rounded-xl px-3 py-1.5 text-left transition ${i === li ? "bg-white/10" : "hover:bg-white/5"} ${l.who === "You" ? "" : "pl-6"}`}>
                   <span className={`w-14 shrink-0 text-[11px] font-bold uppercase ${l.who === "You" ? "text-amber-300" : "text-slate-400"}`}>{l.who}</span>
-                  <span className="flex-1 text-lg text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{l.th}</span>
+                  <span className="flex-1 text-lg text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{shown(i).th}</span>
                   {best != null && <span className={`text-xs tabular-nums ${best >= SHADOW_PASS ? "text-emerald-300" : "text-slate-400"}`}>{best}</span>}
                 </button>
               </li>
@@ -4505,8 +4744,8 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
           })}
         </ol>
         <div className="mt-4 rounded-2xl bg-white/[0.04] p-3">
-          <div className="text-2xl leading-[1.6] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{line.th}</div>
-          <div className="text-sm text-slate-200">{line.r}</div>
+          <div className="text-2xl leading-[1.6] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{shown(li).th}</div>
+          <div className="text-sm text-slate-200">{shown(li).r}</div>
           <div className="text-xs text-slate-400">{line.m}</div>
           <PhrasePlot line={line} result={result} live={phase === "recording" ? live : null} />
         </div>
@@ -4526,7 +4765,7 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
               <span className="flex flex-wrap gap-1">{result.perSyl.map((p, k) => <span key={k} className={`rounded-md px-1.5 text-xs ${p.score >= SHADOW_PASS ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>{line.syl[k]} {p.score}</span>)}</span>
             </div>
             <p className="mt-1 text-slate-200">{result.tip}</p>
-            {li < dlg.lines.length - 1 && <button onClick={() => setLi(li + 1)} className="mt-2 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">Next line <ChevronRight size={12} className="inline" /></button>}
+            {li < lines.length - 1 && <button onClick={() => setLi(li + 1)} className="mt-2 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">Next line <ChevronRight size={12} className="inline" /></button>}
           </div>
         )}
         {err && <p className="mt-3 flex gap-2 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{err}</p>}
@@ -4539,6 +4778,7 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
 }
 
 function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
+  useWakeLock(true);
   const audio = getAudio();
   const mic = useMicPitch();
   const unlocked = (tone) => {
@@ -4707,43 +4947,190 @@ function SubTabs({ tabs, active, onChange }) {
 }
 
 /* ============================================================================
- * Audio Studio drawer
+ * Settings sheet: everything that used to live in the header and footer, plus
+ * backups, your polite particle, text size and haptics.
  * ========================================================================== */
-function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
+function SettingRow({ label, hint, children }) {
+  return (
+    <div className="border-t border-white/5 py-3 first:border-0">
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+      {children}
+      {hint && <p className="mt-2 text-xs text-slate-400">{hint}</p>}
+    </div>
+  );
+}
+
+function AudioSettings({ rate, setRate, muted, setMuted }) {
   const audio = getAudio();
   const [, force] = useState(0);
   useEffect(() => audio.onVoices(() => force((n) => n + 1)), [audio]);
-  if (!open) return null;
   const th = audio.thaiVoice();
   const lo = audio.laoVoice();
   return (
-    <div className="fixed inset-0 z-40" onClick={onClose}>
-      <div className="absolute right-2 top-16 w-[min(92vw,360px)] rounded-3xl border border-white/10 bg-[#0F172A]/95 p-4 shadow-2xl backdrop-blur" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-white"><Headphones size={18} className="text-amber-400" /> Audio Studio</div>
-          <button onClick={onClose} className="rounded-full p-1 text-slate-400 hover:bg-white/10"><X size={16} /></button>
-        </div>
-        <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Speech rate</div>
-        <div className="mb-4 flex gap-2">
-          <Chip active={rate === 0.85} onClick={() => setRate(0.85)}>0.85× Clear</Chip>
-          <Chip active={rate === 1} onClick={() => setRate(1)}>1.0× Normal</Chip>
-        </div>
-        <button onClick={() => setMuted(!muted)} className={`mb-4 flex w-full items-center justify-center gap-2 rounded-xl border py-2 text-sm font-semibold ${muted ? "border-rose-400/50 bg-rose-500/10 text-rose-200" : "border-white/10 text-slate-200"}`}>
-          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />} {muted ? "Muted" : "Sound on"}
-        </button>
-        <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Diagnostics</div>
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => audio.speakHumanVoice("สวัสดี ครับ")} className="rounded-xl bg-cyan-500/15 py-2 text-sm text-cyan-200"><Volume2 size={14} className="mr-1 inline" />Test voice</button>
-          <button onClick={() => audio.playRanatToneChime(["mid", "low", "falling", "high", "rising"])} className="rounded-xl bg-amber-500/15 py-2 text-sm text-amber-200"><Music size={14} className="mr-1 inline" />5 tone chimes</button>
-        </div>
-        <div className="mt-3 space-y-1 text-xs">
-          <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : (IS_ANDROID ? `No Thai voice found. ${ANDROID_VOICE_HINT}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings.")}</div>
-          <div className={lo ? "text-emerald-300" : "text-slate-400"}>{lo ? `Lao voice: ${lo.name}` : "No Lao voice: Lao items are read with Thai-script approximations."}</div>
-          <p className="pt-1 text-slate-400">Voice and chimes never play at the same time; starting one stops the other.</p>
-        </div>
+    <>
+      <div className="mb-3 flex flex-wrap gap-2">
+        <Chip active={rate === 0.85} onClick={() => setRate(0.85)}>0.85× Clear</Chip>
+        <Chip active={rate === 1} onClick={() => setRate(1)}>1.0× Normal</Chip>
+        <Chip active={muted} color="#FB7185" onClick={() => setMuted(!muted)}>{muted ? <><VolumeX size={13} className="mr-1 inline" />Muted</> : <><Volume2 size={13} className="mr-1 inline" />Sound on</>}</Chip>
       </div>
-    </div>
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={() => audio.speakHumanVoice("สวัสดี ครับ")} className="rounded-xl bg-cyan-500/15 py-2 text-sm text-cyan-200"><Volume2 size={14} className="mr-1 inline" />Test voice</button>
+        <button onClick={() => audio.playRanatToneChime(["mid", "low", "falling", "high", "rising"])} className="rounded-xl bg-amber-500/15 py-2 text-sm text-amber-200"><Music size={14} className="mr-1 inline" />5 tone chimes</button>
+      </div>
+      <div className="mt-3 space-y-1 text-xs">
+        <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : (IS_ANDROID ? `No Thai voice found. ${ANDROID_VOICE_HINT}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings.")}</div>
+        <div className={lo ? "text-emerald-300" : "text-slate-400"}>{lo ? `Lao voice: ${lo.name}` : "No Lao voice: Lao items are read with Thai-script approximations."}</div>
+      </div>
+    </>
   );
+}
+
+function BackupSettings({ getState }) {
+  const [snaps, setSnaps] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const fileRef = useRef(null);
+  useEffect(() => { listSnapshots().then(setSnaps); }, []);
+  const doExport = async () => {
+    const r = await deliverBackup(getState());
+    setMsg(r === "shared" ? { ok: true, text: "Backup shared." } : r === "downloaded" ? { ok: true, text: "Backup saved to Downloads." } : null);
+  };
+  const onFile = async (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const obj = readBackup(await f.text());
+      setConfirm({ kind: "file", obj, label: `the backup from ${obj.exportedAt?.slice(0, 10) || "that file"}` });
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+    }
+  };
+  const apply = async () => {
+    try {
+      await snapshotToday(getState());
+      restoreState(confirm.obj.state);
+    } catch (err) {
+      setMsg({ ok: false, text: err.message });
+      setConfirm(null);
+    }
+  };
+  const fmt = (sum) => (sum ? `${sum.started} ${sum.started === 1 ? "item" : "items"} started, ${sum.burned} burned` : "");
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={doExport} className="flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 py-2.5 text-sm font-bold text-black"><Download size={15} /> Back up</button>
+        <button onClick={() => fileRef.current?.click()} className="flex items-center justify-center gap-1.5 rounded-xl border border-white/15 py-2.5 text-sm font-semibold text-slate-100"><Upload size={15} /> Restore a file</button>
+        <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={onFile} />
+      </div>
+      {msg && <p className={`mt-2 text-xs ${msg.ok ? "text-emerald-300" : "text-rose-300"}`}>{msg.text}</p>}
+      <div className="mt-3 text-xs text-slate-400"><History size={12} className="mr-1 inline" />Daily snapshots on this phone</div>
+      <div className="mt-1.5 space-y-1">
+        {snaps === null && <div className="text-xs text-slate-400">Loading…</div>}
+        {snaps && snaps.length === 0 && <div className="text-xs text-slate-400">The first snapshot is taken today. One is kept for each of the last {SNAPSHOT_DAYS} days you open the app.</div>}
+        {snaps && snaps.map((sn) => (
+          <div key={sn.key} className="flex items-center justify-between gap-2 rounded-xl bg-white/[0.04] px-3 py-1.5 text-xs">
+            <span className="text-slate-200">{sn.key === todayKey() ? "Start of today" : new Date(sn.at).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })} <span className="text-slate-400">· {fmt(sn.summary)}</span></span>
+            <button onClick={() => setConfirm({ kind: "snap", obj: sn, label: sn.key === todayKey() ? "the start of today" : new Date(sn.at).toLocaleDateString() })} className="shrink-0 rounded-lg border border-white/10 px-2 py-0.5 font-semibold text-slate-200">Restore</button>
+          </div>
+        ))}
+      </div>
+      {confirm && (
+        <div className="mt-3 rounded-xl border border-amber-400/40 bg-amber-500/10 p-3 text-xs text-amber-100">
+          Replace everything on this phone with {confirm.label}{confirm.obj.summary ? ` (${fmt(confirm.obj.summary)})` : ""}? Today's state is kept as a snapshot first.
+          <div className="mt-2 flex gap-2">
+            <button onClick={apply} className="rounded-lg bg-amber-500 px-3 py-1 font-bold text-black">Restore</button>
+            <button onClick={() => setConfirm(null)} className="rounded-lg border border-white/15 px-3 py-1 text-slate-200">Cancel</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
+  return (
+    <Modal open={open} onClose={onClose} title="Settings">
+      <SettingRow label="Script">
+        <div className="flex flex-wrap gap-2">
+          {[["dual", "Thai + Lao"], ["th", "Thai"], ["lo", "Lao"]].map(([k, l]) => <Chip key={k} active={s.mode === k} onClick={() => s.setMode(k)}>{l}</Chip>)}
+        </div>
+      </SettingRow>
+      <SettingRow label="Your polite particle" hint="Your lines in dialogues use it. Until you pick, they show both.">
+        <div className="flex flex-wrap gap-2">
+          <Chip active={s.prefs.particle === "male"} onClick={() => s.setPref("particle", "male")}><span style={{ fontFamily: FONT_STACKS.loop.th }}>ครับ</span> khráp</Chip>
+          <Chip active={s.prefs.particle === "female"} onClick={() => s.setPref("particle", "female")}><span style={{ fontFamily: FONT_STACKS.loop.th }}>ค่ะ / คะ</span> khâ / khá</Chip>
+          <Chip active={s.prefs.particle === "unset"} onClick={() => s.setPref("particle", "unset")}>Show both</Chip>
+        </div>
+      </SettingRow>
+      <SettingRow label="Letter style" hint="Head-loop fonts teach the shapes; street fonts are what signs use.">
+        <div className="flex flex-wrap gap-2">
+          <Chip active={s.font === "loop"} onClick={() => s.setFont("loop")}>Head-loop</Chip>
+          <Chip active={s.font === "street"} onClick={() => s.setFont("street")}>Street</Chip>
+        </div>
+      </SettingRow>
+      <SettingRow label="Daily goal">
+        <div className="flex flex-wrap gap-2">
+          {[5, 12, 20].map((m) => <Chip key={m} active={s.dailyMinutes === m} onClick={() => s.setDailyMinutes(m)}>{m} min</Chip>)}
+        </div>
+      </SettingRow>
+      <SettingRow label="Text size">
+        <div className="flex flex-wrap gap-2">
+          {[[100, "Normal"], [112, "Large"], [125, "Larger"]].map(([v, l]) => <Chip key={v} active={s.prefs.textSize === v} onClick={() => s.setPref("textSize", v)}>{l}</Chip>)}
+        </div>
+      </SettingRow>
+      <SettingRow label="Touch">
+        <div className="flex flex-wrap gap-2">
+          <Chip active={s.prefs.haptics} onClick={() => s.setPref("haptics", !s.prefs.haptics)}>{s.prefs.haptics ? "Haptics on" : "Haptics off"}</Chip>
+          <Chip active={s.sandbox} color="#34D399" onClick={() => s.setSandbox(!s.sandbox)}>{s.sandbox ? <><Unlock size={13} className="mr-1 inline" />All levels unlocked</> : <><Lock size={13} className="mr-1 inline" />Unlock all levels</>}</Chip>
+        </div>
+      </SettingRow>
+      <SettingRow label="Audio">
+        <AudioSettings rate={s.rate} setRate={s.setRate} muted={s.muted} setMuted={s.setMuted} />
+      </SettingRow>
+      <SettingRow label="Backup" hint="Progress lives in this browser at this web address. Back up before changing phones, browsers or the app's address.">
+        <BackupSettings getState={getState} />
+      </SettingRow>
+      <SettingRow label="Start over">
+        <button onClick={onReset} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${confirmReset ? "border-rose-400/60 bg-rose-500/15 text-rose-200" : "border-white/10 text-slate-300"}`}>{confirmReset ? "Tap again to erase all progress" : "Reset progress"}</button>
+      </SettingRow>
+      <p className="pt-2 text-center text-[11px] text-slate-400">SuvarṇaKani {APP_VERSION}</p>
+    </Modal>
+  );
+}
+
+function WhatsNewSheet({ open, onClose, since }) {
+  const list = WHATS_NEW.filter((w) => !since || verCmp(w.v, since) > 0);
+  return (
+    <Modal open={open} onClose={onClose} title="What's new">
+      <div className="space-y-4">
+        {(list.length ? list : WHATS_NEW.slice(0, 1)).map((w) => (
+          <div key={w.v}>
+            <div className="mb-1 font-bold text-white">{w.title} <span className="text-xs font-normal text-slate-400">{w.v}</span></div>
+            <ul className="list-disc space-y-1 pl-5 text-sm text-slate-200">{w.points.map((p) => <li key={p}>{p}</li>)}</ul>
+          </div>
+        ))}
+        <button onClick={onClose} className="w-full rounded-xl bg-amber-500 py-2.5 font-bold text-black">Got it</button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Shows a bar when a new build has taken over the service worker. */
+function useUpdateReady() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : null;
+    if (!sw) return undefined;
+    const hadController = !!sw.controller;
+    const onChange = () => { if (hadController) setReady(true); };
+    sw.addEventListener("controllerchange", onChange);
+    // Check for a new build whenever the app comes back to the front.
+    const check = () => { if (document.visibilityState === "visible") sw.getRegistration?.().then((r) => r?.update()).catch(() => {}); };
+    document.addEventListener("visibilitychange", check);
+    return () => { sw.removeEventListener("controllerchange", onChange); document.removeEventListener("visibilitychange", check); };
+  }, []);
+  return ready;
 }
 
 /* ============================================================================
@@ -4798,6 +5185,18 @@ export default function SuvarnaKani() {
   const [log, setLog] = useState(initial.log || {});
   const [dailyMinutes, setDailyMinutes] = useState(initial.dailyMinutes || 12);
   const [onboarded, setOnboarded] = useState(!!initial.onboarded || !!(initial.srs && Object.keys(initial.srs).length));
+  const [prefs, setPrefs] = useState(() => ({ ...DEFAULT_PREFS, ...(initial.prefs || {}) }));
+  const setPref = (k, v) => setPrefs((p) => ({ ...p, [k]: v }));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Existing users see What's new once after an update; new users start at the current version.
+  const [seenVersion, setSeenVersion] = useState(initial.seenVersion || (initial.srs ? "0.19.0" : APP_VERSION));
+  const updateReady = useUpdateReady();
+  runtimePrefs.haptics = prefs.haptics;
+  useEffect(() => {
+    document.documentElement.style.fontSize = prefs.textSize === 100 ? "" : `${prefs.textSize}%`;
+  }, [prefs.textSize]);
+  // Back from another tab returns to the Shrine instead of closing the app.
+  useBackClose(tab !== "shrine", () => setTab("shrine"));
   const logActivity = useCallback((delta) => {
     setLog((prev) => {
       const key = todayKey();
@@ -4815,7 +5214,6 @@ export default function SuvarnaKani() {
     if (a.minutes) setDailyMinutes(a.minutes);
     setOnboarded(true);
   };
-  const [studio, setStudio] = useState(false);
   const goPractice = (kind) => {
     if (kind === "trace") setTab("tracer");
     if (kind === "mekong") { setTab("lab"); setLabTab("bridge"); }
@@ -4847,9 +5245,14 @@ export default function SuvarnaKani() {
     return () => window.removeEventListener("pointerdown", prime);
   }, []);
 
+  const stateRef = useRef(null);
+  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion };
   useEffect(() => {
-    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow });
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest]);
+    if (restoringState) return;
+    saveState(stateRef.current);
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion]);
+  // A snapshot of the state as the app opens each day, before today's work changes it.
+  useEffect(() => { if (stateRef.current.onboarded) snapshotToday(stateRef.current); }, []);
 
   // Two taps instead of window.confirm, which embedded viewers block.
   const [confirmReset, setConfirmReset] = useState(false);
@@ -4870,9 +5273,11 @@ export default function SuvarnaKani() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#0B0F19] pb-[calc(6rem+env(safe-area-inset-bottom))] text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
-      <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0B0F19]/85 pt-[env(safe-area-inset-top)] backdrop-blur">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+    <PrefsContext.Provider value={prefs}>
+    <style>{THEME_CSS}</style>
+    <div className="min-h-[100dvh] bg-sk-bg pb-[calc(6rem+env(safe-area-inset-bottom))] text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
+      <header className="sticky top-0 z-30 border-b border-white/5 bg-sk-bg/85 pt-[env(safe-area-inset-top)] backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center gap-x-2 px-4 py-3">
           <div className="mr-auto flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 text-lg font-black text-black shadow-[0_0_20px_#F59E0B66]" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
             <div className="leading-tight">
@@ -4885,14 +5290,10 @@ export default function SuvarnaKani() {
               <button key={k} onClick={() => setMode(k)} className={`rounded-lg px-2.5 py-1.5 transition ${mode === k ? "bg-amber-500 text-black" : "text-slate-300 hover:text-white"}`}><span className="hidden sm:inline">{en} </span>{native}</button>
             ))}
           </div>
-          <button onClick={() => setFont(font === "loop" ? "street" : "loop")} title="Toggle head-loop / street-sign font" className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-white/10">
-            <Type size={14} /> <span className="hidden sm:inline">{font === "loop" ? "Head-loop" : "Street"}</span><span className="sm:hidden">{font === "loop" ? "Loop" : "Street"}</span>
-          </button>
-          <button onClick={() => setSandbox(!sandbox)} title="Sandbox: unlock all levels" className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-semibold ${sandbox ? "border-emerald-400/50 bg-emerald-500/15 text-emerald-200" : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"}`}>
-            {sandbox ? <Unlock size={14} /> : <Lock size={14} />} <span className="hidden sm:inline">Unlock all</span>
-          </button>
-          <button onClick={() => setStudio(true)} aria-label="Audio Studio" className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10">
-            {muted ? <VolumeX size={16} /> : <Headphones size={16} />}
+          {sandbox && <span title="All levels unlocked" className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 p-2 text-emerald-200"><Unlock size={14} /></span>}
+          <button onClick={() => setSettingsOpen(true)} aria-label="Settings" className="relative rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10">
+            <Settings size={16} />
+            {muted && <VolumeX size={10} className="absolute -right-1 -top-1 rounded-full bg-rose-500 p-0.5 text-white" />}
           </button>
         </div>
         <nav className="mx-auto hidden max-w-6xl gap-1 px-4 pb-2 sm:flex">
@@ -4930,18 +5331,12 @@ export default function SuvarnaKani() {
           </>
         )}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
-          <span><Zap size={12} className="mr-1 inline text-amber-400" />Progress is saved on this device.</span>
-          <span className="flex items-center gap-1">
-            Daily goal:
-            {[5, 12, 20].map((m) => (
-              <button key={m} onClick={() => setDailyMinutes(m)} className={`rounded-lg px-2 py-0.5 ${dailyMinutes === m ? "bg-amber-500 font-bold text-black" : "hover:text-slate-200"}`}>{m} min</button>
-            ))}
-          </span>
-          <button onClick={resetProgress} className={`underline ${confirmReset ? "font-bold text-rose-300" : "hover:text-slate-300"}`}>{confirmReset ? "Tap again to erase all progress" : "Reset progress"}</button>
+          <span><Zap size={12} className="mr-1 inline text-amber-400" />Progress is saved on this device. <button onClick={() => setSettingsOpen(true)} className="underline hover:text-slate-200">Back it up</button></span>
+          <button onClick={() => setSeenVersion("show")} className="underline hover:text-slate-200">What's new in {APP_VERSION}</button>
         </footer>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-sk-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold ${tab === t.id ? "text-amber-400" : "text-slate-400"}`}>
             <t.icon size={20} />
@@ -4950,9 +5345,27 @@ export default function SuvarnaKani() {
         ))}
       </nav>
 
-      <AudioStudio open={studio} onClose={() => setStudio(false)} rate={rate} setRate={setRate} muted={muted} setMuted={setMuted} />
+      <SettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        s={{ mode, setMode, font, setFont, sandbox, setSandbox, rate, setRate, muted, setMuted, dailyMinutes, setDailyMinutes, prefs, setPref }}
+        getState={() => stateRef.current}
+        onReset={resetProgress}
+        confirmReset={confirmReset}
+      />
+      <WhatsNewSheet open={onboarded && !settingsOpen && seenVersion !== APP_VERSION} onClose={() => setSeenVersion(APP_VERSION)} since={seenVersion === "show" ? null : seenVersion} />
+      {updateReady && (
+        <div className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/40 bg-sk-panel px-4 py-3 text-sm text-slate-100 shadow-2xl sm:bottom-4 sm:left-auto sm:right-4 sm:w-96">
+          <span><RefreshCw size={14} className="mr-1.5 inline text-amber-300" />A new version is ready.</span>
+          <button onClick={() => window.location.reload()} className="rounded-xl bg-amber-500 px-3 py-1.5 font-bold text-black">Reload</button>
+        </div>
+      )}
       <Inspector item={inspect} mode={mode} font={font} srs={srs} onClose={() => setInspect(null)} />
       {!onboarded && <Onboarding onDone={finishOnboarding} />}
     </div>
+    </PrefsContext.Provider>
   );
 }
+
+/* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
+export const __test = { computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
