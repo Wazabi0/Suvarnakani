@@ -3,6 +3,7 @@ import {
   Landmark, PenTool, FlaskConical, Orbit, Scissors, Volume2, VolumeX, Music, Unlock, Lock,
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
+  Cloud, Sun, Waves, Ear, Target,
 } from "lucide-react";
 
 /* ============================================================================
@@ -17,15 +18,16 @@ const COLORS = {
   obsidian: "#0B0F19",
   slate: "#0F172A",
   gold: "#F59E0B",
-  cyan: "#06B6D4",
-  magenta: "#EC4899",
-  purple: "#9333EA",
+  // Tier hues tuned for colour-blind separation (deuteranopia ΔE_OK ≥ 18).
+  cyan: "#22D3EE",
+  magenta: "#E0457B",
+  purple: "#7C5CFF",
 };
 
 const TIER = {
-  glyph: { label: "Glyph", color: COLORS.cyan, tw: "bg-[#06B6D4]" },
-  syllable: { label: "Syllable", color: COLORS.magenta, tw: "bg-[#EC4899]" },
-  vocab: { label: "Vocabulary", color: COLORS.purple, tw: "bg-[#9333EA]" },
+  glyph: { label: "Glyph", color: COLORS.cyan },
+  syllable: { label: "Syllable", color: COLORS.magenta },
+  vocab: { label: "Vocabulary", color: COLORS.purple },
 };
 
 const FONT_STACKS = {
@@ -44,29 +46,35 @@ const GOOGLE_FONTS_HREF =
 
 /* ---------------------------------------------------------------------------
  * Tone system (Bangkok Thai, Chao tone numbers)
+ * Colour lightness follows pitch height: Low is darkest, High is lightest, and
+ * contour tones are drawn as gradients from start pitch to end pitch. `ink` is
+ * the text-safe variant of each colour on dark surfaces.
  * ------------------------------------------------------------------------- */
 const TONES = {
-  mid: { name: "Mid", th: "สามัญ", chao: "33", color: "#38BDF8", notes: ["C4", "C4"] },
-  low: { name: "Low", th: "เอก", chao: "21", color: "#A78BFA", notes: ["A3", "F3"] },
-  falling: { name: "Falling", th: "โท", chao: "51", color: "#F43F5E", notes: ["E4", "G4", "G3"] },
-  high: { name: "High", th: "ตรี", chao: "45", color: "#F59E0B", notes: ["E4", "A4"] },
-  rising: { name: "Rising", th: "จัตวา", chao: "214", color: "#34D399", notes: ["C4", "G3", "F4"] },
+  mid: { name: "Mid", th: "สามัญ", chao: "33", color: "#22C3A6", ink: "#3DDBBE", grad: ["#22C3A6", "#22C3A6"], notes: ["C4", "C4"] },
+  low: { name: "Low", th: "เอก", chao: "21", color: "#6E5CE6", ink: "#A99DF7", grad: ["#8577EE", "#4D3FC4"], notes: ["A3", "F3"] },
+  falling: { name: "Falling", th: "โท", chao: "51", color: "#FF6B4A", ink: "#FF8A6E", grad: ["#FFB199", "#C2381D"], notes: ["E4", "G4", "G3"] },
+  high: { name: "High", th: "ตรี", chao: "45", color: "#FFE27A", ink: "#FFE27A", grad: ["#F5C842", "#FFF0B8"], notes: ["E4", "A4"] },
+  rising: { name: "Rising", th: "จัตวา", chao: "214", color: "#4FA3FF", ink: "#7DBBFF", grad: ["#2A5FA8", "#BFE0FF"], notes: ["C4", "G3", "F4"] },
 };
+const TONE_ORDER = ["mid", "low", "falling", "high", "rising"];
 
 const NOTE_FREQ = { F3: 174.61, G3: 196.0, A3: 220.0, C4: 261.63, E4: 329.63, F4: 349.23, G4: 392.0, A4: 440.0 };
 
+/* Classes use an "altitude" ramp of temple gold (pale = high, bronze = low)
+ * plus a persona icon, so they never share a hue with the item tiers. */
 const CLASSES = {
-  mid: { name: "Middle", persona: "Golden Monks", th: "อักษรกลาง", lo: "ອັກສອນກາງ", color: COLORS.gold },
-  high: { name: "High", persona: "Sky Nagas", th: "อักษรสูง", lo: "ອັກສອນສູງ", color: COLORS.cyan },
-  low: { name: "Low", persona: "River Spirits", th: "อักษรต่ำ", lo: "ອັກສອນຕ່ຳ", color: COLORS.purple },
+  mid: { name: "Middle", persona: "Golden Monks", th: "อักษรกลาง", lo: "ອັກສອນກາງ", color: "#F5A524", icon: Sun, rule: "Middle class: unaspirated stops and อ (ก จ ด ต บ ป อ, plus ฎ ฏ). No mark on a live syllable gives Mid." },
+  high: { name: "High", persona: "Sky Nagas", th: "อักษรสูง", lo: "ອັກສອນສູງ", color: "#FFF1C2", icon: Cloud, rule: "High class: aspirated and voiceless letters whose names rise (ข ฉ ถ ผ ฝ ส ห, plus ฐ ศ ษ). No mark on a live syllable gives Rising." },
+  low: { name: "Low", persona: "River Spirits", th: "อักษรต่ำ", lo: "ອັກສອນຕ່ຳ", color: "#D08A3C", icon: Waves, rule: "Low class: sonorants (ง น ม ย ร ล ว) and the low partners of aspirates (ค ช ท พ ฟ ซ ฮ). No mark on a live syllable gives Mid, but tone marks shift one step." },
 };
 
 const MARKS = {
-  none: { name: "No mark", th: "", lo: "" },
-  ek: { name: "Mai Ek ◌่", th: "่", lo: "່" },
-  tho: { name: "Mai Tho ◌้", th: "้", lo: "້" },
-  tri: { name: "Mai Tri ◌๊", th: "๊", lo: "໊" },
-  jat: { name: "Mai Chattawa ◌๋", th: "๋", lo: "໋" },
+  none: { name: "No mark", plain: "No mark", th: "", lo: "" },
+  ek: { name: "Mai Ek ◌่", plain: "Mai Ek", th: "่", lo: "່" },
+  tho: { name: "Mai Tho ◌้", plain: "Mai Tho", th: "้", lo: "້" },
+  tri: { name: "Mai Tri ◌๊", plain: "Mai Tri", th: "๊", lo: "໊" },
+  jat: { name: "Mai Chattawa ◌๋", plain: "Mai Chattawa", th: "๋", lo: "໋" },
 };
 
 /** Deterministic Thai tone rule engine. */
@@ -96,7 +104,7 @@ function computeTone({ cls, live, long, mark = "none", hn = false }) {
     if (eff === "low" && (mark === "ek" || mark === "tho")) {
       steps.push(`Low-class shift: tone mark #${mark === "ek" ? 1 : 2} is read one step further, as ${TONES[tone].name}.`);
     } else {
-      steps.push(`${MARKS[mark].name} sets the tone directly: ${TONES[tone].name}.`);
+      steps.push(`${MARKS[mark].plain} sets the tone directly: ${TONES[tone].name}.`);
     }
   } else if (live) {
     tone = eff === "high" ? "rising" : "mid";
@@ -108,7 +116,7 @@ function computeTone({ cls, live, long, mark = "none", hn = false }) {
     tone = "low";
     steps.push(`${CLASSES[eff].name} class + dead syllable → Low.`);
   }
-  const formula = `${CLASSES[eff].name} + ${live ? "Live" : `Dead ${long ? "Long" : "Short"}`} + ${MARKS[mark].name} = ${TONES[tone].name} (${TONES[tone].chao})`;
+  const formula = `${CLASSES[eff].name} + ${live ? "Live" : `Dead ${long ? "Long" : "Short"}`} + ${MARKS[mark].plain} = ${TONES[tone].name} (${TONES[tone].chao})`;
   return { tone, eff, steps, warning, formula };
 }
 
@@ -290,6 +298,9 @@ class SuvarnaMobileAudioEngine {
   thaiVoice() {
     return this.voices.find((v) => /^th(-|_|$)/i.test(v.lang));
   }
+  thaiVoices() {
+    return this.voices.filter((v) => /^th(-|_|$)/i.test(v.lang));
+  }
   laoVoice() {
     return this.voices.find((v) => /^lo(-|_|$)/i.test(v.lang));
   }
@@ -315,27 +326,49 @@ class SuvarnaMobileAudioEngine {
   cancelSpeech() {
     clearTimeout(this.speechTimer);
     this.speechTimer = null;
+    this.seqToken = (this.seqToken || 0) + 1;
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
   }
   /**
    * Speak with a human voice. `ttsThai` must be Thai script. If `laoRaw` is
    * given and the device has a Lao voice, the Lao text is spoken instead.
    */
-  speakHumanVoice(ttsThai, laoRaw) {
+  speakHumanVoice(ttsThai, laoRaw, opts = {}) {
+    this.speakSequence([{ th: ttsThai, lo: laoRaw, ...opts }]);
+  }
+  /**
+   * Speak several utterances one after another (e.g. "your answer" then "the
+   * right answer"). Each entry: { th, lo?, voice?, rate? }. Starting any other
+   * sound cancels the rest of the sequence.
+   */
+  speakSequence(list, gapMs = 450) {
     if (this.muted || typeof window === "undefined" || !("speechSynthesis" in window)) return;
     this.stopTones();
     this.cancelSpeech();
-    const lv = laoRaw ? this.laoVoice() : null;
-    const text = lv ? sanitizeLao(laoRaw) : sanitizeThai(ttsThai);
-    if (!text) return;
-    const voice = lv || this.thaiVoice();
-    this.speechTimer = setTimeout(() => {
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = lv ? "lo-LA" : "th-TH";
-      if (voice) u.voice = voice;
-      u.rate = this.rate;
+    const token = this.seqToken;
+    const utterances = list
+      .map((e) => {
+        const lv = e.lo ? this.laoVoice() : null;
+        const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
+        if (!text) return null;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = lv ? "lo-LA" : "th-TH";
+        const voice = lv || e.voice || this.thaiVoice();
+        if (voice) u.voice = voice;
+        u.rate = e.rate || this.rate;
+        return u;
+      })
+      .filter(Boolean);
+    if (!utterances.length) return;
+    const play = (i) => {
+      if (token !== this.seqToken || i >= utterances.length) return;
+      const u = utterances[i];
+      u.onend = () => {
+        if (i + 1 < utterances.length) this.speechTimer = setTimeout(() => play(i + 1), gapMs);
+      };
       window.speechSynthesis.speak(u);
-    }, 120);
+    };
+    this.speechTimer = setTimeout(() => play(0), 120);
   }
   /** Play Ranat Ek style chimes for one or more tones in sequence. */
   playRanatToneChime(tones) {
@@ -414,7 +447,7 @@ function DualText({ th, lo, mode, font, className = "", gapClass = "gap-4", divi
   return (
     <span className={`inline-flex items-baseline ${gapClass}`}>
       <Glyph text={th} script="th" font={font} className={className} />
-      {divider && <span className="text-slate-600 text-base self-center">⇄</span>}
+      {divider && <span className="text-slate-400 text-base self-center">⇄</span>}
       <Glyph text={lo} script="lo" font={font} className={className} />
     </span>
   );
@@ -424,8 +457,30 @@ function ToneBadge({ tone, small }) {
   const t = TONES[tone];
   if (!t) return null;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`} style={{ background: `${t.color}22`, color: t.color, border: `1px solid ${t.color}55` }}>
-      {t.name} <span className="opacity-70">{t.chao}</span>
+    <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`} style={{ background: `${t.color}22`, color: t.ink, border: `1px solid ${t.color}66` }}>
+      <ToneGlyph tone={tone} size={small ? 14 : 16} /> {t.name} <span className="opacity-75">{t.chao}</span>
+    </span>
+  );
+}
+
+/** Tiny contour icon, so tone is readable without relying on colour. */
+function ToneGlyph({ tone, size = 16, color }) {
+  const digits = TONES[tone].chao.split("").map(Number);
+  const y = (d) => 2 + ((5 - d) / 4) * 12;
+  const pts = digits.map((d, i) => `${2 + (i / (digits.length - 1)) * 16},${y(d)}`).join(" ");
+  return (
+    <svg width={size} height={size * 0.8} viewBox="0 0 20 16" aria-hidden="true">
+      <polyline points={pts} fill="none" stroke={color || "currentColor"} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ClassBadge({ cls, small }) {
+  const c = CLASSES[cls];
+  const Icon = c.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`} style={{ background: `${c.color}1f`, color: c.color, border: `1px solid ${c.color}55` }}>
+      <Icon size={small ? 12 : 14} /> {c.name} · {c.persona}
     </span>
   );
 }
@@ -540,12 +595,18 @@ function ToneContour({ tone, width = 300, height = 160 }) {
       {[1, 2, 3, 4, 5].map((l) => (
         <g key={l}>
           <line x1={pad.l} x2={width - pad.r} y1={yFor(l)} y2={yFor(l)} stroke="#ffffff14" strokeDasharray="3 5" />
-          <text x={10} y={yFor(l) + 4} fill="#64748B" fontSize="11">{l}</text>
+          <text x={10} y={yFor(l) + 4} fill="#94A3B8" fontSize="11">{l}</text>
         </g>
       ))}
-      <path d={d} fill="none" stroke={t.color} strokeWidth="5" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${t.color})` }} />
+      <defs>
+        <linearGradient id={`tone-grad-${tone}`} gradientUnits="userSpaceOnUse" x1={pad.l} x2={width - pad.r} y1="0" y2="0">
+          <stop offset="0" stopColor={t.grad[0]} />
+          <stop offset="1" stopColor={t.grad[1]} />
+        </linearGradient>
+      </defs>
+      <path d={d} fill="none" stroke={`url(#tone-grad-${tone})`} strokeWidth="6" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 6px ${t.color}88)` }} />
       {pts.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r={i === 0 ? 5 : 3.5} fill={i === 0 ? "#fff" : t.color} />
+        <circle key={i} cx={x} cy={y} r={i === 0 ? 5 : 3.5} fill={i === 0 ? "#fff" : t.grad[1]} />
       ))}
     </svg>
   );
@@ -554,7 +615,7 @@ function ToneContour({ tone, width = 300, height = 160 }) {
 /* ============================================================================
  * Module 1: SRS Shrine
  * ========================================================================== */
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect }) {
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar }) {
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -599,11 +660,15 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect }) {
     setLessonOpen(false);
   };
 
-  const answer = (id, correct) => {
+  const answer = (id, correct, parts = {}) => {
     setSrs((prev) => {
       const cur = prev[id] || { stage: 1, next: 0 };
       const stage = correct ? Math.min(5, cur.stage + 1) : Math.max(1, cur.stage - 1);
-      return { ...prev, [id]: { stage, next: stage >= 5 ? Infinity : Date.now() + SRS_INTERVAL[stage] } };
+      const stats = { read: [0, 0], second: [0, 0], ...(cur.stats || {}) };
+      const bump = (pair, ok) => [pair[0] + (ok ? 1 : 0), pair[1] + 1];
+      if (parts.read != null) stats.read = bump(stats.read, parts.read);
+      if (parts.second != null) stats.second = bump(stats.second, parts.second);
+      return { ...prev, [id]: { stage, next: stage >= 5 ? Infinity : Date.now() + SRS_INTERVAL[stage], stats } };
     });
   };
 
@@ -642,7 +707,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect }) {
               <div className="text-xs font-semibold uppercase tracking-wider text-cyan-200">Reviews</div>
             </button>
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 text-xs text-slate-400">
             {reviewQueue.length ? "Reviews are waiting." : nextReview ? `Next review in ${fmtWait(nextReview)}.` : "Finish a lesson to start reviews."}
             {sandbox && " Sandbox is on: every level is open and all learned items are reviewable now."}
           </p>
@@ -657,9 +722,31 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect }) {
             <div key={s.name} className="rounded-xl bg-white/[0.03] px-2 py-2 text-center">
               <div className="text-lg font-black" style={{ color: s.color }}>{counts[idx]}</div>
               <div className="text-[11px] font-semibold text-slate-300">{s.name}</div>
-              <div className="text-[10px] text-slate-500">{s.alias}</div>
+              <div className="text-[11px] text-slate-400">{s.alias}</div>
             </div>
           ))}
+        </div>
+      </Card>
+
+      <Card className="p-4 sm:p-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest" style={{ color: TONES.rising.ink }}><Ear size={13} /> Tone ear</div>
+            <p className="text-xs text-slate-400">Listening accuracy per tone, from the Ear Dojo.</p>
+          </div>
+          <button onClick={onOpenEar} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/15"><Target size={13} className="mr-1 inline" />Train</button>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {TONE_ORDER.map((t) => {
+            const acc = earAccuracy(ear, t);
+            return (
+              <div key={t} className="rounded-xl bg-white/[0.03] p-2 text-center">
+                <div className="flex justify-center" style={{ color: TONES[t].ink }}><ToneGlyph tone={t} size={20} /></div>
+                <div className="text-sm font-black tabular-nums text-white">{acc == null ? "–" : `${Math.round(acc * 100)}%`}</div>
+                <div className="text-[11px]" style={{ color: TONES[t].ink }}>{TONES[t].name}</div>
+              </div>
+            );
+          })}
         </div>
       </Card>
 
@@ -728,17 +815,13 @@ function ItemHero({ item, mode, font }) {
       </div>
       <div className="text-sm text-slate-200">
         {mode !== "lo" && <span>{item.thRoman}</span>}
-        {mode === "dual" && <span className="text-slate-500"> · </span>}
+        {mode === "dual" && <span className="text-slate-400"> · </span>}
         {mode !== "th" && <span className="text-purple-200">{item.loRoman}</span>}
       </div>
       <div className="mt-1 text-lg font-semibold text-white">{item.meaning}</div>
       <div className="mt-2 flex flex-wrap justify-center gap-1.5">
         {item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}
-        {item.cls && (
-          <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: `${CLASSES[item.cls].color}22`, color: CLASSES[item.cls].color }}>
-            {CLASSES[item.cls].name} class · {CLASSES[item.cls].persona}
-          </span>
-        )}
+        {item.cls && <ClassBadge cls={item.cls} small />}
       </div>
     </div>
   );
@@ -811,11 +894,142 @@ function shuffle(arr) {
   return a;
 }
 
+/* ---------------------------------------------------------------------------
+ * Error diagnosis: name the rule that was broken, not just "wrong".
+ * ------------------------------------------------------------------------- */
+function diagnoseReading(item, input) {
+  const other = CURRICULUM.find((o) => o.id !== item.id && isCorrect(o, input));
+  if (other) return `"${input.trim()}" is ${other.th} (${other.meaning}). ${item.trap || ""}`.trim();
+  return null;
+}
+
+function diagnoseTone(item, picked) {
+  const right = item.tone[0];
+  if (picked === right) return null;
+  const p = item.parts;
+  if (!p) return `This word is ${TONES[right].name} (${TONES[right].chao}). Listen and compare with ${TONES[picked].name}.`;
+  const res = computeTone(p);
+  const P = TONES[picked].name;
+  const first = item.th.replace(/^[เแโใไ]/, "")[0];
+  const tail = ` Rule: ${res.formula}.`;
+  if (p.mark !== "none" && computeTone({ ...p, mark: "none" }).tone === picked) {
+    return `You read it as ${P}, which is what it would be with no mark. The ${MARKS[p.mark].plain} mark decides the tone.${tail}`;
+  }
+  if (res.eff === "low" && (p.mark === "ek" || p.mark === "tho") && (p.mark === "ek" ? "low" : "falling") === picked) {
+    return `You forgot the Low-class shift: on a Low consonant Mai Ek reads Falling and Mai Tho reads High.${tail}`;
+  }
+  if (p.hn && computeTone({ ...p, hn: false }).tone === picked) {
+    return `The silent ห in front lifts ${first === "ห" ? item.th[1] : first} into High class.${tail}`;
+  }
+  const wrongCls = Object.keys(CLASSES).find((c) => c !== res.eff && computeTone({ ...p, cls: c, hn: false }).tone === picked);
+  if (wrongCls) {
+    return `You treated ${first} as ${CLASSES[wrongCls].name} class. It's ${CLASSES[res.eff].name} class (${CLASSES[res.eff].persona}).${tail}`;
+  }
+  if (computeTone({ ...p, live: !p.live }).tone === picked) {
+    return `Check the ending: this syllable is ${p.live ? "live (long vowel or m/n/ng/w/y final)" : "dead (short open vowel or p/t/k final)"}.${tail}`;
+  }
+  return `It's ${TONES[right].name}, not ${P}.${tail}`;
+}
+
+function diagnoseClass(item, picked) {
+  if (picked === item.cls) return null;
+  return `${item.th} is ${CLASSES[item.cls].name} class, not ${CLASSES[picked].name}. ${CLASSES[item.cls].rule}`;
+}
+
+/** Which second question an item gets after its reading: tone or class. */
+function secondPrompt(item) {
+  if (item.tier === "glyph") return "class";
+  if (item.tone.length === 1) return "tone";
+  return null;
+}
+
+function ToneChoice({ onPick, picked, correct, disabled, options = TONE_ORDER }) {
+  useEffect(() => {
+    if (disabled) return undefined;
+    const onKey = (e) => {
+      const n = Number(e.key);
+      if (n >= 1 && n <= options.length) onPick(options[n - 1]);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [disabled, onPick, options]);
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      {options.map((k, i) => {
+        const t = TONES[k];
+        const state = picked == null ? "idle" : k === correct ? "right" : k === picked ? "wrong" : "idle";
+        return (
+          <button
+            key={k}
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(k)}
+            className={`rounded-2xl border p-2 text-center transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"}`}
+          >
+            <ToneMini tone={k} />
+            <div className="text-xs font-semibold" style={{ color: t.ink }}>{t.name}</div>
+            <div className="text-[11px] text-slate-400">{i + 1} · {t.chao}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ToneMini({ tone, height = 34 }) {
+  const t = TONES[tone];
+  const digits = t.chao.split("").map(Number);
+  const y = (d) => 4 + ((5 - d) / 4) * 26;
+  const pts = digits.map((d, i) => [8 + (i / (digits.length - 1)) * 84, y(d)]);
+  const d = digits.length === 3
+    ? `M ${pts[0][0]} ${pts[0][1]} Q ${pts[1][0]} ${pts[1][1] + 10} ${pts[2][0]} ${pts[2][1]}`
+    : `M ${pts[0][0]} ${pts[0][1]} L ${pts[1][0]} ${pts[1][1]}`;
+  const gid = `mini-${tone}`;
+  return (
+    <svg viewBox="0 0 100 34" className="mx-auto block w-full" style={{ height }} aria-hidden="true">
+      <defs>
+        <linearGradient id={gid} gradientUnits="userSpaceOnUse" x1="8" x2="92" y1="0" y2="0">
+          <stop offset="0" stopColor={t.grad[0]} />
+          <stop offset="1" stopColor={t.grad[1]} />
+        </linearGradient>
+      </defs>
+      <path d={d} fill="none" stroke={`url(#${gid})`} strokeWidth="5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ClassChoice({ onPick, picked, correct, disabled }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {["high", "mid", "low"].map((k) => {
+        const c = CLASSES[k];
+        const Icon = c.icon;
+        const state = picked == null ? "idle" : k === correct ? "right" : k === picked ? "wrong" : "idle";
+        return (
+          <button
+            key={k}
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(k)}
+            className={`rounded-2xl border p-3 text-center transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"}`}
+          >
+            <Icon size={20} className="mx-auto" style={{ color: c.color }} />
+            <div className="mt-1 text-sm font-semibold" style={{ color: c.color }}>{c.name}</div>
+            <div className="text-[11px] text-slate-400">{c.persona}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
-  const [result, setResult] = useState(null);
+  const [phase, setPhase] = useState("read"); // read → second → result
+  const [readOk, setReadOk] = useState(null);
+  const [pick, setPick] = useState(null);
   const [score, setScore] = useState({ right: 0, wrong: 0 });
   const inputRef = useRef(null);
 
@@ -824,37 +1038,69 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
       setList(shuffle(queue));
       setIdx(0);
       setInput("");
-      setResult(null);
+      setPhase("read");
+      setReadOk(null);
+      setPick(null);
       setScore({ right: 0, wrong: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   useEffect(() => {
-    if (open && !result) inputRef.current?.focus();
-  }, [open, idx, result]);
+    if (open && phase === "read") inputRef.current?.focus();
+  }, [open, idx, phase]);
 
   if (!open) return null;
   const item = list[idx];
   const finished = idx >= list.length;
+  const kind = item ? secondPrompt(item) : null;
+  const secondRight = kind === "tone" ? item.tone[0] : kind === "class" ? item.cls : null;
+  const secondOk = pick == null ? null : pick === secondRight;
 
-  const submit = (e) => {
-    e.preventDefault();
-    if (result) {
-      setResult(null);
-      setInput("");
-      setIdx(idx + 1);
-      return;
-    }
-    if (!input.trim()) return;
-    const ok = isCorrect(item, input);
-    setResult(ok ? "right" : "wrong");
-    setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
-    onAnswer(item.id, ok);
+  const speak = () => {
     const audio = getAudio();
     if (mode === "lo") audio.speakHumanVoice(item.ttsLo || item.ttsTh, item.lo);
     else audio.speakHumanVoice(item.ttsTh);
   };
+
+  const finish = (rOk, sOk) => {
+    const ok = rOk && (sOk == null || sOk);
+    setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
+    onAnswer(item.id, ok, { read: rOk, second: sOk, kind });
+    setPhase("result");
+    speak();
+  };
+
+  const next = () => {
+    setInput("");
+    setPhase("read");
+    setReadOk(null);
+    setPick(null);
+    setIdx(idx + 1);
+  };
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (phase === "result") return next();
+    if (phase !== "read" || !input.trim()) return undefined;
+    const ok = isCorrect(item, input);
+    setReadOk(ok);
+    if (kind) setPhase("second");
+    else finish(ok, null);
+    return undefined;
+  };
+
+  const onPick = (k) => {
+    if (phase !== "second") return;
+    setPick(k);
+    finish(readOk, k === secondRight);
+  };
+
+  const readingNote = phase === "result" && !readOk ? diagnoseReading(item, input) : null;
+  const secondNote = phase === "result" && secondOk === false
+    ? kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
+    : null;
+  const allOk = phase === "result" && readOk && secondOk !== false;
 
   return (
     <Modal open={open} onClose={onClose} title={finished ? "Review complete" : `Review ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
@@ -862,7 +1108,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
         <div className="py-6 text-center">
           <Trophy size={44} className="mx-auto text-amber-400" />
           <div className="mt-3 text-2xl font-black text-white">{score.right} / {score.right + score.wrong}</div>
-          <p className="mt-1 text-sm text-slate-400">Correct items moved up a stage. Missed items dropped one stage and will come back sooner.</p>
+          <p className="mt-1 text-sm text-slate-400">An item moves up a stage only when both its reading and its tone (or class) are right. Missed items drop a stage and come back sooner.</p>
           <button onClick={onClose} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
         </div>
       ) : (
@@ -870,33 +1116,50 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
           <div className="rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
             <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35] text-white" />
           </div>
-          <label className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">Type the reading or the meaning</label>
+          <label htmlFor="review-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">1 · Type the reading or the meaning</label>
           <input
+            id="review-input"
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            readOnly={!!result}
+            readOnly={phase !== "read"}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
             placeholder="e.g. maa / horse"
-            className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${result === "right" ? "border-emerald-400 bg-emerald-500/20" : result === "wrong" ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
+            className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${readOk === true ? "border-emerald-400 bg-emerald-500/20" : readOk === false ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
           />
-          {result && (
+          {kind && phase !== "read" && (
+            <div className="mt-4">
+              <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
+                2 · {kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
+              </div>
+              {kind === "tone"
+                ? <ToneChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />
+                : <ClassChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />}
+            </div>
+          )}
+          {phase === "result" && (
             <div className="mt-3 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
-              <div className={`font-bold ${result === "right" ? "text-emerald-300" : "text-rose-300"}`}>{result === "right" ? "Correct" : "Not quite"}</div>
+              <div className={`font-bold ${allOk ? "text-emerald-300" : "text-rose-300"}`}>
+                {allOk ? "Correct" : !readOk && secondOk === false ? "Reading and " + (kind === "tone" ? "tone" : "class") + " missed" : !readOk ? "Reading missed" : kind === "tone" ? "Tone missed" : "Class missed"}
+              </div>
+              {readingNote && <p className="text-rose-200">{readingNote}</p>}
+              {secondNote && <p className="text-rose-200">{secondNote}</p>}
               <div className="text-slate-200">
                 <span className="text-slate-400">Reading:</span> {item.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}
                 <br /><span className="text-slate-400">Meaning:</span> {item.meaning}
               </div>
-              <div className="flex flex-wrap gap-1.5">{item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}</div>
-              <p className="text-slate-400">{item.mnemonic}</p>
+              <div className="flex flex-wrap gap-1.5">{item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}{item.cls && <ClassBadge cls={item.cls} small />}</div>
+              {allOk && <p className="text-slate-400">{item.mnemonic}</p>}
               <AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} compact />
             </div>
           )}
-          <button type="submit" className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black active:scale-[0.99]">
-            {result ? "Next" : "Check"}
-          </button>
+          {phase !== "second" && (
+            <button type="submit" className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black active:scale-[0.99]">
+              {phase === "result" ? "Next" : "Check"}
+            </button>
+          )}
         </form>
       )}
     </Modal>
@@ -934,7 +1197,7 @@ function Inspector({ item, mode, font, srs, onClose }) {
               {["loop", "street"].map((f) => (
                 <div key={f} className="rounded-xl bg-black/30 p-2">
                   <DualText th={item.th} lo={item.lo} mode={mode} font={f} className="text-4xl leading-[1.4] text-white" gapClass="gap-2" divider={false} />
-                  <div className="text-[10px] uppercase tracking-wider text-slate-500">{f === "loop" ? "Traditional" : "Loopless"}</div>
+                  <div className="text-[11px] uppercase tracking-wider text-slate-400">{f === "loop" ? "Traditional" : "Loopless"}</div>
                 </div>
               ))}
             </div>
@@ -943,6 +1206,244 @@ function Inspector({ item, mode, font, srs, onClose }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+/* ============================================================================
+ * Module: Tone Ear Dojo (high-variability listening drills)
+ * ========================================================================== */
+const EAR_SETS = [
+  { id: "maa", label: "มา · ม้า · หมา", words: [
+    { th: "มา", tone: "mid", r: "maa", m: "come" },
+    { th: "ม้า", tone: "high", r: "máa", m: "horse" },
+    { th: "หมา", tone: "rising", r: "mǎa", m: "dog" },
+  ] },
+  { id: "khaaw", label: "ขาว · ข่าว · ข้าว", words: [
+    { th: "ขาว", tone: "rising", r: "khǎaw", m: "white" },
+    { th: "ข่าว", tone: "low", r: "khàaw", m: "news" },
+    { th: "ข้าว", tone: "falling", r: "khâaw", m: "rice" },
+  ] },
+  { id: "khaa", label: "คา · ค่า · ค้า · ขา", words: [
+    { th: "คา", tone: "mid", r: "khaa", m: "stuck" },
+    { th: "ค่า", tone: "falling", r: "khâa", m: "value" },
+    { th: "ค้า", tone: "high", r: "kháa", m: "trade" },
+    { th: "ขา", tone: "rising", r: "khǎa", m: "leg" },
+  ] },
+  { id: "mai", label: "ไม้ · ไหม · ใหม่ · ไม่", words: [
+    { th: "ไม้", tone: "high", r: "mái", m: "wood" },
+    { th: "ไหม", tone: "rising", r: "mǎi", m: "silk / question word" },
+    { th: "ใหม่", tone: "low", r: "mài", m: "new" },
+    { th: "ไม่", tone: "falling", r: "mâi", m: "not" },
+  ] },
+  { id: "naa", label: "นา · น่า · น้า · หนา", words: [
+    { th: "นา", tone: "mid", r: "naa", m: "rice field" },
+    { th: "น่า", tone: "falling", r: "nâa", m: "worth (-able)" },
+    { th: "น้า", tone: "high", r: "náa", m: "aunt / uncle (mother's younger sibling)" },
+    { th: "หนา", tone: "rising", r: "nǎa", m: "thick" },
+  ] },
+  { id: "suea", label: "เสือ · เสื่อ · เสื้อ", words: [
+    { th: "เสือ", tone: "rising", r: "sʉ̌a", m: "tiger" },
+    { th: "เสื่อ", tone: "low", r: "sʉ̀a", m: "mat" },
+    { th: "เสื้อ", tone: "falling", r: "sʉ̂a", m: "shirt" },
+  ] },
+  { id: "paa", label: "ปา · ป่า · ป้า · ป๊า · ป๋า", words: [
+    { th: "ปา", tone: "mid", r: "paa", m: "throw" },
+    { th: "ป่า", tone: "low", r: "pàa", m: "forest" },
+    { th: "ป้า", tone: "falling", r: "pâa", m: "aunt (older)" },
+    { th: "ป๊า", tone: "high", r: "páa", m: "dad (colloquial)" },
+    { th: "ป๋า", tone: "rising", r: "pǎa", m: "dad / patron (slang)" },
+  ] },
+];
+const EAR_TRIALS = 20;
+const EAR_RATES = [0.8, 0.95, 1.05];
+
+const emptyEar = () => ({ tones: Object.fromEntries(TONE_ORDER.map((t) => [t, [0, 0]])), confusions: {}, sessions: 0 });
+
+function earAccuracy(ear, tone) {
+  const [r, n] = ear.tones[tone] || [0, 0];
+  return n ? r / n : null;
+}
+
+/** Pick the next trial, favouring tones and confusions the learner gets wrong. */
+function pickEarTrial(ear, prevKey) {
+  const options = [];
+  EAR_SETS.forEach((set) => set.words.forEach((w) => {
+    const acc = earAccuracy(ear, w.tone);
+    const confusion = Object.entries(ear.confusions)
+      .filter(([k]) => k.startsWith(`${w.tone}>`) && set.words.some((o) => k.endsWith(`>${o.tone}`)))
+      .reduce((sum, [, v]) => sum + v, 0);
+    const weight = 1 + (acc == null ? 1 : (1 - acc) * 3) + Math.min(confusion, 6) * 0.5;
+    const key = `${set.id}:${w.th}`;
+    if (key !== prevKey) options.push({ set, word: w, key, weight });
+  }));
+  let roll = Math.random() * options.reduce((s, o) => s + o.weight, 0);
+  for (const o of options) {
+    roll -= o.weight;
+    if (roll <= 0) return o;
+  }
+  return options[options.length - 1];
+}
+
+function EarDojo({ ear, setEar }) {
+  const audio = getAudio();
+  const [, force] = useState(0);
+  useEffect(() => audio.onVoices(() => force((n) => n + 1)), [audio]);
+  const [running, setRunning] = useState(false);
+  const [trial, setTrial] = useState(null);
+  const [count, setCount] = useState(0);
+  const [pick, setPick] = useState(null);
+  const [session, setSession] = useState({ right: 0, total: 0 });
+  const voices = audio.thaiVoices();
+
+  const playTrial = (t) => {
+    const voice = voices.length ? voices[Math.floor(Math.random() * voices.length)] : undefined;
+    const rate = EAR_RATES[Math.floor(Math.random() * EAR_RATES.length)];
+    audio.speakHumanVoice(t.word.th, undefined, { voice, rate });
+    return { voice, rate };
+  };
+
+  const nextTrial = (prevKey) => {
+    const t = pickEarTrial(ear, prevKey);
+    const meta = playTrial(t);
+    setTrial({ ...t, ...meta });
+    setPick(null);
+  };
+
+  const start = () => {
+    setRunning(true);
+    setCount(0);
+    setSession({ right: 0, total: 0 });
+    nextTrial(null);
+  };
+
+  const answer = (tone) => {
+    if (pick || !trial) return;
+    setPick(tone);
+    const ok = tone === trial.word.tone;
+    setSession((s) => ({ right: s.right + (ok ? 1 : 0), total: s.total + 1 }));
+    setEar((prev) => {
+      const tones = { ...prev.tones, [trial.word.tone]: [prev.tones[trial.word.tone][0] + (ok ? 1 : 0), prev.tones[trial.word.tone][1] + 1] };
+      const confusions = { ...prev.confusions };
+      if (!ok) confusions[`${trial.word.tone}>${tone}`] = (confusions[`${trial.word.tone}>${tone}`] || 0) + 1;
+      return { ...prev, tones, confusions };
+    });
+    if (ok) {
+      audio.playRanatToneChime([trial.word.tone]);
+    } else {
+      const chosen = trial.set.words.find((w) => w.tone === tone);
+      audio.speakSequence([
+        { th: chosen.th, voice: trial.voice, rate: trial.rate },
+        { th: trial.word.th, voice: trial.voice, rate: trial.rate },
+      ], 600);
+    }
+  };
+
+  const advance = () => {
+    const n = count + 1;
+    setCount(n);
+    if (n >= EAR_TRIALS) {
+      setRunning(false);
+      setTrial(null);
+      setEar((prev) => ({ ...prev, sessions: (prev.sessions || 0) + 1 }));
+      return;
+    }
+    nextTrial(trial.key);
+  };
+
+  const topConfusions = Object.entries(ear.confusions).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const setTones = trial ? TONE_ORDER.filter((t) => trial.set.words.some((w) => w.tone === t)) : TONE_ORDER;
+  const chosenWord = trial && pick ? trial.set.words.find((w) => w.tone === pick) : null;
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Ear} title="Tone Ear Dojo" sub="Hear a syllable, pick its contour. Many speeds and voices, minimal sets, instant feedback." color={TONES.rising.ink} />
+      {!running ? (
+        <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+          <Card className="p-5" glow={TONES.rising.color}>
+            <h3 className="text-lg font-bold text-white">{session.total ? `Session done: ${session.right} / ${session.total}` : "Train your ear on minimal sets"}</h3>
+            <p className="mt-1 max-w-prose text-sm text-slate-300">
+              Each trial plays one word from a set like <span style={{ fontFamily: FONT_STACKS.loop.th }}>มา · ม้า · หมา</span> with a random speed{voices.length > 1 ? " and voice" : ""}. The word stays hidden until you answer, so you train your ear, not your reading. If you miss, you hear your choice and then the right answer, back to back.
+            </p>
+            <p className="mt-3 text-xs text-slate-400">
+              {voices.length ? `${voices.length} Thai voice${voices.length > 1 ? "s" : ""} on this device.` : "No Thai voice found on this device. Install one in your text-to-speech settings first."}{" "}
+              Device voices sometimes blur tones; recorded native audio is planned.
+            </p>
+            <button onClick={start} className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black active:scale-[0.98]">
+              <Play size={18} /> {session.total ? "Another 20" : `Start ${EAR_TRIALS} trials`}
+            </button>
+          </Card>
+          <Card className="p-5">
+            <div className="mb-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">Your ear, per tone</div>
+            <div className="space-y-2.5">
+              {TONE_ORDER.map((t) => {
+                const acc = earAccuracy(ear, t);
+                const [, n] = ear.tones[t];
+                return (
+                  <div key={t} className="flex items-center gap-3">
+                    <span className="w-20"><ToneBadge tone={t} small /></span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+                      <div className="h-full rounded-full" style={{ width: `${acc == null ? 0 : acc * 100}%`, background: `linear-gradient(90deg, ${TONES[t].grad[0]}, ${TONES[t].grad[1]})` }} />
+                    </div>
+                    <span className="w-16 text-right text-xs tabular-nums text-slate-300">{acc == null ? "–" : `${Math.round(acc * 100)}%`} <span className="text-slate-400">/{n}</span></span>
+                  </div>
+                );
+              })}
+            </div>
+            {topConfusions.length > 0 && (
+              <div className="mt-4 text-xs text-slate-300">
+                <div className="mb-1 font-bold uppercase tracking-wider text-slate-400">Most confused</div>
+                {topConfusions.map(([k, v]) => {
+                  const [heard, picked] = k.split(">");
+                  return <div key={k}>{TONES[heard].name} heard as {TONES[picked].name} <span className="text-slate-400">×{v}</span></div>;
+                })}
+              </div>
+            )}
+          </Card>
+        </div>
+      ) : (
+        <Card className="mx-auto max-w-xl p-5" glow={TONES.rising.color}>
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>{trial?.set.label && <span style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.set.label}</span>}</span>
+            <span className="tabular-nums">{count + 1} / {EAR_TRIALS}</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400" style={{ width: `${(count / EAR_TRIALS) * 100}%` }} /></div>
+          <div className="my-6 flex flex-col items-center gap-3">
+            <button onClick={() => trial && audio.speakHumanVoice(trial.word.th, undefined, { voice: trial.voice, rate: trial.rate })} className="flex h-24 w-24 items-center justify-center rounded-full bg-amber-500 text-black shadow-[0_0_40px_#F59E0B66] active:scale-95" aria-label="Play the syllable again">
+              <Volume2 size={40} />
+            </button>
+            <div className="text-xs text-slate-400">{pick ? "" : "Tap to hear it again. Which contour?"}{trial ? ` · ${trial.rate}×` : ""}</div>
+          </div>
+          <ToneChoice onPick={answer} picked={pick} correct={pick ? trial.word.tone : null} disabled={!!pick} options={setTones} />
+          {pick && (
+            <div className="mt-4 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className="flex flex-wrap items-baseline gap-3">
+                <span className="text-4xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.word.th}</span>
+                <span className="text-slate-200">{trial.word.r} · {trial.word.m}</span>
+                <ToneBadge tone={trial.word.tone} small />
+              </div>
+              {pick === trial.word.tone ? (
+                <p className="font-semibold text-emerald-300">Correct.</p>
+              ) : (
+                <p className="text-rose-200">
+                  You picked {TONES[pick].name}, which is <span style={{ fontFamily: FONT_STACKS.loop.th }}>{chosenWord.th}</span> ({chosenWord.m}). You just heard both, yours first.
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {pick !== trial.word.tone && (
+                  <button onClick={() => audio.speakSequence([{ th: chosenWord.th, voice: trial.voice, rate: trial.rate }, { th: trial.word.th, voice: trial.voice, rate: trial.rate }], 600)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5">
+                    <RotateCcw size={13} className="mr-1 inline" />Compare again
+                  </button>
+                )}
+                <button onClick={() => audio.speakSequence(trial.set.words.map((w) => ({ th: w.th, voice: trial.voice, rate: trial.rate })), 500)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5">
+                  <Volume2 size={13} className="mr-1 inline" />Hear the whole set
+                </button>
+                <button onClick={advance} className="ml-auto rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
   );
 }
 
@@ -1098,8 +1599,8 @@ function Tracer() {
                   <line x1={0} y1={i * 40} x2={TRACE_SIZE} y2={i * 40} />
                 </g>
               ))}
-              <line x1={0} x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="#06B6D433" strokeDasharray="6 6" />
-              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#06B6D426" stroke="#06B6D488" strokeWidth="1.5" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</text>
+              <line x1={0} x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="#22D3EE33" strokeDasharray="6 6" />
+              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#22D3EE26" stroke="#22D3EE88" strokeWidth="1.5" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</text>
               <circle cx={glyph.start[0]} cy={glyph.start[1]} r="16" fill="#F59E0B33" stroke="#F59E0B" strokeWidth="2">
                 <animate attributeName="r" values="13;18;13" dur="1.6s" repeatCount="indefinite" />
               </circle>
@@ -1118,11 +1619,11 @@ function Tracer() {
               <span className="text-5xl text-white" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</span>
               <div>
                 <div className="font-semibold text-white">{glyph.name}</div>
-                <div className="text-xs" style={{ color: CLASSES[glyph.cls].color }}>{CLASSES[glyph.cls].name} class · {CLASSES[glyph.cls].persona}</div>
+                <div className="mt-1"><ClassBadge cls={glyph.cls} small /></div>
               </div>
             </div>
             <p className="mt-3 text-sm text-slate-300">{glyph.path}</p>
-            <p className="mt-2 text-xs text-slate-500">The tracer always uses head-loop type, because that is where the loops are visible.</p>
+            <p className="mt-2 text-xs text-slate-400">The tracer always uses head-loop type, because that is where the loops are visible.</p>
           </Card>
           {result && (
             <Card className="p-4">
@@ -1242,7 +1743,7 @@ function Reactor({ mode, font }) {
             <Chip active={hnActive} color={COLORS.cyan} disabled={!(cls === "low" && consObj.hnTh)} onClick={() => setHn(!hn)}>
               {hnActive ? "On: ห lifts ม to High class" : "Off"}
             </Chip>
-            {!(cls === "low" && consObj.hnTh) && <p className="mt-1 text-xs text-slate-500">Only works on a Low-class sonorant. Pick Low → ม.</p>}
+            {!(cls === "low" && consObj.hnTh) && <p className="mt-1 text-xs text-slate-400">Only works on a Low-class sonorant. Pick Low → ม.</p>}
           </div>
           <div>
             <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Presets</div>
@@ -1259,7 +1760,7 @@ function Reactor({ mode, font }) {
         <Card className="p-5" glow={t.color}>
           <div className="text-center">
             <DualText th={th} lo={lo} mode={mode} font={font} className="text-7xl leading-[1.4] text-white" />
-            <div className="mt-1 text-xs text-slate-500">Shape: {syllableShape}</div>
+            <div className="mt-1 text-xs text-slate-400">Shape: {syllableShape}</div>
             <div className="mt-3"><ToneBadge tone={res.tone} /></div>
             <div className="mt-1 text-sm text-slate-400">Thai name: เสียง{t.th}</div>
           </div>
@@ -1283,7 +1784,7 @@ function Reactor({ mode, font }) {
           <div className="mt-4 flex justify-center">
             <AudioButtons ttsTh={th} ttsLo={th} loRaw={lo} tones={[res.tone]} mode={mode === "lo" ? "th" : "th"} />
           </div>
-          <p className="mt-2 text-center text-[11px] text-slate-500">Some combinations are valid spelling but not real words; the voice reads them as written.</p>
+          <p className="mt-2 text-center text-[11px] text-slate-400">Some combinations are valid spelling but not real words; the voice reads them as written.</p>
         </Card>
       </div>
     </div>
@@ -1408,7 +1909,7 @@ function OrbitModule({ mode, font }) {
           <div className="grid grid-cols-3 grid-rows-3 items-center justify-items-center gap-2">
             {Object.entries(DIRS).map(([d, info]) => (
               <div key={d} className={`${info.pos} flex flex-col items-center gap-1`}>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{info.label}</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{info.label}</div>
                 <div className="flex flex-wrap justify-center gap-1">{ORBIT_VOWELS.filter((x) => x.dir === d).map(vowelBtn)}</div>
               </div>
             ))}
@@ -1417,7 +1918,7 @@ function OrbitModule({ mode, font }) {
             </div>
           </div>
           <div className="mt-3 border-t border-white/5 pt-3 text-center">
-            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Surrounding · 360°</div>
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Surrounding · 360°</div>
             <div className="flex justify-center gap-2">{ORBIT_VOWELS.filter((x) => x.dir === "O").map(vowelBtn)}</div>
           </div>
         </Card>
@@ -1426,22 +1927,22 @@ function OrbitModule({ mode, font }) {
             {showScripts.map((s) => (
               <div key={s}>
                 <Glyph text={s === "th" ? th : lo} script={s} font={font} className="text-7xl leading-[1.5] text-white" />
-                <div className="text-[10px] uppercase tracking-wider text-slate-500">{s === "th" ? "Thai" : "Lao"} · vowel form <Glyph text={vowelForm(v, s)} script={s} font={font} className="text-base normal-case text-amber-300" /></div>
+                <div className="text-[11px] uppercase tracking-wider text-slate-400">{s === "th" ? "Thai" : "Lao"} · vowel form <Glyph text={vowelForm(v, s)} script={s} font={font} className="text-base normal-case text-amber-300" /></div>
               </div>
             ))}
           </div>
           <div className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-black/30 px-4 py-2 text-lg">
             <span className="font-bold text-cyan-300">{c.r}</span>
-            <span className="text-slate-500">+</span>
+            <span className="text-slate-400">+</span>
             <span className="font-bold text-amber-300">{v.r}</span>
-            <span className="text-slate-500">=</span>
+            <span className="text-slate-400">=</span>
             <span className="font-black text-white">{c.r}{v.r}</span>
           </div>
           <p className="mt-2 text-sm text-slate-400">
             Written {v.dir === "W" ? "in front of" : v.dir === "N" ? "above" : v.dir === "S" ? "below" : v.dir === "E" ? "after" : "around"} the consonant, read after it. {v.long ? "Long" : "Short"} vowel{v.note ? `; ${v.note}` : ""}.
           </p>
           <div className="mt-3"><ToneBadge tone={tone.tone} /></div>
-          <div className="mt-1 text-xs text-slate-500">{tone.formula}</div>
+          <div className="mt-1 text-xs text-slate-400">{tone.formula}</div>
           <div className="mt-4 flex justify-center"><AudioButtons ttsTh={th} ttsLo={th} loRaw={lo} tones={[tone.tone]} mode={mode} /></div>
         </Card>
       </div>
@@ -1622,7 +2123,7 @@ function SliceSentence({ sentence, font, mode }) {
           </span>
         )}
       </div>
-      <p className="mt-2 text-xs text-slate-500">“{sentence.gloss}” · Tap the gaps between characters to drop a cut.</p>
+      <p className="mt-2 text-xs text-slate-400">“{sentence.gloss}” · Tap the gaps between characters to drop a cut.</p>
       {checked && (
         <div className="mt-3 flex flex-wrap gap-2">
           {sentence.words.map((w, i) => (
@@ -1642,7 +2143,7 @@ function SliceSentence({ sentence, font, mode }) {
                 <span className="text-5xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}>{w.w}</span>
                 <div className="space-y-1 text-sm">
                   <div className="text-white">{w.r} · {w.m}</div>
-                  {w.tone ? <div className="flex gap-1">{w.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}</div> : <div className="text-xs text-slate-500">Vientiane tones differ from Thai; listen and compare.</div>}
+                  {w.tone ? <div className="flex gap-1">{w.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}</div> : <div className="text-xs text-slate-400">Vientiane tones differ from Thai; listen and compare.</div>}
                   <AudioButtons ttsTh={w.tts} ttsLo={w.tts} loRaw={isLo ? w.w : undefined} tones={w.tone} mode={isLo ? "lo" : "th"} compact />
                 </div>
               </div>
@@ -1701,8 +2202,8 @@ function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
         </div>
         <div className="mt-3 space-y-1 text-xs">
           <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings."}</div>
-          <div className={lo ? "text-emerald-300" : "text-slate-500"}>{lo ? `Lao voice: ${lo.name}` : "No Lao voice: Lao items are read with Thai-script approximations."}</div>
-          <p className="pt-1 text-slate-500">Voice and chimes never play at the same time; starting one stops the other.</p>
+          <div className={lo ? "text-emerald-300" : "text-slate-400"}>{lo ? `Lao voice: ${lo.name}` : "No Lao voice: Lao items are read with Thai-script approximations."}</div>
+          <p className="pt-1 text-slate-400">Voice and chimes never play at the same time; starting one stops the other.</p>
         </div>
       </div>
     </div>
@@ -1714,6 +2215,7 @@ function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
  * ========================================================================== */
 const TABS = [
   { id: "shrine", label: "Shrine", icon: Landmark },
+  { id: "ear", label: "Ear", icon: Ear },
   { id: "tracer", label: "Tracer", icon: PenTool },
   { id: "reactor", label: "Reactor", icon: FlaskConical },
   { id: "orbit", label: "Orbit", icon: Orbit },
@@ -1734,6 +2236,7 @@ export default function SuvarnaKani() {
     Object.entries(raw).forEach(([k, v]) => { fixed[k] = { ...v, next: v.next === null ? Infinity : v.next }; });
     return fixed;
   });
+  const [ear, setEar] = useState(() => ({ ...emptyEar(), ...(initial.ear || {}) }));
   const [studio, setStudio] = useState(false);
   const [inspect, setInspect] = useState(null);
 
@@ -1760,8 +2263,8 @@ export default function SuvarnaKani() {
   }, []);
 
   useEffect(() => {
-    saveState({ tab, mode, font, sandbox, rate, muted, srs });
-  }, [tab, mode, font, sandbox, rate, muted, srs]);
+    saveState({ tab, mode, font, sandbox, rate, muted, srs, ear });
+  }, [tab, mode, font, sandbox, rate, muted, srs, ear]);
 
   const resetProgress = () => {
     if (window.confirm("Reset all SRS progress?")) setSrs({});
@@ -1803,18 +2306,19 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} />}
+        {tab === "ear" && <EarDojo ear={ear} setEar={setEar} />}
         {tab === "tracer" && <Tracer />}
         {tab === "reactor" && <Reactor mode={mode} font={font} />}
         {tab === "orbit" && <OrbitModule mode={mode} font={font} />}
         {tab === "slicer" && <Slicer mode={mode} font={font} />}
-        <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-500">
+        <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
           <span><Zap size={12} className="mr-1 inline text-amber-400" />Progress is saved on this device.</span>
           <button onClick={resetProgress} className="underline hover:text-slate-300">Reset progress</button>
         </footer>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold ${tab === t.id ? "text-amber-400" : "text-slate-400"}`}>
             <t.icon size={20} />
