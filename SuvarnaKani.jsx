@@ -3,7 +3,7 @@ import {
   Landmark, PenTool, FlaskConical, Orbit, Scissors, Volume2, VolumeX, Music, Unlock, Lock,
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
-  Cloud, Sun, Waves, Ear, Target, Flame,
+  Cloud, Sun, Waves, Ear, Target, Flame, Mic,
 } from "lucide-react";
 
 /* ============================================================================
@@ -796,7 +796,7 @@ const EAR_DAILY_TRIALS = 20;
 
 function computeStreak(log) {
   let streak = 0;
-  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) > 0);
+  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) > 0);
   let t = Date.now();
   if (!active(todayKey(t))) t -= DAY;
   while (active(todayKey(t))) {
@@ -3050,6 +3050,372 @@ function StreetReader({ mode, srs, setSrs, best, setBest }) {
 /* ============================================================================
  * Hub tabs: Lab (Reactor, Orbit, Bridge) and Read (Slicer, Street Reader)
  * ========================================================================== */
+/* ============================================================================
+ * Shadow Mirror: say the syllable back and see your pitch over the target.
+ * Pitch is tracked on the device (YIN autocorrelation); no audio leaves it.
+ * ========================================================================== */
+const CHAO_ST = 2.5; // semitones per Chao step, so 1–5 spans a 10-semitone voice
+const SHADOW_PASS = 70;
+const SHADOW_UNLOCK = { acc: 0.8, trials: 10 };
+
+const emptyShadow = () => ({ base: null, tones: Object.fromEntries(TONE_ORDER.map((t) => [t, { best: 0, tries: 0 }])) });
+
+/** YIN pitch estimate for one frame, in Hz, or null when unvoiced. */
+function detectPitch(buf, sr) {
+  let rms = 0;
+  for (let i = 0; i < buf.length; i += 1) rms += buf[i] * buf[i];
+  if (Math.sqrt(rms / buf.length) < 0.01) return null;
+  const minLag = Math.floor(sr / 450);
+  const maxLag = Math.min(Math.floor(sr / 70), Math.floor(buf.length / 2));
+  const w = buf.length - maxLag;
+  const d = new Float32Array(maxLag + 1);
+  for (let tau = 1; tau <= maxLag; tau += 1) {
+    let s = 0;
+    for (let i = 0; i < w; i += 1) {
+      const x = buf[i] - buf[i + tau];
+      s += x * x;
+    }
+    d[tau] = s;
+  }
+  let run = 0;
+  for (let tau = 1; tau <= maxLag; tau += 1) {
+    run += d[tau];
+    d[tau] = run ? (d[tau] * tau) / run : 1;
+  }
+  let tau = -1;
+  for (let t = minLag; t < maxLag; t += 1) {
+    if (d[t] < 0.15) {
+      while (t + 1 < maxLag && d[t + 1] < d[t]) t += 1;
+      tau = t;
+      break;
+    }
+  }
+  if (tau < 0) return null;
+  const a = d[tau - 1];
+  const b = d[tau];
+  const c = d[tau + 1] ?? b;
+  const shift = (a - 2 * b + c) ? (a - c) / (2 * (a - 2 * b + c)) : 0;
+  return sr / (tau + shift);
+}
+
+const median = (xs) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? s[Math.floor(s.length / 2)] : null;
+};
+const toSt = (hz, base) => 12 * Math.log2(hz / base);
+
+/** The longest voiced stretch (gaps of up to 3 frames allowed), octave-fixed and smoothed. */
+function voicedSegment(frames) {
+  let best = [];
+  let cur = [];
+  let gap = 0;
+  frames.forEach((f) => {
+    if (f.hz) {
+      cur.push(f);
+      gap = 0;
+    } else if (cur.length && (gap += 1) > 3) {
+      if (cur.length > best.length) best = cur;
+      cur = [];
+      gap = 0;
+    }
+  });
+  if (cur.length > best.length) best = cur;
+  if (best.length < 6) return null;
+  // Octave errors show up as sudden jumps of about 12 semitones between frames.
+  const mid = median(best.map((f) => f.hz));
+  const fixed = [];
+  best.forEach((f, i) => {
+    let st = toSt(f.hz, mid);
+    if (i) {
+      while (st - fixed[i - 1] > 7) st -= 12;
+      while (fixed[i - 1] - st > 7) st += 12;
+    }
+    fixed.push(st);
+  });
+  const smooth = fixed.map((_, i) => median(fixed.slice(Math.max(0, i - 2), i + 3)));
+  return { st: smooth, hz: smooth.map((s) => mid * 2 ** (s / 12)) };
+}
+
+function resample(xs, n) {
+  return Array.from({ length: n }, (_, i) => {
+    const p = (i / (n - 1)) * (xs.length - 1);
+    const lo = Math.floor(p);
+    const hi = Math.min(xs.length - 1, lo + 1);
+    return xs[lo] + (xs[hi] - xs[lo]) * (p - lo);
+  });
+}
+
+/** Target contour in semitones relative to the mid level (Chao 3). */
+const targetSt = (tone, n = 24) => resample(TONES[tone].chao.split("").map((d) => (Number(d) - 3) * CHAO_ST), n);
+
+function scoreShadow(tone, seg, base) {
+  const n = 24;
+  const T = targetSt(tone, n);
+  const L = resample(base ? seg.hz.map((h) => toSt(h, base)) : seg.st, n);
+  const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const mT = mean(T);
+  const mL = mean(L);
+  const rmse = Math.sqrt(mean(L.map((x, i) => ((x - mL) - (T[i] - mT)) ** 2)));
+  const shape = Math.max(0, Math.min(100, 100 - rmse * 25));
+  const offset = mL - mT;
+  const height = base ? Math.max(0, Math.min(100, 100 - Math.max(0, Math.abs(offset) - 1) * 25)) : null;
+  const score = Math.round(height == null ? shape : 0.6 * shape + 0.4 * height);
+  const third = Math.floor(n / 3);
+  const slope = (xs) => mean(xs.slice(-third)) - mean(xs.slice(0, third));
+  const sT = slope(T);
+  const sL = slope(L);
+  // A dip means the middle sits below both ends, as in Rising 214.
+  const dips = (xs) => Math.min(...xs.slice(third, 2 * third)) < Math.min(mean(xs.slice(0, 3)), mean(xs.slice(-3))) - 1;
+  const dipT = dips(T);
+  const dipL = dips(L);
+  const name = TONES[tone].name;
+  let tip;
+  if (dipT && !dipL) tip = `${name} dips before it climbs: let your voice sag first, then lift.`;
+  else if (sT <= -2 && sL > -1) tip = `${name} needs a clear drop: start high and let it fall.`;
+  else if (sT >= 2 && sL < 1) tip = `${name} has to end higher than it starts: push the pitch up at the end.`;
+  else if (Math.abs(sT) < 1.5 && Math.abs(sL) > 2.5) tip = `Keep ${name} level: your pitch ${sL > 0 ? "rose" : "fell"} about ${Math.abs(sL).toFixed(0)} semitones.`;
+  else if (height != null && offset > 2) tip = `${shape >= 70 ? "Right shape, but pitched" : "Pitched"} high for ${name}. Relax down toward your normal voice.`;
+  else if (height != null && offset < -2) tip = `${shape >= 70 ? "Right shape, but too" : "Too"} low for ${name}. Lift it a little.`;
+  else if (score >= SHADOW_PASS) tip = `That matches the ${name} contour.`;
+  else tip = `Close. Listen once more and copy where the pitch starts and ends.`;
+  return { score, shape: Math.round(shape), height: height == null ? null : Math.round(height), trace: L, tip };
+}
+
+function micErrorText(e) {
+  const n = e?.name || e?.message;
+  if (n === "unsupported") return "This browser has no microphone access.";
+  if (n === "NotFoundError" || n === "OverconstrainedError") return "No microphone was found on this device.";
+  return "The microphone is blocked here. Embedded previews never allow it: open SuvarnaKani.html directly in Safari or Chrome and allow the microphone when asked.";
+}
+
+/** Records up to `ms` and calls onFrame with each pitch frame; resolves with all frames. */
+function useMicPitch() {
+  const stopRef = useRef(null);
+  const capture = useCallback(async (ms, onFrame) => {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("unsupported");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    if (ctx.state === "suspended") await ctx.resume();
+    const an = ctx.createAnalyser();
+    an.fftSize = 2048;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    const frames = [];
+    const t0 = performance.now();
+    return new Promise((resolve) => {
+      let raf = 0;
+      let lastT = -1;
+      const finish = () => {
+        cancelAnimationFrame(raf);
+        stream.getTracks().forEach((t) => t.stop());
+        ctx.close();
+        stopRef.current = null;
+        resolve(frames);
+      };
+      stopRef.current = finish;
+      const step = () => {
+        const t = performance.now() - t0;
+        if (t >= ms) return finish();
+        if (t - lastT >= 30) {
+          lastT = t;
+          an.getFloatTimeDomainData(buf);
+          const f = { t, hz: detectPitch(buf, ctx.sampleRate) };
+          frames.push(f);
+          onFrame?.(frames);
+        }
+        raf = requestAnimationFrame(step);
+        return undefined;
+      };
+      raf = requestAnimationFrame(step);
+    });
+  }, []);
+  const stop = useCallback(() => stopRef.current?.(), []);
+  useEffect(() => () => stopRef.current?.(), []);
+  return { capture, stop };
+}
+
+function ShadowPlot({ tone, trace, live, height = 200 }) {
+  const width = 360;
+  const pad = { l: 30, r: 12, t: 12, b: 12 };
+  const range = 8; // ± semitones shown
+  const y = (st) => pad.t + ((range - Math.max(-range, Math.min(range, st))) / (2 * range)) * (height - pad.t - pad.b);
+  const x = (i, n) => pad.l + (n > 1 ? i / (n - 1) : 0) * (width - pad.l - pad.r);
+  const path = (xs) => xs.map((v, i) => `${i ? "L" : "M"} ${x(i, xs.length).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const T = targetSt(tone, 40);
+  const t = TONES[tone];
+  const liveXs = (live || []).filter((v) => v != null);
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto max-h-[260px] w-full" role="img" aria-label={`${t.name} target contour with your pitch`}>
+      {[1, 2, 3, 4, 5].map((l) => (
+        <g key={l}>
+          <line x1={pad.l} x2={width - pad.r} y1={y((l - 3) * CHAO_ST)} y2={y((l - 3) * CHAO_ST)} stroke="#ffffff14" strokeDasharray="3 5" />
+          <text x={10} y={y((l - 3) * CHAO_ST) + 4} fill="#94A3B8" fontSize="11">{l}</text>
+        </g>
+      ))}
+      <defs>
+        <linearGradient id={`shadow-grad-${tone}`} gradientUnits="userSpaceOnUse" x1={pad.l} x2={width - pad.r} y1="0" y2="0">
+          <stop offset="0" stopColor={t.grad[0]} />
+          <stop offset="1" stopColor={t.grad[1]} />
+        </linearGradient>
+      </defs>
+      <path d={path(T)} fill="none" stroke={`url(#shadow-grad-${tone})`} strokeOpacity="0.35" strokeWidth="22" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={path(T)} fill="none" stroke={`url(#shadow-grad-${tone})`} strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" />
+      {trace && <path d={path(trace)} fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 4px #ffffffaa)" }} />}
+      {!trace && liveXs.length > 1 && <path d={path(liveXs)} fill="none" stroke="#fff" strokeOpacity="0.8" strokeWidth="3" strokeLinecap="round" />}
+    </svg>
+  );
+}
+
+function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
+  const audio = getAudio();
+  const mic = useMicPitch();
+  const unlocked = (tone) => {
+    if (sandbox) return true;
+    const [, n] = ear.tones[tone] || [0, 0];
+    return n >= SHADOW_UNLOCK.trials && earAccuracy(ear, tone) >= SHADOW_UNLOCK.acc;
+  };
+  const [tone, setTone] = useState(() => TONE_ORDER.find(unlocked) || "mid");
+  const words = useMemo(() => EAR_SETS.flatMap((s) => s.words).filter((w) => w.tone === tone), [tone]);
+  const [wi, setWi] = useState(0);
+  const word = words[wi % words.length];
+  const [phase, setPhase] = useState("idle"); // idle | calibrating | recording
+  const [live, setLive] = useState([]);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setResult(null); setLive([]); setWi(0); }, [tone]);
+
+  const liveSt = (frames) => {
+    const voiced = frames.filter((f) => f.hz).map((f) => f.hz);
+    const ref = shadow.base || median(voiced);
+    return voiced.map((h) => toSt(h, ref));
+  };
+
+  const record = async (calibrate) => {
+    audio.cancelSpeech();
+    audio.stopTones();
+    setErr(null);
+    setResult(null);
+    setLive([]);
+    setPhase(calibrate ? "calibrating" : "recording");
+    try {
+      const frames = await mic.capture(calibrate ? 2000 : 2200, (fr) => setLive(liveSt(fr)));
+      const seg = voicedSegment(frames);
+      if (!seg) {
+        setErr("I couldn't hear a voice. Hold the syllable a little longer, closer to the microphone.");
+      } else if (calibrate) {
+        const base = Math.round(median(seg.hz));
+        setShadow((s) => ({ ...s, base }));
+      } else {
+        const r = scoreShadow(tone, seg, shadow.base);
+        setResult(r);
+        setShadow((s) => {
+          const cur = s.tones[tone] || { best: 0, tries: 0 };
+          return { ...s, tones: { ...s.tones, [tone]: { best: Math.max(cur.best, r.score), tries: cur.tries + 1 } } };
+        });
+        logActivity?.({ shadow: 1 });
+      }
+    } catch (e) {
+      setErr(micErrorText(e));
+    }
+    setPhase("idle");
+  };
+
+  const busy = phase !== "idle";
+  const t = TONES[tone];
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Mic} title="Shadow Mirror" sub="Hear the model, say it back, and see your pitch drawn over the target contour. Analysis runs on this device; no audio is sent anywhere." color={TONES.falling.color} />
+      <div className="grid grid-cols-5 gap-2">
+        {TONE_ORDER.map((tn) => {
+          const open = unlocked(tn);
+          const acc = earAccuracy(ear, tn);
+          const best = shadow.tones[tn]?.best || 0;
+          return (
+            <button
+              key={tn}
+              onClick={() => open && setTone(tn)}
+              disabled={!open}
+              className={`rounded-2xl border p-2 text-center transition ${tone === tn ? "border-white/40 bg-white/10" : "border-white/10 bg-white/[0.03]"} ${open ? "" : "opacity-60"}`}
+              title={open ? "" : `Reach ${SHADOW_UNLOCK.acc * 100}% on ${TONES[tn].name} in the Ear Dojo`}
+            >
+              <ToneMini tone={tn} height={26} />
+              <div className="mt-1 text-xs font-semibold" style={{ color: TONES[tn].ink }}>{TONES[tn].name}</div>
+              <div className="text-[11px] text-slate-400">
+                {open ? (best ? `best ${best}` : "ready") : <span><Lock size={10} className="mr-0.5 inline" />ear {acc == null ? "–" : `${Math.round(acc * 100)}%`}</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {!unlocked(tone) ? (
+        <Card className="p-5 text-sm text-slate-300">
+          <p>Shadowing opens for a tone once you can hear it: reach {SHADOW_UNLOCK.acc * 100}% on it over at least {SHADOW_UNLOCK.trials} trials in the Ear Dojo. Ears first, then mouth.</p>
+        </Card>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+          <Card className="p-5" glow={t.color}>
+            <div className="flex flex-wrap items-center gap-2">
+              {words.map((w, i) => (
+                <Chip key={w.th} active={i === wi % words.length} color={t.color} onClick={() => { setWi(i); setResult(null); setLive([]); }}>
+                  <span style={{ fontFamily: FONT_STACKS.loop.th }}>{w.th}</span>
+                </Chip>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-baseline gap-3">
+              <span className="text-5xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{word.th}</span>
+              <span className="text-slate-200">{word.r} · {word.m}</span>
+              <ToneBadge tone={tone} small />
+            </div>
+            <ShadowPlot tone={tone} trace={result?.trace} live={phase === "recording" ? live : null} />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button onClick={() => audio.speakHumanVoice(word.th)} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50">
+                <Volume2 size={16} /> Hear model
+              </button>
+              {phase === "recording" ? (
+                <button onClick={mic.stop} className="flex items-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white">
+                  <Mic size={16} className="animate-pulse" /> Listening… tap to stop
+                </button>
+              ) : (
+                <button onClick={() => record(false)} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
+                  <Mic size={16} /> Say it
+                </button>
+              )}
+            </div>
+            {result && (
+              <div className="mt-4 rounded-2xl bg-white/[0.04] p-3 text-sm">
+                <div className="flex items-baseline gap-3">
+                  <span className={`text-3xl font-black tabular-nums ${result.score >= SHADOW_PASS ? "text-emerald-300" : "text-amber-300"}`}>{result.score}</span>
+                  <span className="text-slate-400">shape {result.shape}{result.height != null ? ` · height ${result.height}` : " · height not scored until you set your voice"}</span>
+                </div>
+                <p className="mt-1 text-slate-200">{result.tip}</p>
+              </div>
+            )}
+            {err && <p className="mt-3 flex gap-2 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{err}</p>}
+          </Card>
+          <div className="space-y-3">
+            <Card className="p-4 text-sm">
+              <div className="mb-1 font-semibold text-white">Your voice</div>
+              {shadow.base ? (
+                <p className="text-slate-300">Your mid level is set to <b className="text-white">{shadow.base} Hz</b>. Height is scored against it.</p>
+              ) : (
+                <p className="text-slate-300">Say a long, relaxed <span className="text-lg" style={{ fontFamily: FONT_STACKS.loop.th }}>อา</span> at your normal speaking pitch. That becomes your Mid level, so High and Low can be scored by height as well as shape.</p>
+              )}
+              <button onClick={() => record(true)} disabled={busy} className="mt-2 flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-slate-100 disabled:opacity-50">
+                <Mic size={14} className={phase === "calibrating" ? "animate-pulse text-rose-300" : ""} /> {phase === "calibrating" ? "Listening…" : shadow.base ? "Set again" : "Set my voice"}
+              </button>
+            </Card>
+            <Card className="p-4 text-xs leading-relaxed text-slate-400">
+              The coloured band is the {t.name} contour ({t.chao} on the 1–5 Chao scale), mapped to about {CHAO_ST} semitones per step. Your pitch is the white line. Shape counts most; a score of {SHADOW_PASS} or more is a pass. Tones open here once you hear them reliably in the Ear Dojo.
+            </Card>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SubTabs({ tabs, active, onChange }) {
   return (
     <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
@@ -3110,6 +3476,10 @@ const LAB_TABS = [
   { id: "orbit", label: "Vowel Orbit", icon: Orbit },
   { id: "bridge", label: "Mekong Predictor", icon: Languages },
 ];
+const EAR_TABS = [
+  { id: "dojo", label: "Ear Dojo", icon: Ear },
+  { id: "shadow", label: "Shadow Mirror", icon: Mic },
+];
 const READ_TABS = [
   { id: "slicer", label: "Script Slicer", icon: Scissors },
   { id: "street", label: "Street Reader", icon: BookOpen },
@@ -3130,6 +3500,8 @@ export default function SuvarnaKani() {
   const [tab, setTab] = useState(LEGACY_TAB[initial.tab]?.[0] || initial.tab || "shrine");
   const [labTab, setLabTab] = useState(LEGACY_TAB[initial.tab]?.[1] === "reactor" || LEGACY_TAB[initial.tab]?.[1] === "orbit" ? LEGACY_TAB[initial.tab][1] : initial.labTab || "reactor");
   const [readTab, setReadTab] = useState(initial.readTab || "slicer");
+  const [earTab, setEarTab] = useState(initial.earTab || "dojo");
+  const [shadow, setShadow] = useState(() => ({ ...emptyShadow(), ...(initial.shadow || {}) }));
   const [bridge, setBridge] = useState(() => ({ ...emptyBridge(), ...(initial.bridge || {}) }));
   const [streetBest, setStreetBest] = useState(() => initial.streetBest || {});
   const [mode, setMode] = useState(initial.mode || "dual");
@@ -3190,8 +3562,8 @@ export default function SuvarnaKani() {
   }, []);
 
   useEffect(() => {
-    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest });
-  }, [tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest]);
+    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest, earTab, shadow });
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest]);
 
   // Two taps instead of window.confirm, which embedded viewers block.
   const [confirmReset, setConfirmReset] = useState(false);
@@ -3206,6 +3578,7 @@ export default function SuvarnaKani() {
     setLog({});
     setBridge(emptyBridge());
     setStreetBest({});
+    setShadow(emptyShadow());
     setConfirmReset(false);
   };
 
@@ -3246,7 +3619,13 @@ export default function SuvarnaKani() {
 
       <main className="mx-auto max-w-6xl px-4 py-5">
         {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} />}
-        {tab === "ear" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
+        {tab === "ear" && (
+          <>
+            <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
+            {earTab === "dojo" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
+            {earTab === "shadow" && <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />}
+          </>
+        )}
         {tab === "tracer" && <Tracer />}
         {tab === "lab" && (
           <>
