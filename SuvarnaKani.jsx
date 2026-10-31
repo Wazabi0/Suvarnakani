@@ -3,7 +3,7 @@ import {
   Landmark, PenTool, FlaskConical, Orbit, Scissors, Volume2, VolumeX, Music, Unlock, Lock,
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
-  Cloud, Sun, Waves, Ear, Target,
+  Cloud, Sun, Waves, Ear, Target, Flame, Mic,
 } from "lucide-react";
 
 /* ============================================================================
@@ -41,6 +41,9 @@ const FONT_STACKS = {
   },
 };
 
+// UI text mixes Latin with Thai and Lao, so the UI stack falls back to Noto for both scripts.
+const UI_FONT = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Noto Sans Lao", sans-serif';
+
 const GOOGLE_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;600&family=Noto+Serif+Lao:wght@400;600&family=Sarabun:wght@400;600&family=Kanit:wght@300;500&family=Noto+Sans+Thai:wght@400;600&family=Noto+Sans+Lao:wght@400;600&display=swap";
 
@@ -58,6 +61,20 @@ const TONES = {
   rising: { name: "Rising", th: "จัตวา", chao: "214", color: "#4FA3FF", ink: "#7DBBFF", grad: ["#2A5FA8", "#BFE0FF"], notes: ["C4", "G3", "F4"] },
 };
 const TONE_ORDER = ["mid", "low", "falling", "high", "rising"];
+
+/*
+ * Vientiane Lao has its own tone values. Contours follow the common five-way
+ * description for learners coming from Thai (rising, high, mid, low falling,
+ * high falling). Some speakers split the rising tone by class; we don't.
+ */
+Object.assign(TONES, {
+  lo_rising: { name: "Rising", th: "ສຽງຂຶ້ນ", chao: "24", color: "#4FA3FF", ink: "#7DBBFF", grad: ["#2A5FA8", "#BFE0FF"], notes: ["A3", "E4"], lao: true },
+  lo_high: { name: "High", th: "ສຽງສູງ", chao: "45", color: "#FFE27A", ink: "#FFE27A", grad: ["#F5C842", "#FFF0B8"], notes: ["G4", "A4"], lao: true },
+  lo_mid: { name: "Mid", th: "ສຽງກາງ", chao: "33", color: "#22C3A6", ink: "#3DDBBE", grad: ["#22C3A6", "#22C3A6"], notes: ["C4", "C4"], lao: true },
+  lo_lowfall: { name: "Low falling", th: "ສຽງຕ່ຳຕົກ", chao: "31", color: "#6E5CE6", ink: "#A99DF7", grad: ["#8577EE", "#4D3FC4"], notes: ["C4", "F3"], lao: true },
+  lo_highfall: { name: "High falling", th: "ສຽງສູງຕົກ", chao: "52", color: "#FF6B4A", ink: "#FF8A6E", grad: ["#FFB199", "#C2381D"], notes: ["A4", "E4"], lao: true },
+});
+const LAO_TONE_ORDER = ["lo_mid", "lo_lowfall", "lo_highfall", "lo_high", "lo_rising"];
 
 const NOTE_FREQ = { F3: 174.61, G3: 196.0, A3: 220.0, C4: 261.63, E4: 329.63, F4: 349.23, G4: 392.0, A4: 440.0 };
 
@@ -211,12 +228,235 @@ const CURRICULUM = [
     mnemonic: "Low class + dead short = High: love leaps up.", trap: "No tone mark, yet it is High: the dead-syllable rule does it.", bridge: "Thai ร ↔ Lao ຮ: rák ↔ hak." },
   { id: "v-post", level: 3, tier: "vocab", th: "ไปรษณีย์", lo: "ໄປສະນີ", thRoman: "prai-sà-nii", loRoman: "paisanii", meaning: "post office / mail", accept: ["praisanii", "praisani", "praisanee", "paisanii", "paisani", "postoffice", "post", "mail"], ttsTh: "ไปรษณีย์", ttsLo: "ไปสะนี", tone: ["mid", "low", "mid"],
     mnemonic: "Thai keeps its Sanskrit spelling and silences the last letter with ์. Lao spells what it says.", trap: "Silent killer: ย์ is not pronounced.", bridge: "Thai etymological spelling vs Lao phonetic spelling." },
+  // ---------------- Level 4: Dead Endings ----------------
+  { id: "f-k", level: 4, tier: "glyph", th: "ก ข ค", lo: "ກ", thRoman: "final -k", loRoman: "final -k", meaning: "-k final", accept: ["k", "-k", "kfinal", "finalk"], ttsTh: "ปาก นก", ttsLo: "ปาก นก", tone: [],
+    loop: "As finals these letters lose their aspiration and are not released: just close the throat on -k.", mnemonic: "Every k-family letter ends in the same swallowed -k.", trap: "ข and ค at the end of a word still sound -k, never kh.", bridge: "Lao writes every -k final with ກ." },
+  { id: "f-t", level: 4, tier: "glyph", th: "ด ต ส จ ช ท", lo: "ດ", thRoman: "final -t", loRoman: "final -t", meaning: "-t final", accept: ["t", "-t", "tfinal", "finalt"], ttsTh: "มีด รถ", ttsLo: "มีด ลด", tone: [],
+    loop: "About 15 Thai letters (ด ต ถ ท ธ จ ช ซ ส ศ ษ ฎ ฏ ฐ ฑ ฒ) all end as an unreleased -t.", mnemonic: "The great collapse: s, ch, j, th and d all stop dead as -t.", trap: "ส at the end is -t, not -s: รส is rót (taste).", bridge: "Lao writes every -t final with ດ: ประเทศ ↔ ປະເທດ." },
+  { id: "f-p", level: 4, tier: "glyph", th: "บ ป พ ฟ ภ", lo: "ບ", thRoman: "final -p", loRoman: "final -p", meaning: "-p final", accept: ["p", "-p", "pfinal", "finalp"], ttsTh: "สิบ ภาพ", ttsLo: "สิบ พาบ", tone: [],
+    loop: "Close the lips and hold: no puff of air.", mnemonic: "Lips shut like a temple door: -p.", trap: "ฟ at the end is -p, not -f: กอล์ฟ ends in -p.", bridge: "Lao writes every -p final with ບ: ภาพ ↔ ພາບ." },
+  { id: "f-n", level: 4, tier: "glyph", th: "น ร ล ญ ณ", lo: "ນ", thRoman: "final -n", loRoman: "final -n", meaning: "-n final", accept: ["n", "-n", "nfinal", "finaln"], ttsTh: "อาหาร", ttsLo: "อาหาน", tone: [],
+    loop: "A live ending: the syllable rings on.", mnemonic: "r, l and ny all melt into -n at the end.", trap: "Final ร is -n: อาหาร is aa-hǎan.", bridge: "Lao writes every -n final with ນ: อาหาร ↔ ອາຫານ." },
+  { id: "s-paak", level: 4, tier: "syllable", th: "ปาก", lo: "ປາກ", thRoman: "pàak", loRoman: "paak", meaning: "mouth", accept: ["paak", "pak", "mouth"], ttsTh: "ปาก", ttsLo: "ปาก", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "Middle class + -k stop = dead = Low.", trap: "Long vowel, but the -k final still kills it." },
+  { id: "s-luuk", level: 4, tier: "syllable", th: "ลูก", lo: "ລູກ", thRoman: "lûuk", loRoman: "luk", meaning: "child (offspring) / ball", accept: ["luuk", "luk", "child", "offspring", "ball"], ttsTh: "ลูก", ttsLo: "ลูก", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "Low class + dead + long vowel = Falling.", trap: "Compare นก (short, High) with ลูก (long, Falling)." },
+  { id: "s-nok", level: 4, tier: "syllable", th: "นก", lo: "ນົກ", thRoman: "nók", loRoman: "nok", meaning: "bird", accept: ["nok", "bird"], ttsTh: "นก", ttsLo: "นก", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "Low class + dead + short = High: a bird chirps up.", trap: "Thai hides the short o; Lao writes it as ◌ົ.", bridge: "นก ↔ ນົກ: the hidden o law." },
+  { id: "s-kap", level: 4, tier: "syllable", th: "กับ", lo: "ກັບ", thRoman: "kàp", loRoman: "kap", meaning: "with / and", accept: ["kap", "gap", "kab", "gab", "with", "and"], ttsTh: "กับ", ttsLo: "กับ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "Middle + dead = Low, short or long.", trap: "◌ั marks a short a before a final consonant." },
+  { id: "s-sip", level: 4, tier: "syllable", th: "สิบ", lo: "ສິບ", thRoman: "sìp", loRoman: "sip", meaning: "ten", accept: ["sip", "sib", "ten", "10"], ttsTh: "สิบ", ttsLo: "สิบ", tone: ["low"], parts: { cls: "high", live: false, long: false, mark: "none" },
+    mnemonic: "High class + dead = Low. The Naga's dead syllables fall flat.", trap: "High and Middle class give the same tone on dead syllables." },
+  { id: "s-miit", level: 4, tier: "syllable", th: "มีด", lo: "ມີດ", thRoman: "mîit", loRoman: "mit", meaning: "knife", accept: ["miit", "mit", "meet", "knife"], ttsTh: "มีด", ttsLo: "มีด", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "Low + dead + long = Falling: the knife drops.", trap: "No mark, but the tone is Falling because of the -t stop." },
+  { id: "s-phaap", level: 4, tier: "syllable", th: "ภาพ", lo: "ພາບ", thRoman: "phâap", loRoman: "phap", meaning: "picture", accept: ["phaap", "phap", "paap", "picture", "image"], ttsTh: "ภาพ", ttsLo: "พาบ", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "ภ (low) + long + -p stop = Falling.", trap: "Final พ sounds -p.", bridge: "Lao writes the -p final with ບ and ภ as ພ." },
+  { id: "v-rot", level: 4, tier: "vocab", th: "รถ", lo: "ລົດ", thRoman: "rót", loRoman: "lot", meaning: "car / vehicle", accept: ["rot", "rod", "lot", "car", "vehicle"], ttsTh: "รถ", ttsLo: "ลด", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "Low + dead short = High: the car zooms.", trap: "Final ถ is -t, not th.", bridge: "Law breaker: ร → ລ here, not ຮ." },
+  { id: "v-ahaan", level: 4, tier: "vocab", th: "อาหาร", lo: "ອາຫານ", thRoman: "aa-hǎan", loRoman: "ahaan", meaning: "food", accept: ["aahaan", "ahaan", "ahan", "food"], ttsTh: "อาหาร", ttsLo: "อาหาน", tone: ["mid", "rising"],
+    mnemonic: "Food comes with a rising h.", trap: "Final ร is -n.", bridge: "Lao spells the -n with ນ." },
+  { id: "v-prathet", level: 4, tier: "vocab", th: "ประเทศ", lo: "ປະເທດ", thRoman: "prà-thêet", loRoman: "pathet", meaning: "country", accept: ["prathet", "prathed", "pathet", "country", "nation"], ttsTh: "ประเทศ", ttsLo: "ปะเทด", tone: ["low", "falling"],
+    mnemonic: "ประเทศไทย, ປະເທດລາວ: the country word is shared.", trap: "Final ศ is -t.", bridge: "Lao drops the r cluster and writes -t as ດ." },
+  { id: "v-chook", level: 4, tier: "vocab", th: "โชค", lo: "ໂຊກ", thRoman: "chôok", loRoman: "xok", meaning: "luck", accept: ["chok", "chook", "xok", "luck"], ttsTh: "โชค", ttsLo: "โซก", tone: ["falling"], parts: { cls: "low", live: false, long: true, mark: "none" },
+    mnemonic: "โชคดี! Good luck falls on you.", trap: "Final ค is -k.", bridge: "ช ↔ ຊ again." },
+
+  // ---------------- Level 5: Vowel Universe ----------------
+  { id: "s-te", level: 5, tier: "syllable", th: "เตะ", lo: "ເຕະ", thRoman: "tè", loRoman: "te", meaning: "kick", accept: ["te", "teh", "kick"], ttsTh: "เตะ", ttsLo: "เตะ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "เ◌ะ wraps the consonant: short e, cut off by ะ.", trap: "เ◌ alone is long ee; adding ะ makes it short and dead." },
+  { id: "s-kae", level: 5, tier: "syllable", th: "แกะ", lo: "ແກະ", thRoman: "kɛ̀", loRoman: "kae", meaning: "sheep", accept: ["kae", "gae", "ke", "sheep"], ttsTh: "แกะ", ttsLo: "แกะ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "แ◌ะ: open-mouth short ɛ, chopped short.", trap: "แ (ɛ, as in 'bad') vs เ (e, as in 'bed')." },
+  { id: "s-to", level: 5, tier: "syllable", th: "โต๊ะ", lo: "ໂຕະ", thRoman: "tó", loRoman: "to", meaning: "table", accept: ["to", "toh", "table"], ttsTh: "โต๊ะ", ttsLo: "โตะ", tone: ["high"], parts: { cls: "mid", live: false, long: false, mark: "tri" },
+    mnemonic: "Mai tri on a monk: High. One of the few native words that needs it.", trap: "Mai tri only works on Middle-class consonants.", bridge: "Lao writes ໂຕະ with no mark; its tone rules differ." },
+  { id: "s-ngoen", level: 5, tier: "syllable", th: "เงิน", lo: "ເງິນ", thRoman: "ngən", loRoman: "ngoen", meaning: "money / silver", accept: ["ngoen", "ngern", "ngen", "money", "silver"], ttsTh: "เงิน", ttsLo: "เงิน", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ิ◌ is the 'uh' vowel (ə) with a final. Money hums at Mid.", trap: "เ◌อ when open, เ◌ิ◌ when closed: same vowel, two spellings." },
+  { id: "s-suea", level: 5, tier: "syllable", th: "เสือ", lo: "ເສືອ", thRoman: "sʉ̌a", loRoman: "suea", meaning: "tiger", accept: ["suea", "sua", "seua", "tiger"], ttsTh: "เสือ", ttsLo: "เสือ", tone: ["rising"], parts: { cls: "high", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ือ surrounds the consonant on three sides, like a tiger circling.", trap: "เ◌ือ (ʉa) vs เ◌ีย (ia) vs ◌ัว (ua): the three diphthongs." },
+  { id: "s-bua", level: 5, tier: "syllable", th: "บัว", lo: "ບົວ", thRoman: "bua", loRoman: "bua", meaning: "lotus", accept: ["bua", "lotus"], ttsTh: "บัว", ttsLo: "บัว", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "The lotus opens: ◌ัว.", trap: "With a final, ◌ัว drops its ◌ั: ขวด (bottle), not ขัวด.", bridge: "Lao writes -ua as ◌ົວ." },
+  { id: "s-jam", level: 5, tier: "syllable", th: "จำ", lo: "ຈຳ", thRoman: "jam", loRoman: "cham", meaning: "remember", accept: ["jam", "cham", "remember"], ttsTh: "จำ", ttsLo: "จำ", tone: ["mid"], parts: { cls: "mid", live: true, long: false, mark: "none" },
+    mnemonic: "◌ำ packs a short a and an m into one sign: live, so Mid.", trap: "◌ำ is live even though the vowel is short." },
+  { id: "s-kai", level: 5, tier: "syllable", th: "ไก่", lo: "ໄກ່", thRoman: "kài", loRoman: "kai", meaning: "chicken", accept: ["kai", "gai", "chicken"], ttsTh: "ไก่", ttsLo: "ไก่", tone: ["low"], parts: { cls: "mid", live: true, long: false, mark: "ek" },
+    mnemonic: "The chicken from Level 1's ก, now with its tone mark: Low.", trap: "ไก่ (chicken, low) vs ไข่ (egg, low) vs ใกล้ (near, falling)." },
+  { id: "s-luem", level: 5, tier: "syllable", th: "ลืม", lo: "ລືມ", thRoman: "lʉʉm", loRoman: "luem", meaning: "forget", accept: ["luem", "leum", "lum", "forget"], ttsTh: "ลืม", ttsLo: "ลืม", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "◌ื is the unrounded ʉʉ: say 'oo' with a smile.", trap: "◌ึ short vs ◌ื long; open ◌ื needs a silent อ (มือ)." },
+  { id: "v-dek", level: 5, tier: "vocab", th: "เด็ก", lo: "ເດັກ", thRoman: "dèk", loRoman: "dek", meaning: "child", accept: ["dek", "child", "kid"], ttsTh: "เด็ก", ttsLo: "เด็ก", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "The little ◌็ (mai taikhu) shortens the e.", trap: "◌็ is not a tone mark; it only shortens the vowel.", bridge: "Lao uses ◌ັ for the same job: ເດັກ." },
+  { id: "v-du", level: 5, tier: "vocab", th: "ดุ", lo: "ດຸ", thRoman: "dù", loRoman: "du", meaning: "fierce / to scold", accept: ["du", "fierce", "scold", "strict"], ttsTh: "ดุ", ttsLo: "ดุ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "Short u, open: dead, so Middle class gives Low.", trap: "ดุ (fierce) vs ดู (look): one foot or two." },
+
+  // ---------------- Level 6: Clusters and Leaders ----------------
+  { id: "v-klap", level: 6, tier: "vocab", th: "กลับ", lo: "ກັບ", thRoman: "klàp", loRoman: "kap", meaning: "return / go back", accept: ["klap", "glap", "kap", "return", "goback", "back"], ttsTh: "กลับ", ttsLo: "กับ", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "True cluster kl-: both sounds spoken, the first sets the class.", trap: "Bangkok speech often drops the l: kàp.", bridge: "Lao drops the cluster in writing too: ກັບ." },
+  { id: "v-khwaa", level: 6, tier: "vocab", th: "ขวา", lo: "ຂວາ", thRoman: "khwǎa", loRoman: "khwa", meaning: "right (side)", accept: ["khwaa", "khwa", "kwa", "right"], ttsTh: "ขวา", ttsLo: "ขวา", tone: ["rising"], parts: { cls: "high", live: true, long: true, mark: "none" },
+    mnemonic: "kh + w cluster: ข leads, so High class rises.", trap: "ขวา (right) vs ซ้าย (left)." },
+  { id: "v-khwaam", level: 6, tier: "vocab", th: "ความ", lo: "ຄວາມ", thRoman: "khwaam", loRoman: "khwam", meaning: "-ness (makes nouns)", accept: ["khwaam", "khwam", "kwam", "ness", "meaning"], ttsTh: "ความ", ttsLo: "ความ", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "ความ turns words into nouns: ความรัก = love (the noun).", trap: "Same kw- cluster as ขวา, but ค is Low class." },
+  { id: "v-saai", level: 6, tier: "vocab", th: "ทราย", lo: "ຊາຍ", thRoman: "saai", loRoman: "xai", meaning: "sand", accept: ["saai", "sai", "xai", "sand"], ttsTh: "ทราย", ttsLo: "ซาย", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "False cluster: ทร is read s, like ซ. Low class still.", trap: "ทร = s in native words; in loans it can be tr (ทรัมเป็ต).", bridge: "Lao spells it as it sounds: ຊາຍ." },
+  { id: "v-saang", level: 6, tier: "vocab", th: "สร้าง", lo: "ສ້າງ", thRoman: "sâang", loRoman: "sang", meaning: "build", accept: ["saang", "sang", "build", "create"], ttsTh: "สร้าง", ttsLo: "ส้าง", tone: ["falling"], parts: { cls: "high", live: true, long: true, mark: "tho" },
+    mnemonic: "False cluster สร: the ร is silent. High + Mai Tho = Falling.", trap: "Read สร as s, not sr.", bridge: "Lao drops the silent ร: ສ້າງ." },
+  { id: "v-jing", level: 6, tier: "vocab", th: "จริง", lo: "ແທ້", thRoman: "jing", loRoman: "thae", meaning: "true / really", accept: ["jing", "ching", "thae", "true", "really"], ttsTh: "จริง", ttsLo: "แท้", tone: ["mid"], parts: { cls: "mid", live: true, long: false, mark: "none" },
+    mnemonic: "False cluster จร: the ร is silent. จริงๆ = really really.", trap: "จร = j; the ร is not spoken.", bridge: "Lao uses a different word: ແທ້." },
+  { id: "v-yaak", level: 6, tier: "vocab", th: "อยาก", lo: "ຢາກ", thRoman: "yàak", loRoman: "yak", meaning: "want to", accept: ["yaak", "yak", "want"], ttsTh: "อยาก", ttsLo: "หยาก", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "Silent อ leads ย into Middle class: dead → Low.", trap: "Only four words use อ นำ: อย่า อยู่ อย่าง อยาก.", bridge: "Lao has a Middle-class y letter, ຢ, so it needs no silent leader." },
+  { id: "v-yuu", level: 6, tier: "vocab", th: "อยู่", lo: "ຢູ່", thRoman: "yùu", loRoman: "yu", meaning: "be at / live (somewhere)", accept: ["yuu", "yu", "beat", "live", "stay"], ttsTh: "อยู่", ttsLo: "หยู่", tone: ["low"], parts: { cls: "mid", live: true, long: true, mark: "ek" },
+    mnemonic: "อ leads ย to Middle class; Mai Ek → Low.", trap: "Without the อ, ยู่ would be Low class and Falling.", bridge: "Thai อย ↔ Lao ຢ." },
+  { id: "v-talaat", level: 6, tier: "vocab", th: "ตลาด", lo: "ຕະຫຼາດ", thRoman: "tà-làat", loRoman: "talat", meaning: "market", accept: ["talaat", "talat", "dalat", "market"], ttsTh: "ตลาด", ttsLo: "ตะหลาด", tone: ["low", "low"],
+    mnemonic: "Leading consonant: ต lends a hidden 'a' and its Middle class to ลาด.", trap: "Not a cluster: tà-làat, two syllables.", bridge: "Lao writes the hidden a (ຕະ) and uses ຫຼ to make the l high." },
+  { id: "v-sanaam", level: 6, tier: "vocab", th: "สนาม", lo: "ສະໜາມ", thRoman: "sà-nǎam", loRoman: "sanam", meaning: "field / yard", accept: ["sanaam", "sanam", "field", "yard"], ttsTh: "สนาม", ttsLo: "สะหนาม", tone: ["low", "rising"],
+    mnemonic: "High-class ส leads น: นาม rises as if written หนาม.", trap: "The second syllable takes the leader's class.", bridge: "Lao writes it out: ສະ + ໜາມ." },
+  { id: "v-khanom", level: 6, tier: "vocab", th: "ขนม", lo: "ເຂົ້າໜົມ", thRoman: "khà-nǒm", loRoman: "khao nom", meaning: "snack / dessert", accept: ["khanom", "kanom", "khaonom", "snack", "dessert", "sweets"], ttsTh: "ขนม", ttsLo: "เข้าหนม", tone: ["low", "rising"],
+    mnemonic: "ข leads นม: the sweet rises (khà-nǒm).", trap: "Not ขน + ม: it's khà-nǒm.", bridge: "Lao says ເຂົ້າໜົມ and writes the ໜ explicitly." },
+  // ---------------- Level 7: Street Signs and Numbers ----------------
+  { id: "n-1", level: 7, tier: "glyph", th: "๑", lo: "໑", thRoman: "nʉ̀ng · 1", loRoman: "neung · 1", meaning: "1 (one)", accept: ["1", "one", "nueng", "neung", "nung"], ttsTh: "หนึ่ง", ttsLo: "หนึ่ง", tone: ["low"],
+    mnemonic: "A single curl with a tail: one.", trap: "๑ (1) vs ๗ (7): 7 has a tall stem.", street: "Prices on old shops and temple signs often use Thai digits." },
+  { id: "n-2", level: 7, tier: "glyph", th: "๒", lo: "໒", thRoman: "sɔ̌ɔng · 2", loRoman: "song · 2", meaning: "2 (two)", accept: ["2", "two", "song", "sorng"], ttsTh: "สอง", ttsLo: "สอง", tone: ["rising"],
+    mnemonic: "๑ with a second hook on top: two.", trap: "๒ (2) vs ๙ (9): 9 has a long tail up.", bridge: "Lao ໒ is a simpler curl." },
+  { id: "n-3", level: 7, tier: "glyph", th: "๓", lo: "໓", thRoman: "sǎam · 3", loRoman: "sam · 3", meaning: "3 (three)", accept: ["3", "three", "saam", "sam"], ttsTh: "สาม", ttsLo: "สาม", tone: ["rising"],
+    mnemonic: "Three bumps in a row.", trap: "๓ (3) vs ๗ (7)." },
+  { id: "n-4", level: 7, tier: "glyph", th: "๔", lo: "໔", thRoman: "sìi · 4", loRoman: "si · 4", meaning: "4 (four)", accept: ["4", "four", "sii", "si", "see"], ttsTh: "สี่", ttsLo: "สี่", tone: ["low"],
+    mnemonic: "A loop with a flick, like a 4 tipped onto its side.", trap: "๔ (4) vs ๕ (5): 5 has an extra tail." },
+  { id: "n-5", level: 7, tier: "glyph", th: "๕", lo: "໕", thRoman: "hâa · 5", loRoman: "ha · 5", meaning: "5 (five)", accept: ["5", "five", "haa", "ha"], ttsTh: "ห้า", ttsLo: "ห้า", tone: ["falling"],
+    mnemonic: "๔ plus a tail: one more.", trap: "555 in Thai chat means 'hahaha' because 5 is hâa." },
+  { id: "n-0", level: 7, tier: "glyph", th: "๐", lo: "໐", thRoman: "sǔun · 0", loRoman: "sun · 0", meaning: "0 (zero)", accept: ["0", "zero", "suun", "sun", "soon"], ttsTh: "ศูนย์", ttsLo: "สูน", tone: ["rising"],
+    mnemonic: "A plain circle, like ours.", trap: "Spelled ศูนย์ with a silent ย์.", bridge: "Lao ສູນ: no silent letter." },
+  { id: "v-baht", level: 7, tier: "vocab", th: "บาท", lo: "ກີບ", thRoman: "bàat", loRoman: "kip", meaning: "baht / kip (currency)", accept: ["baat", "baht", "bat", "kip", "currency", "money"], ttsTh: "บาท", ttsLo: "กีบ", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "Middle + dead = Low: prices end on a low note.", trap: "Written after the number: ๘๐ บาท = 80 baht.", bridge: "Different currencies: Thai baht, Lao kip (ກີບ)." },
+  { id: "v-exit", level: 7, tier: "vocab", th: "ทางออก", lo: "ທາງອອກ", thRoman: "thaang-ɔ̀ɔk", loRoman: "thang ok", meaning: "exit", accept: ["thaangok", "thangok", "taangok", "thaangawk", "exit", "wayout"], ttsTh: "ทางออก", ttsLo: "ทางออก", tone: ["mid", "low"],
+    mnemonic: "ทาง (way) + ออก (out).", trap: "ทางเข้า is the entrance.", bridge: "Same words in Lao: ທາງອອກ." },
+  { id: "v-toilet", level: 7, tier: "vocab", th: "ห้องน้ำ", lo: "ຫ້ອງນ້ຳ", thRoman: "hɔ̂ng-náam", loRoman: "hong nam", meaning: "toilet / bathroom", accept: ["hongnaam", "hongnam", "toilet", "bathroom", "restroom"], ttsTh: "ห้องน้ำ", ttsLo: "ห้องน้ำ", tone: ["falling", "high"],
+    mnemonic: "ห้อง (room) + น้ำ (water).", trap: "Look for ชาย (men) and หญิง (women) next to it.", bridge: "Identical in Lao: ຫ້ອງນ້ຳ." },
+  { id: "v-price", level: 7, tier: "vocab", th: "ราคา", lo: "ລາຄາ", thRoman: "raa-khaa", loRoman: "lakha", meaning: "price", accept: ["raakhaa", "rakha", "raka", "lakha", "price", "cost"], ttsTh: "ราคา", ttsLo: "ลาคา", tone: ["mid", "mid"],
+    mnemonic: "Two calm Mid syllables, like a price tag that doesn't move.", trap: "ราคาเท่าไหร่ = how much?", bridge: "Thai ร ↔ Lao ລ in this loanword." },
+  { id: "v-open", level: 7, tier: "vocab", th: "เปิด", lo: "ເປີດ", thRoman: "pə̀ət", loRoman: "poet", meaning: "open", accept: ["poet", "perd", "poed", "pert", "open"], ttsTh: "เปิด", ttsLo: "เปีด", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "เปิด vs ปิด: the extra เ opens the door.", trap: "เปิด (open) vs ปิด (closed) differ only by the vowel." },
+  { id: "v-closed", level: 7, tier: "vocab", th: "ปิด", lo: "ປິດ", thRoman: "pìt", loRoman: "pit", meaning: "closed / shut", accept: ["pit", "pid", "closed", "close", "shut"], ttsTh: "ปิด", ttsLo: "ปิด", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "Short and shut: pìt.", trap: "เปิด (open) vs ปิด (closed)." },
+  { id: "v-forbid", level: 7, tier: "vocab", th: "ห้าม", lo: "ຫ້າມ", thRoman: "hâam", loRoman: "ham", meaning: "forbidden / do not", accept: ["haam", "ham", "forbidden", "donot", "no", "prohibited"], ttsTh: "ห้าม", ttsLo: "ห้าม", tone: ["falling"], parts: { cls: "high", live: true, long: true, mark: "tho" },
+    mnemonic: "High + Mai Tho falls like a barrier: ห้าม!", trap: "ห้าม + verb = no ...ing: ห้ามสูบบุหรี่, no smoking.", bridge: "Same in Lao: ຫ້າມ." },
+  // Level 8: Particles and Politeness.
+  { id: "p-khrap", level: 8, tier: "vocab", th: "ครับ", lo: "ເຈົ້າ", thRoman: "kráp", loRoman: "jao", meaning: "polite particle (male speaker)", accept: ["khrap", "krap", "khap", "kap", "polite", "politemale", "yes"], ttsTh: "ครับ", ttsLo: "เจ้า", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "Low class + short dead syllable = High: the River Spirit bows with a bright, clipped kráp.", trap: "Said by men at the end of a sentence; in speech the r often drops: kháp.", bridge: "Lao uses ເຈົ້າ (jao) for both men and women, as a polite yes and at the end of sentences." },
+  { id: "p-kha", level: 8, tier: "vocab", th: "ค่ะ", lo: "ເຈົ້າ", thRoman: "khâ", loRoman: "jao", meaning: "polite particle (female speaker, statements)", accept: ["kha", "ka", "polite", "politefemale", "yes"], ttsTh: "ค่ะ", ttsLo: "เจ้า", tone: ["falling"], parts: { cls: "low", live: false, long: false, mark: "ek" },
+    mnemonic: "Low class + Mai Ek = Falling: ค่ะ settles the sentence down.", trap: "ค่ะ (falling) closes statements; คะ (high) asks questions. One small mark changes the job.", bridge: "Lao: ເຈົ້າ for everyone." },
+  { id: "p-kha-q", level: 8, tier: "vocab", th: "คะ", lo: "ເຈົ້າ", thRoman: "khá", loRoman: "jao", meaning: "polite particle (female speaker, questions)", accept: ["kha", "ka", "polite", "question", "politequestion"], ttsTh: "คะ", ttsLo: "เจ้า", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "No mark, short and dead, low class = High: the question lifts.", trap: "Writing ค่ะ at the end of a question is a very common mistake, even by Thais in chat.", bridge: "Lao: ເຈົ້າ." },
+  { id: "p-na", level: 8, tier: "vocab", th: "นะ", lo: "ເດີ", thRoman: "ná", loRoman: "doe", meaning: "softener (…okay?, …you know)", accept: ["na", "nah", "okay", "ok", "softener"], ttsTh: "นะ", ttsLo: "เดอ", tone: ["high"], parts: { cls: "low", live: false, long: false, mark: "none" },
+    mnemonic: "A friendly nudge at the end: ไปนะ, I'm going, okay?", trap: "Not a question word; it softens a statement or request.", bridge: "Lao ເດີ (doe) does the same softening job: ໄປເດີ." },
+  { id: "p-mai-q", level: 8, tier: "vocab", th: "ไหม", lo: "ບໍ", thRoman: "mǎi", loRoman: "bo", meaning: "yes/no question particle", accept: ["mai", "mai?", "question", "yesno"], ttsTh: "ไหม", ttsLo: "บ๋อ", tone: ["rising"], parts: { cls: "low", live: true, long: false, mark: "none", hn: true },
+    mnemonic: "ห leads ม: the silent ห lifts it into a Rising question.", trap: "ไหม (question), ไม่ (not), ไม้ (wood), ใหม่ (new): four tones, four meanings. In speech ไหม often becomes máy.", bridge: "Lao asks with ບໍ (bo): ແຊບບໍ? Is it tasty?" },
+  { id: "p-chai", level: 8, tier: "vocab", th: "ใช่", lo: "ແມ່ນ", thRoman: "châi", loRoman: "maen", meaning: "yes, that's right", accept: ["chai", "yes", "right", "correct"], ttsTh: "ใช่", ttsLo: "แม่น", tone: ["falling"], parts: { cls: "low", live: true, long: false, mark: "ek" },
+    mnemonic: "Low class + Mai Ek = Falling: a firm nod.", trap: "Spelled with ใ (mai muan), one of only 20 words that use it.", bridge: "Lao ແມ່ນ (maen) means 'it is / that's right'." },
+  { id: "p-mai-chai", level: 8, tier: "vocab", th: "ไม่ใช่", lo: "ບໍ່ແມ່ນ", thRoman: "mâi-châi", loRoman: "bo maen", meaning: "no, that's not right", accept: ["maichai", "no", "notright", "incorrect", "not"], ttsTh: "ไม่ใช่", ttsLo: "บ่อแม่น", tone: ["falling", "falling"],
+    mnemonic: "ไม่ (not) + ใช่ (right): two falls in a row.", trap: "Thai has no single word for 'no'; you negate the verb or ใช่.", bridge: "Lao negates with ບໍ່ (bo): ບໍ່ແມ່ນ." },
+  { id: "p-sorry", level: 8, tier: "vocab", th: "ขอโทษ", lo: "ຂໍໂທດ", thRoman: "khɔ̌ɔ-thôot", loRoman: "kho thot", meaning: "sorry / excuse me", accept: ["khothot", "khawthot", "kothot", "sorry", "excuseme"], ttsTh: "ขอโทษ", ttsLo: "ขอโทด", tone: ["rising", "falling"],
+    mnemonic: "ขอ (ask for) + โทษ (fault): 'I ask about my fault'.", trap: "The final ษ is read as t: thôot.", bridge: "Lao ຂໍໂທດ spells the final with ດ, as it sounds." },
+  { id: "p-mai-pen-rai", level: 8, tier: "vocab", th: "ไม่เป็นไร", lo: "ບໍ່ເປັນຫຍັງ", thRoman: "mâi-pen-rai", loRoman: "bo pen nyang", meaning: "never mind / you're welcome", accept: ["maipenrai", "nevermind", "noproblem", "yourewelcome", "welcome"], ttsTh: "ไม่เป็นไร", ttsLo: "บ่อเปนหยัง", tone: ["falling", "mid", "mid"],
+    mnemonic: "'It isn't anything': the most Thai phrase there is.", trap: "Answers thanks, apologies and small disasters alike.", bridge: "Lao says ບໍ່ເປັນຫຍັງ ('it isn't what'), with ຫຍັງ for Thai ไร / อะไร." },
+  { id: "p-howmuch", level: 8, tier: "vocab", th: "เท่าไร", lo: "ເທົ່າໃດ", thRoman: "thâw-rai", loRoman: "thao dai", meaning: "how much?", accept: ["thaorai", "thaurai", "taorai", "howmuch", "howmany"], ttsTh: "เท่าไร", ttsLo: "เท่าได", tone: ["falling", "mid"],
+    mnemonic: "Point at anything in a market and add เท่าไร.", trap: "Often written เท่าไหร่ in chat, which matches how it is said: thâw-rài.", bridge: "Lao ເທົ່າໃດ (thao dai); ໃດ is 'which'." },
+  { id: "p-dai", level: 8, tier: "vocab", th: "ได้", lo: "ໄດ້", thRoman: "dâi", loRoman: "dai", meaning: "can / OK / get", accept: ["dai", "can", "ok", "okay", "get"], ttsTh: "ได้", ttsLo: "ได้", tone: ["falling"], parts: { cls: "mid", live: true, long: false, mark: "tho" },
+    mnemonic: "Middle + Mai Tho = Falling: ได้! Deal.", trap: "ได้ไหม? Can (you)? ได้ = yes; ไม่ได้ = no.", bridge: "Same word and spelling idea in Lao: ໄດ້." },
+  { id: "p-you", level: 8, tier: "vocab", th: "คุณ", lo: "ທ່ານ", thRoman: "khun", loRoman: "than", meaning: "you (polite) / Mr, Ms", accept: ["khun", "kun", "you", "mr", "ms", "mrs"], ttsTh: "คุณ", ttsLo: "ท่าน", tone: ["mid"], parts: { cls: "low", live: true, long: false, mark: "none" },
+    mnemonic: "Low class + live = Mid: neutral and polite.", trap: "Also a title before first names: คุณจอช.", bridge: "Lao uses ທ່ານ (than) formally and ເຈົ້າ (jao) everyday." },
+  // ---------------- Missing letters, added to the levels they belong in ----------------
+  // Level 2: the high/low partners not covered yet.
+  { id: "g-tho-thung", level: 2, tier: "glyph", th: "ถ", lo: "ຖ", thRoman: "th · thǎw thǔng", loRoman: "th · tho thong", meaning: "th sound · bag (ถุง)", accept: ["th", "t", "tho", "thor", "thaw", "bag"], ttsTh: "ถอ ถุง", ttsLo: "ถอ ถง", cls: "high", tone: ["rising"],
+    loop: "Like ก with a loop at its bottom-left foot. Start at the foot loop, climb the left wall, arch over and drop the right leg.", mnemonic: "A Sky Naga with a bag (ถุง) tied to its foot. High class, so its name rises.", street: "Street fonts shrink the foot loop to a hook, but it is still what separates ถ from ก.", trap: "ถ vs ก: only ถ has the foot loop. ถ (high) and ท (low) both say th.", bridge: "Lao ຖ, also high class." },
+  { id: "g-fo-fa", level: 2, tier: "glyph", th: "ฝ", lo: "ຝ", thRoman: "f · fǎw fǎa", loRoman: "f · fo fon", meaning: "f sound · lid (ฝา)", accept: ["f", "fo", "for", "faw", "lid"], ttsTh: "ฝอ ฝา", ttsLo: "ฝอ ฝน", cls: "high", tone: ["rising"],
+    loop: "The body of ผ plus a tall tail on the right. Start at the head loop.", mnemonic: "ผ grows a tall antenna to hold up the lid (ฝา).", street: "The tall right tail survives in every street font.", trap: "ฝ vs ฟ: both have the tall tail. ฝ has the low inner peak of ผ, ฟ the full-height peak of พ.", bridge: "Lao ຝ, high class: ຝົນ (rain)." },
+  { id: "g-so-so", level: 2, tier: "glyph", th: "ซ", lo: "ຊ", thRoman: "s · saw sôo", loRoman: "s · so sang", meaning: "s sound · chain (โซ่)", accept: ["s", "so", "sor", "saw", "chain"], ttsTh: "ซอ โซ่", ttsLo: "ซอ ซ้าง", cls: "low", tone: ["mid"],
+    loop: "ช with a second notch on the left shoulder. Start at the head loop.", mnemonic: "A River Spirit drags a chain (โซ่): the low-class s, partner of high ส.", street: "Notches on both shoulders mark ซ.", trap: "ซ vs ช: ซ has notches on both shoulders. ซ (low) and ส (high) share the s sound but not the tone rules.", bridge: "Lao ຊ covers both Thai ช and ซ, and is said s in Vientiane." },
+  { id: "g-ho-nokhuuk", level: 2, tier: "glyph", th: "ฮ", lo: "ຮ", thRoman: "h · haw nók-hûuk", loRoman: "h · ho huean", meaning: "h sound · owl (นกฮูก)", accept: ["h", "ho", "hor", "haw", "owl"], ttsTh: "ฮอ นกฮูก", ttsLo: "ฮอ เฮือน", cls: "low", tone: ["mid"],
+    loop: "Like อ with a notch in the top right. Start at the head loop inside.", mnemonic: "The owl (นกฮูก) is the River Spirits' h: low class, partner of high ห.", street: "The notch at the top is what separates ฮ from อ.", trap: "ฮ vs อ: look for the notch. ห (high) also leads other letters; ฮ never does.", bridge: "Lao ຮ is far more common: native Thai ร often becomes ຮ (รัก → ຮັກ)." },
+  { id: "g-tho-thahaan", level: 2, tier: "glyph", th: "ท", lo: "ທ", thRoman: "th · thaw thá-hǎan", loRoman: "th · tho thung", meaning: "th sound · soldier (ทหาร)", accept: ["th", "t", "tho", "thor", "thaw", "soldier"], ttsTh: "ทอ ทหาร", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Head loop top-left, down the left wall, up to a notch in the middle, down again and up the right wall.", mnemonic: "A soldier (ทหาร) of the River Spirits: the low-class th, partner of high ถ.", street: "The middle notch is the key; without it the letter reads as ห.", trap: "ท vs ห: ห's right side flicks out at the bottom; ท's middle dips. ท (low) and ถ (high) both say th.", bridge: "Lao ທ: ທາງ (way)." },
+  { id: "g-fo-fan", level: 2, tier: "glyph", th: "ฟ", lo: "ຟ", thRoman: "f · faw fan", loRoman: "f · fo fai", meaning: "f sound · tooth (ฟัน)", accept: ["f", "fo", "for", "faw", "tooth", "teeth"], ttsTh: "ฟอ ฟัน", ttsLo: "ฟอ ไฟ", cls: "low", tone: ["mid"],
+    loop: "The body of พ plus a tall tail on the right. Start at the head loop.", mnemonic: "พ grows a tall tooth (ฟัน): the low-class f.", street: "The tall right tail survives in street fonts.", trap: "ฟ vs ฝ: ฟ has the full-height inner peak of พ; ฝ has the low peak of ผ.", bridge: "Lao ຟ: ໄຟ (fire)." },
+  // Level 3: the sonorants, nearly identical across the Mekong.
+  { id: "g-ngo", level: 3, tier: "glyph", th: "ง", lo: "ງ", thRoman: "ng · ngaw nguu", loRoman: "ng · ngo ngua", meaning: "ng sound · snake (งู)", accept: ["ng", "ngo", "ngor", "ngaw", "snake"], ttsTh: "งอ งู", ttsLo: "งอ งัว", cls: "low", tone: ["mid"],
+    loop: "Start at the small head loop at the bottom left and sweep up and round to the right.", mnemonic: "A coiled snake (งู) ready to strike.", street: "Street fonts reduce it to a single hook.", trap: "ง vs จ: จ curls back over its own body; ง does not. ng can start a word: งู (nguu).", bridge: "Lao ງ looks almost the same: ງູ (snake), ງົວ (cow)." },
+  { id: "g-yo", level: 3, tier: "glyph", th: "ย", lo: "ຍ", thRoman: "y · yaw yák", loRoman: "ny · nyo nyung", meaning: "y sound · giant (ยักษ์)", accept: ["y", "yo", "yor", "yaw", "giant"], ttsTh: "ยอ ยักษ์", ttsLo: "ยอ ยุง", cls: "low", tone: ["mid"],
+    loop: "Head loop top-left, down the left wall, round the bottom and up the right wall, finishing with a small curl on top.", mnemonic: "A giant (ยักษ์) guarding the temple gate.", street: "Look for the little curl at the top right.", trap: "ย vs บ: บ's right wall goes straight up with no curl. ย also writes vowels: เ◌ีย, ◌ัย.", bridge: "Lao ຍ is nasal ny (ຍຸງ, mosquito) and stands for both Thai ย and ญ; plain y in Lao is ຢ." },
+  { id: "g-wo", level: 3, tier: "glyph", th: "ว", lo: "ວ", thRoman: "w · waw wɛ̌ɛn", loRoman: "w · wo wi", meaning: "w sound · ring (แหวน)", accept: ["w", "wo", "wor", "waw", "ring"], ttsTh: "วอ แหวน", ttsLo: "วอ วี", cls: "low", tone: ["mid"],
+    loop: "One hooked stroke: start at the head loop at the lower right and curve up and over to the left.", mnemonic: "A ring (แหวน) slipping off a finger.", street: "Loopless ว is a plain hook, easy to misread as ร.", trap: "ว vs ร: ร has a notch on its top left; ว is smooth. ว also writes the vowel ◌ัว and the final -w (ขาว).", bridge: "Lao ວ does the same three jobs: consonant, vowel ◌ົວ, final -w." },
+  { id: "g-yo-ying", level: 3, tier: "glyph", th: "ญ", lo: "ຍ", thRoman: "y · yaw yǐng", loRoman: "ny · nyo nyung", meaning: "y sound · woman (หญิง)", accept: ["y", "yo", "yor", "yaw", "woman"], ttsTh: "ญอ หญิง", ttsLo: "ยอ ยุง", cls: "low", tone: ["mid"],
+    loop: "Like ย with an extra tail tucked underneath. Start at the head loop.", mnemonic: "A woman (หญิง) with a long skirt trailing below.", street: "Seen in ใหญ่ (big) and ผู้หญิง (women) on every toilet door.", trap: "ญ vs ย: only ญ has the tail underneath. As a final it says -n.", bridge: "Lao ຍ (ny) covers both ย and ญ: ໃຫຍ່ (big)." },
+  // Level 4: Sanskrit letters that end so many words in -t or -s.
+  { id: "g-so-sala", level: 4, tier: "glyph", th: "ศ", lo: "ສ", thRoman: "s · sǎw sǎa-laa", loRoman: "s · so suea", meaning: "s sound · pavilion (ศาลา)", accept: ["s", "so", "sor", "saw", "pavilion"], ttsTh: "ศอ ศาลา", ttsLo: "สอ เสือ", cls: "high", tone: ["rising"],
+    loop: "Start at the head loop and finish with the small flag on the right shoulder.", mnemonic: "A pavilion (ศาลา) flying a little flag.", street: "The flag on the right shoulder is the tell.", trap: "ศ, ษ and ส all say s and are all high class. As finals ศ and ษ say -t: ประเทศ (prà-thêet).", bridge: "Lao merged all three into ສ: ປະເທດ." },
+  { id: "g-so-ruesi", level: 4, tier: "glyph", th: "ษ", lo: "ສ", thRoman: "s · sǎw rʉʉ-sǐi", loRoman: "s · so suea", meaning: "s sound · hermit (ฤๅษี)", accept: ["s", "so", "sor", "saw", "hermit"], ttsTh: "สอ ฤๅษี", ttsLo: "สอ เสือ", cls: "high", tone: ["rising"],
+    loop: "Start at the head loop; learn it by its silhouette beside ศ and ส.", mnemonic: "A hermit (ฤๅษี) meditating in Sanskrit words such as ภาษา (language).", street: "Mostly met in formal words: ภาษา, ษ in กษัตริย์ (king).", trap: "Final ษ says -t: โทษ (thôot).", bridge: "Lao writes ສ: ພາສາ." },
+  { id: "g-tho-thong", level: 4, tier: "glyph", th: "ธ", lo: "ທ", thRoman: "th · thaw thoŋ", loRoman: "th · tho thung", meaning: "th sound · flag (ธง)", accept: ["th", "t", "tho", "thor", "thaw", "flag"], ttsTh: "ธอ ธง", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the small bump at the top left is the flag on its pole.", mnemonic: "A flag (ธง) on a pole.", street: "Keep an eye on the top-left bump; without it the letter reads like ร.", trap: "Final ธ says -t: พุทธ (phút). ธ, ท and ฑ, ฒ are all low-class th.", bridge: "Lao writes ທ: ທຸງ (flag)." },
+  { id: "g-cho-ching", level: 4, tier: "glyph", th: "ฉ", lo: "ສ", thRoman: "ch · chǎw chìng", loRoman: "s · so suea", meaning: "ch sound · cymbals (ฉิ่ง)", accept: ["ch", "cho", "chor", "chaw", "cymbals"], ttsTh: "ฉอ ฉิ่ง", ttsLo: "สอ เสือ", cls: "high", tone: ["rising"],
+    loop: "Curl like จ from the head loop, then add the small tail at the bottom right.", mnemonic: "Cymbals (ฉิ่ง) crash high: the high-class ch, partner of low ช.", street: "The extra tail is what separates ฉ from จ.", trap: "ฉ vs จ: ฉ has the tail. ฉ (high) and ช (low) both say ch.", bridge: "Lao has no ฉ; those Thai words use ສ or ຊ in Lao." },
+  { id: "g-pho-samphao", level: 4, tier: "glyph", th: "ภ", lo: "ພ", thRoman: "ph · phaw sǎm-phao", loRoman: "ph · pho phu", meaning: "ph sound · junk boat (สำเภา)", accept: ["ph", "p", "pho", "phor", "phaw", "boat", "junk"], ttsTh: "ภอ สำเภา", ttsLo: "พอ พู", cls: "low", tone: ["mid"],
+    loop: "Like ถ but with the foot loop on the right. Start at the head loop.", mnemonic: "A junk boat (สำเภา) with its anchor hanging on the right.", street: "In ภาษา (language) and ภาพ (picture).", trap: "ภ vs ถ: the loop at the foot is on opposite sides. As a final ภ says -p.", bridge: "Lao writes ພ: ພາສາ." },
+  { id: "g-no-nen", level: 4, tier: "glyph", th: "ณ", lo: "ນ", thRoman: "n · naw neen", loRoman: "n · no nok", meaning: "n sound · novice monk (เณร)", accept: ["n", "no", "nor", "naw", "novice"], ttsTh: "ณอ เณร", ttsLo: "นอ นก", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the extra loop on the right is the novice's robe.", mnemonic: "A novice monk (เณร), as in คุณ.", street: "Mostly in Sanskrit loans and in คุณ.", trap: "Final ณ says -n: คุณ (khun).", bridge: "Lao writes ນ: ຄຸນ." },
+  // Level 5: the vowel patterns that were missing.
+  { id: "s-lung", level: 5, tier: "syllable", th: "ลุง", lo: "ລຸງ", thRoman: "luŋ", loRoman: "lung", meaning: "uncle (parent's older brother)", accept: ["lung", "loong", "uncle"], ttsTh: "ลุง", ttsLo: "ลุง", tone: ["mid"], parts: { cls: "low", live: true, long: false, mark: "none" },
+    mnemonic: "◌ุ hangs below the letter: a short u.", trap: "◌ุ (short u) vs ◌ู (long uu): ◌ู has the extra tail." },
+  { id: "s-thueng", level: 5, tier: "syllable", th: "ถึง", lo: "ເຖິງ", thRoman: "thʉ̌ŋ", loRoman: "thueng", meaning: "arrive / reach", accept: ["thueng", "thung", "tueng", "teung", "arrive", "reach"], ttsTh: "ถึง", ttsLo: "ถึง", tone: ["rising"], parts: { cls: "high", live: true, long: false, mark: "none" },
+    mnemonic: "◌ึ is ◌ิ with a tail: short ue, an unrounded u.", trap: "◌ึ (short) vs ◌ื (long, with two ticks).", bridge: "Lao writes this vowel ເ◌ິ: ເຖິງ." },
+  { id: "s-rian", level: 5, tier: "syllable", th: "เรียน", lo: "ຮຽນ", thRoman: "rian", loRoman: "hian", meaning: "study / learn", accept: ["rian", "rien", "lian", "study", "learn"], ttsTh: "เรียน", ttsLo: "เฮียน", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ีย wraps three ways: in front, on top and behind.", trap: "The ย here belongs to the vowel; there is no y sound.", bridge: "Lao squeezes เ◌ีย into ◌ຽ, and Thai ร becomes ຮ: ຮຽນ." },
+  { id: "s-khao", level: 5, tier: "syllable", th: "เขา", lo: "ເຂົາ", thRoman: "khǎw", loRoman: "khao", meaning: "he / she / they (also: horn)", accept: ["khao", "kao", "khaw", "he", "she", "they", "horn"], ttsTh: "เขา", ttsLo: "เขา", tone: ["rising"], parts: { cls: "high", live: true, long: false, mark: "none" },
+    mnemonic: "เ◌า: front and behind together make -ao.", trap: "เขา (he, rising) vs เข้า (enter, falling): one mark apart.", bridge: "Lao ເຂົາ adds ◌ົ inside the frame." },
+  { id: "s-kho", level: 5, tier: "syllable", th: "ขอ", lo: "ຂໍ", thRoman: "khɔ̌ɔ", loRoman: "kho", meaning: "ask for / may I", accept: ["kho", "khaw", "kor", "ko", "askfor", "please", "mayi"], ttsTh: "ขอ", ttsLo: "ขอ", tone: ["rising"], parts: { cls: "high", live: true, long: true, mark: "none" },
+    mnemonic: "The open long ɔɔ vowel is written with อ after the consonant.", trap: "Here อ is a vowel, not a consonant.", bridge: "Lao writes this vowel as ◌ໍ on top: ຂໍ." },
+  { id: "s-the", level: 5, tier: "syllable", th: "เท", lo: "ເທ", thRoman: "thee", loRoman: "the", meaning: "pour", accept: ["thee", "the", "tay", "pour"], ttsTh: "เท", ttsLo: "เท", tone: ["mid"], parts: { cls: "low", live: true, long: true, mark: "none" },
+    mnemonic: "เ◌ on its own is long ee.", trap: "Add ะ and it turns short and dead: เตะ." },
+  { id: "s-mae", level: 5, tier: "syllable", th: "แม่", lo: "ແມ່", thRoman: "mɛ̂ɛ", loRoman: "mae", meaning: "mother", accept: ["mae", "maer", "mother", "mom"], ttsTh: "แม่", ttsLo: "แม่", tone: ["falling"], parts: { cls: "low", live: true, long: true, mark: "ek" },
+    mnemonic: "แ◌ is long ɛɛ; low class with Mai Ek falls.", trap: "แม่ (mother, falling) vs แม้ (even if, high)." },
+  { id: "s-too", level: 5, tier: "syllable", th: "โต", lo: "ໂຕ", thRoman: "too", loRoman: "to", meaning: "big / grow up", accept: ["too", "to", "toh", "big", "grow"], ttsTh: "โต", ttsLo: "โต", tone: ["mid"], parts: { cls: "mid", live: true, long: true, mark: "none" },
+    mnemonic: "โ◌ is long oo.", trap: "Add ะ for the short version: โต๊ะ.", bridge: "Lao ໂຕ is spelled the same but means 'body / self' and counts animals." },
+  // Level 7: the rest of the digits.
+  { id: "n-6", level: 7, tier: "glyph", th: "๖", lo: "໖", thRoman: "hòk · 6", loRoman: "hok · 6", meaning: "6 (six)", accept: ["6", "six", "hok"], ttsTh: "หก", ttsLo: "หก", tone: ["low"],
+    mnemonic: "A curl with a tail kicked out to the left.", trap: "๖ (6) vs ๑ (1): the tail goes the other way.", street: "On menus: ๖๐ บาท." },
+  { id: "n-7", level: 7, tier: "glyph", th: "๗", lo: "໗", thRoman: "jèt · 7", loRoman: "chet · 7", meaning: "7 (seven)", accept: ["7", "seven", "jet", "chet"], ttsTh: "เจ็ด", ttsLo: "เจ็ด", tone: ["low"],
+    mnemonic: "๑ with a tall stem: 7 stands up.", trap: "๗ (7) vs ๑ (1): only 7 has the tall stem." },
+  { id: "n-8", level: 7, tier: "glyph", th: "๘", lo: "໘", thRoman: "pɛ̀ɛt · 8", loRoman: "paet · 8", meaning: "8 (eight)", accept: ["8", "eight", "paet", "pet"], ttsTh: "แปด", ttsLo: "แปด", tone: ["low"],
+    mnemonic: "A loop with a raised flag, like a fancy 8.", trap: "๘ (8) vs ๙ (9): 9's tail swings over the top.", street: "On menus: ๘๐ บาท." },
+  { id: "n-9", level: 7, tier: "glyph", th: "๙", lo: "໙", thRoman: "kâw · 9", loRoman: "kao · 9", meaning: "9 (nine)", accept: ["9", "nine", "kao", "gao"], ttsTh: "เก้า", ttsLo: "เก้า", tone: ["falling"],
+    mnemonic: "Nine is the lucky number (เก้า sounds like ก้าว, step forward).", trap: "๙ (9) vs ๘ (8): watch the tail over the top." },
+  // Level 9: Royal and Rare Letters.
+  { id: "g-kho-rakhang", level: 9, tier: "glyph", th: "ฆ", lo: "ຄ", thRoman: "kh · khaw rá-khaŋ", loRoman: "kh · kho khuai", meaning: "kh sound · temple bell (ระฆัง)", accept: ["kh", "k", "kho", "khor", "khaw", "bell"], ttsTh: "ฆอ ระฆัง", ttsLo: "คอ ควาย", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the notched top sets it apart from ม and ฃ.", mnemonic: "A temple bell (ระฆัง) for royal and religious words.", street: "Rare on shop signs, common in temple names.", trap: "Same kh sound and low class as ค; only the spelling differs.", bridge: "Lao writes ຄ." },
+  { id: "g-tho-than", level: 9, tier: "glyph", th: "ฐ", lo: "ຖ", thRoman: "th · thǎw thǎan", loRoman: "th · tho thong", meaning: "th sound · pedestal (ฐาน)", accept: ["th", "t", "tho", "thor", "thaw", "pedestal", "base"], ttsTh: "ฐอ ฐาน", ttsLo: "ถอ ถง", cls: "high", tone: ["rising"],
+    loop: "Start at the head loop; the separate tail underneath is its pedestal.", mnemonic: "A statue on its pedestal (ฐาน).", street: "Look for the detached tail below the body.", trap: "Same th sound and high class as ถ.", bridge: "Lao writes ຖ." },
+  { id: "g-tho-montho", level: 9, tier: "glyph", th: "ฑ", lo: "ທ", thRoman: "th / d · thaw mon-thoo", loRoman: "th · tho thung", meaning: "th (sometimes d) · Montho, a queen in the Ramakien", accept: ["th", "d", "tho", "thor", "thaw", "montho"], ttsTh: "ฑอ มณโฑ", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; its double-humped top is the queen's crown.", mnemonic: "Queen Montho of the Ramakien.", street: "Mostly in learned words: บัณฑิต (graduate).", trap: "In some words it says d: บัณฑิต (ban-dìt).", bridge: "Lao writes ທ or ດ." },
+  { id: "g-tho-phuthao", level: 9, tier: "glyph", th: "ฒ", lo: "ທ", thRoman: "th · thaw phûu-thâw", loRoman: "th · tho thung", meaning: "th sound · elder (ผู้เฒ่า)", accept: ["th", "t", "tho", "thor", "thaw", "elder", "oldman"], ttsTh: "ฒอ ผู้เฒ่า", ttsLo: "ทอ ทุง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the wide, bent body is the old man's back.", mnemonic: "An old man (ผู้เฒ่า) with a bent back.", street: "Seen in เฒ่า and วัฒนธรรม (culture).", trap: "Low-class th, like ท and ธ.", bridge: "Lao writes ທ: ວັດທະນະທຳ." },
+  { id: "g-do-chada", level: 9, tier: "glyph", th: "ฎ", lo: "ດ", thRoman: "d · daw chá-daa", loRoman: "d · do dek", meaning: "d sound · headdress (ชฎา)", accept: ["d", "do", "dor", "daw", "headdress"], ttsTh: "ฎอ ชฎา", ttsLo: "ดอ เด็ก", cls: "mid", tone: ["mid"],
+    loop: "Start at the head loop; finish with the curled tail under the body.", mnemonic: "A dancer's tall headdress (ชฎา).", street: "Found in กฎ (rule) and กฎหมาย (law).", trap: "ฎ (d) and ฏ (t) differ only in the tail underneath.", bridge: "Lao writes ດ." },
+  { id: "g-to-patak", level: 9, tier: "glyph", th: "ฏ", lo: "ຕ", thRoman: "t · taw pà-tàk", loRoman: "t · to ta", meaning: "t sound · goad (ปฏัก)", accept: ["t", "to", "tor", "taw", "goad"], ttsTh: "ฏอ ปฏัก", ttsLo: "ตอ ตา", cls: "mid", tone: ["mid"],
+    loop: "Start at the head loop; the tail underneath cuts back like a goad.", mnemonic: "A cattle goad (ปฏัก) with a hooked point.", street: "Found in ปฏิทิน (calendar).", trap: "ฏ (t) and ฎ (d) differ only in the tail underneath.", bridge: "Lao writes ຕ." },
+  { id: "g-cho-choe", level: 9, tier: "glyph", th: "ฌ", lo: "ຊ", thRoman: "ch · chaw chəə", loRoman: "s · so sang", meaning: "ch sound · tree (เฌอ)", accept: ["ch", "cho", "chor", "chaw", "tree"], ttsTh: "ฌอ เฌอ", ttsLo: "ซอ ซ้าง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the long, branching body is the tree.", mnemonic: "A tree (เฌอ). The rarest letter you will still meet, in ฌาน (meditation).", street: "Almost never on signs.", trap: "Same ch sound and low class as ช.", bridge: "Lao writes ຊ." },
+  { id: "g-lo-chula", level: 9, tier: "glyph", th: "ฬ", lo: "ລ", thRoman: "l · law chù-laa", loRoman: "l · lo ling", meaning: "l sound · star-shaped kite (จุฬา)", accept: ["l", "lo", "lor", "law", "kite"], ttsTh: "ฬอ จุฬา", ttsLo: "ลอ ลิง", cls: "low", tone: ["mid"],
+    loop: "Start at the head loop; the extra flourish on the right is the kite's tail.", mnemonic: "A star kite (จุฬา) over Sanam Luang.", street: "In กีฬา (sport), on every stadium.", trap: "As a final it says -n: วาฬ (whale) is waan.", bridge: "Lao writes ລ: ກິລາ." },
+  { id: "sym-yamok", level: 9, tier: "glyph", th: "ๆ", lo: "ໆ", thRoman: "repeat · mái yá-mók", loRoman: "repeat · mai ya mok", meaning: "repeat the word before (ไม้ยมก)", accept: ["repeat", "yamok", "maiyamok", "again", "twice", "double"], ttsTh: "เด็กเด็ก", ttsLo: "เด็กเด็ก", tone: [],
+    mnemonic: "Say the word twice: เด็ก ๆ = dèk-dèk (children).", trap: "Repeats the whole word, not just the last letter.", bridge: "Lao uses the same mark: ໆ." },
+  { id: "sym-paiyannoi", level: 9, tier: "glyph", th: "ฯ", lo: "ຯ", thRoman: "abbreviation · pai-yaan-nɔ́ɔi", loRoman: "abbreviation", meaning: "abbreviation mark (ไปยาลน้อย)", accept: ["abbreviation", "abbr", "short", "etc", "paiyannoi"], ttsTh: "กรุงเทพ", ttsLo: "กรุงเทพ", tone: [],
+    mnemonic: "Like '…': กรุงเทพฯ is the short form of Bangkok's very long official name.", trap: "Read only the part before it; don't pronounce the mark.", bridge: "Lao has ຯ but rarely uses it." },
+  { id: "v-ruedu", level: 9, tier: "vocab", th: "ฤดู", lo: "ລະດູ", thRoman: "rʉ́-duu", loRoman: "la du", meaning: "season", accept: ["ruedu", "rudu", "reudu", "season"], ttsTh: "ฤดู", ttsLo: "ละดู", tone: ["high", "mid"],
+    mnemonic: "ฤ is a Sanskrit vowel-letter, read rʉ́ here (ri or rəə in other words).", trap: "ฤ is not ร: it carries its own vowel.", bridge: "Lao spells it out with ລ: ລະດູ." },
 ];
 
+// Each course has its own colour world (see the roadmap's course designs).
 const LEVELS = [
-  { n: 1, title: "The Golden Monks", sub: "Middle class · first syllables" },
-  { n: 2, title: "Sky Nagas vs River Spirits", sub: "High vs Low class · tone marks" },
-  { n: 3, title: "The Mekong Bridge", sub: "ห นำ · Thai ↔ Lao cognates" },
+  { n: 1, title: "The Golden Monks", sub: "Middle class · first syllables", accent: "#F5A524", bg: "linear-gradient(160deg, #2a1d0a, transparent 70%)" },
+  { n: 2, title: "Sky Nagas vs River Spirits", sub: "High vs Low class · tone marks", accent: "#9FE7FF", bg: "linear-gradient(180deg, #0b2a3a99 0%, #0b2a3a55 48%, #16113a77 52%, #0d0a2455 100%)" },
+  { n: 3, title: "The Mekong Bridge", sub: "ห นำ · Thai ↔ Lao cognates", accent: "#7FD1B0", bg: "radial-gradient(ellipse at 20% 100%, #3b6b5a44, transparent 60%), linear-gradient(160deg, #1d2a24, transparent 70%)" },
+  { n: 4, title: "Dead Endings", sub: "Final consonants · dead syllables", accent: "#FF8A6E", bg: "linear-gradient(160deg, #2a0f12, transparent 70%)" },
+  { n: 5, title: "Vowel Universe", sub: "Short, long and wrap-around vowels", accent: "#FFD166", bg: "radial-gradient(circle at 80% 30%, #FFD16618, transparent 55%), linear-gradient(160deg, #141a2e, transparent 70%)" },
+  { n: 6, title: "Clusters and Leaders", sub: "True and false clusters · leading consonants", accent: "#5EEAD4", bg: "linear-gradient(160deg, #10222a, transparent 70%)" },
+  { n: 7, title: "Street Signs and Numbers", sub: "Digits, prices and the words on every sign", accent: "#FFB86B", bg: "linear-gradient(160deg, #22222a, transparent 70%)" },
+  { n: 8, title: "Particles and Politeness", sub: "ครับ, ค่ะ, นะ, ไหม and the phrases that carry them", accent: "#F472B6", bg: "linear-gradient(160deg, #3a1630, transparent 70%)" },
+  { n: 9, title: "Royal and Rare Letters", sub: "Pali and Sanskrit letters, ๆ, ฯ and ฤ", accent: "#C4B5FD", bg: "linear-gradient(160deg, #241a3a, transparent 70%)" },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -231,7 +471,257 @@ const SRS_STAGES = [
   { name: "Golden Nirvana", alias: "Burned", color: "#F59E0B" },
 ];
 const HOUR = 3600 * 1000;
-const SRS_INTERVAL = { 1: 4 * HOUR, 2: 24 * HOUR, 3: 7 * 24 * HOUR, 4: 30 * 24 * HOUR };
+const DAY = 24 * HOUR;
+
+/* ---------------------------------------------------------------------------
+ * FSRS-4.5 memory model. Each item keeps two memory tracks, "read" (reading or
+ * meaning) and "second" (tone or class), because learners forget tones first.
+ * The item is due when its weakest track is predicted to drop to 90% recall.
+ * Ratings: 1 = Again (wrong), 2 = Hard (right but guessed), 3 = Good.
+ * ------------------------------------------------------------------------- */
+const FSRS_W = [0.4872, 1.4003, 3.7145, 13.8206, 5.1618, 1.2298, 0.8975, 0.031, 1.6474, 0.1367, 1.0461, 2.1072, 0.0793, 0.3246, 1.587, 0.2272, 2.8755];
+const FSRS_DECAY = -0.5;
+
+/* ============================================================================
+ * Lao course: Vientiane tones from Lao spelling, and the Lao item list.
+ * ========================================================================== */
+const LAO_HIGH = "ຂສຖຜຝຫໜໝ";
+const LAO_MID = "ກຈດຕບປຢອ";
+const LAO_LOW = "ຄງຊຍທນພຟມຣລວຮ";
+const SONORANT_LEAD = "ງຍນມລວຣ";
+const PRE = "ເແໂໄໃ";
+const EK = "່";
+const THO = "້";
+const LO_SUB = "ຼ"; // ◌ຼ
+const SHORT_MARKS = "ະັິຶຸົ"; // ະ ັ ິ ຶ ຸ ົ
+const LONG_MARKS = "າີືູໍ"; // າ ີ ື ູ ໍ
+const STOP_FINAL = "ກດບ";
+const SON_FINAL = "ງນມຍວ";
+const isCons = (c) => (LAO_HIGH + LAO_MID + LAO_LOW).includes(c);
+
+function laoClassOf(ch) {
+  if (LAO_HIGH.includes(ch)) return "high";
+  if (LAO_MID.includes(ch)) return "mid";
+  if (LAO_LOW.includes(ch)) return "low";
+  return null;
+}
+
+/** Returns { cls, live, long, mark, tone } for a single Lao syllable, or null if it can't be parsed. */
+function laoSyllable(syl) {
+  const s = [...syl.normalize("NFC")].filter((c) => c !== "​");
+  if (!s.length) return null;
+  let i = 0;
+  const pre = PRE.includes(s[0]) ? s[i++] : null;
+  let init = s[i++];
+  if (!isCons(init)) return null;
+  let cls = laoClassOf(init);
+  // ຫ leading a sonorant (ຫຍ, ຫລ, ຫຼ) makes it high class.
+  if (init === "ຫ" && s[i] === LO_SUB) { i += 1; }
+  else if (init === "ຫ" && SONORANT_LEAD.includes(s[i] || "") ) { i += 1; }
+  else if (s[i] === LO_SUB) { i += 1; }
+  const rest = s.slice(i);
+  let mark = "none";
+  if (rest.includes(EK)) mark = "ek";
+  if (rest.includes(THO)) mark = "tho";
+  if (rest.includes("໊") || rest.includes("໋")) return null;
+  const body = rest.filter((c) => c !== EK && c !== THO);
+  const last = body[body.length - 1];
+  // Live endings that are vowels themselves: ໄ◌ ໃ◌ ◌ຳ ເ◌ົາ
+  const am = body.includes("ຳ");
+  const ao = pre === "ເ" && body.includes("ົ") && last === "າ";
+  let finalC = null;
+  if (last && isCons(last) && body.length >= 1) {
+    // ອ / ວ / ຍ as the only following letter can be a vowel (◌ອ = ɔɔ, ◌ົວ, ເ◌ຍ); treat ວ ຍ as sonorant finals (live) anyway.
+    if (!(last === "ອ" && body.length === 1)) finalC = last;
+  }
+  let live; let long;
+  const hasShort = body.some((c) => SHORT_MARKS.includes(c));
+  const hasLong = body.some((c) => LONG_MARKS.includes(c)) || body.includes("ອ") || body.includes("ຽ") || (pre && pre !== "ໄ" && pre !== "ໃ" && !hasShort);
+  if (pre === "ໄ" || pre === "ໃ" || am || ao) { live = true; long = false; }
+  else if (finalC && STOP_FINAL.includes(finalC)) { live = false; long = !hasShort || body.includes("ົ") && body.includes("ວ"); }
+  else if (finalC && SON_FINAL.includes(finalC)) { live = true; long = !hasShort; }
+  else if (!finalC) {
+    if (body.includes("ະ") || (hasShort && !hasLong)) { live = false; long = false; }
+    else if (hasLong || body.length === 0 && pre) { live = true; long = true; }
+    else if (body.length === 0) { live = true; long = true; } // bare consonant = ◌ໍ / ◌ົ inherent; treat as letter name
+    else return null;
+  } else return null;
+  const tone = laoTone({ cls, live, long, mark });
+  return { cls, live, long, mark, tone };
+}
+
+function laoTone({ cls, live, long, mark }) {
+  if (mark === "ek") return "lo_mid";
+  if (mark === "tho") return cls === "high" ? "lo_lowfall" : "lo_highfall";
+  if (live) return cls === "low" ? "lo_high" : "lo_rising";
+  if (!long) return cls === "low" ? "lo_mid" : "lo_high";
+  return cls === "low" ? "lo_highfall" : "lo_lowfall";
+}
+
+const DEP = "ັິີຶືຸູົຼ່້໊໋໌ໍາຳະຽ";
+/** Split unspaced Lao into written syllables (good enough for the curriculum's words). */
+function laoSyllables(word) {
+  const out = [];
+  word.split(/\s+/).filter(Boolean).forEach((w) => {
+    const s = [...w.normalize("NFC")];
+    let cur = "";
+    let hasNucleus = false;
+    for (let k = 0; k < s.length; k += 1) {
+      const c = s[k];
+      const next = s[k + 1];
+      if (PRE.includes(c)) {
+        if (cur) out.push(cur);
+        cur = c; hasNucleus = false; continue;
+      }
+      if (isCons(c)) {
+        const startsNew = cur && (hasNucleus || (cur && !PRE.includes(cur) && [...cur].some(isCons) && !(cur === "ຫ" && SONORANT_LEAD.includes(c))));
+        if (!cur) { cur += c; continue; }
+        // A front vowel (ເ ແ ໂ ໄ ໃ) plus its consonant already has its nucleus.
+        if (PRE.includes(cur) && cur.length === 1) { cur += c; hasNucleus = true; continue; }
+        // ◌ວ / ◌ລ clusters (ຂວາ, ຄວາມ): a bare consonant then ວ with a vowel sign after it.
+        if (!hasNucleus && [...cur].length === 1 && (c === "ວ") && next && DEP.includes(next)) { cur += c; continue; }
+        // ເ◌ືອ / ເ◌ຍ keep their ອ / ຍ inside the vowel.
+        if (c === "ອ" && /[\u0EB7\u0EB5]$/.test(cur)) { cur += c; continue; }
+        if (cur === "ຫ" && SONORANT_LEAD.includes(c)) { cur += c; continue; }
+        // a consonant directly after a vowel is a final unless a dependent sign follows it
+        if (hasNucleus && (SON_FINAL + STOP_FINAL).includes(c) && !(next && DEP.includes(next)) && !cur.endsWith("ະ")) {
+          // ◌ອ / ◌ວ as vowel carriers stay in the syllable
+          cur += c; out.push(cur); cur = ""; hasNucleus = false; continue;
+        }
+        if (c === "ອ" && !hasNucleus) { cur += c; hasNucleus = true; continue; }
+        if (c === "ວ" && cur.endsWith("ົ")) { cur += c; hasNucleus = true; continue; }
+        if (startsNew || hasNucleus) { out.push(cur); cur = c; hasNucleus = false; continue; }
+        // bare consonant followed by consonant: inherent vowel syllable
+        out.push(cur); cur = c; hasNucleus = false; continue;
+      }
+      cur += c;
+      if (!"່້໊໋ຼ".includes(c)) hasNucleus = true;
+      if (c === "ະ") { out.push(cur); cur = ""; hasNucleus = false; }
+    }
+    if (cur) out.push(cur);
+  });
+  return out;
+}
+
+const LAO_CLASS_RULE = {
+  high: "High class (ຂ ສ ຖ ຜ ຝ ຫ, and ໜ ໝ ຫຼ).",
+  mid: "Middle class (ກ ຈ ດ ຕ ບ ປ ຢ ອ).",
+  low: "Low class (ຄ ງ ຊ ຍ ທ ນ ພ ຟ ມ ລ ວ ຮ).",
+};
+
+/** One line on why a Lao syllable has its tone, in the same order as the Thai rule. */
+function explainLaoTone(p) {
+  const kind = p.live ? "live" : `dead ${p.long ? "long" : "short"}`;
+  const mark = p.mark === "ek" ? "ໄມ້ເອກ (◌່)" : p.mark === "tho" ? "ໄມ້ໂທ (◌້)" : "no mark";
+  return `${CLASSES[p.cls].name} class + ${kind} + ${mark} = ${TONES[p.tone].name} (${TONES[p.tone].chao}, Vientiane).`;
+}
+
+// Letters and vowels Lao has and Thai doesn't. They appear only in the Lao course.
+const LAO_ONLY_ITEMS = [
+  { id: "lo-yo", level: 1, tier: "glyph", th: "", lo: "ຢ", thRoman: "", loRoman: "y · yo yaa", meaning: "y sound, Middle class · medicine (ຢາ)", accept: ["y", "yo", "ya", "yaa", "medicine"], ttsTh: "ยา", ttsLo: "ยา", cls: "mid", tone: [],
+    mnemonic: "ຢ is the Middle-class y. Thai needs a silent อ in front of ย for the same job (อยู่); Lao just writes ຢູ່.", bridge: "Thai อย ↔ Lao ຢ: อยู่ ↔ ຢູ່, อยาก ↔ ຢາກ." },
+  { id: "lo-no-h", level: 3, tier: "glyph", th: "", lo: "ໜ", thRoman: "", loRoman: "n (high) · no nuu", meaning: "n with High-class tones (ຫ + ນ in one letter) · mouse (ໜູ)", accept: ["n", "no", "nuu", "nu", "mouse", "hno", "honam"], ttsTh: "หนู", ttsLo: "หนู", cls: "high", tone: [],
+    mnemonic: "ຫ climbed inside ນ: one letter, High class.", bridge: "Thai หน ↔ Lao ໜ: หนาว ↔ ໜາວ." },
+  { id: "lo-mo-h", level: 3, tier: "glyph", th: "", lo: "ໝ", thRoman: "", loRoman: "m (high) · mo maa", meaning: "m with High-class tones (ຫ + ມ in one letter) · dog (ໝາ)", accept: ["m", "mo", "maa", "ma", "dog", "hmo", "homam"], ttsTh: "หมา", ttsLo: "หมา", cls: "high", tone: [],
+    mnemonic: "The dog's ຫ is tucked into ມ: ໝາ rises like a howl.", bridge: "Thai หม ↔ Lao ໝ: หมา ↔ ໝາ." },
+  { id: "lo-lo-h", level: 3, tier: "glyph", th: "", lo: "ຫຼ", thRoman: "", loRoman: "l (high) · lo", meaning: "l with High-class tones (ຫ + ◌ຼ)", accept: ["l", "lo", "hlo", "highl"], ttsTh: "หลอ", ttsLo: "หลอ", cls: "high", tone: [],
+    mnemonic: "The little ◌ຼ hanging under ຫ is a folded ລ: together they make a High-class l.", bridge: "Thai หล ↔ Lao ຫຼ: ตลาด ↔ ຕະຫຼາດ." },
+  { id: "lo-v-o", level: 5, tier: "glyph", th: "", lo: "◌ົ", thRoman: "", loRoman: "o (short) · mai kong", meaning: "short o before a final (ໄມ້ກົງ)", accept: ["o", "shorto", "maikong", "kong"], ttsTh: "โอะ", ttsLo: "โอะ", tone: [],
+    mnemonic: "Thai hides the short o (นก); Lao writes it on top: ນົກ.", bridge: "นก ↔ ນົກ, รถ ↔ ລົດ: the hidden o law." },
+  { id: "lo-v-ia", level: 5, tier: "glyph", th: "", lo: "◌ຽ", thRoman: "", loRoman: "ia · before a final", meaning: "ia vowel when a final follows (Thai เ◌ีย)", accept: ["ia", "ie", "iya", "iia"], ttsTh: "เอีย", ttsLo: "เอีย", tone: [],
+    mnemonic: "ເ◌ຍ folds into ◌ຽ once a final consonant joins: ຮຽນ (study).", bridge: "เรียน ↔ ຮຽນ, เปลี่ยน ↔ ປ່ຽນ." },
+];
+
+const courseCache = {};
+/**
+ * The item list for a mode. Thai and dual use the curriculum as written. The Lao course
+ * drops Thai-only letters (they collapse onto Lao letters you already have), adds the
+ * Lao-only ones, gives glyphs their Lao class, and gives every word Vientiane tones read
+ * from its Lao spelling.
+ */
+function courseItems(mode) {
+  const key = mode === "lo" ? "lo" : "th";
+  if (courseCache[key]) return courseCache[key];
+  if (key === "th") return (courseCache.th = CURRICULUM);
+  const seen = new Set();
+  const out = [];
+  [...CURRICULUM, ...LAO_ONLY_ITEMS].forEach((it) => {
+    if (it.tier === "glyph") {
+      if (seen.has(it.lo)) return;
+      seen.add(it.lo);
+      const cls = it.cls ? laoClassOf([...it.lo][0]) || it.cls : it.cls;
+      out.push({ ...it, cls, tone: [], parts: undefined, toneSet: "lo" });
+      return;
+    }
+    const syl = laoSyllables(it.lo);
+    const parsed = syl.map(laoSyllable);
+    const ok = parsed.length && parsed.every(Boolean);
+    out.push({ ...it, tone: ok ? parsed.map((p) => p.tone) : [], parts: undefined, loParts: ok ? parsed : null, loSyl: syl, toneSet: "lo" });
+  });
+  out.sort((a, b) => a.level - b.level);
+  courseCache.lo = out;
+  return out;
+}
+
+const FSRS_FACTOR = 19 / 81;
+const TARGET_RETENTION = 0.9;
+const BURN_STABILITY_DAYS = 120;
+const LEECH_LAPSES = 4;
+
+const clampD = (d) => Math.min(10, Math.max(1, d));
+const fsrsRetrievability = (elapsedDays, S) => (1 + (FSRS_FACTOR * elapsedDays) / S) ** FSRS_DECAY;
+const fsrsInterval = (S, r = TARGET_RETENTION) => (S / FSRS_FACTOR) * (r ** (1 / FSRS_DECAY) - 1);
+const fsrsInitD = (g) => clampD(FSRS_W[4] - (g - 3) * FSRS_W[5]);
+
+function fsrsUpdate(track, g, now = Date.now()) {
+  if (!track || !track.S) return { S: FSRS_W[g - 1], D: fsrsInitD(g), last: now, lapses: g === 1 ? 1 : 0 };
+  const { S, D } = track;
+  const elapsed = Math.max(0, (now - track.last) / DAY);
+  const R = fsrsRetrievability(elapsed, S);
+  const nextD = clampD(FSRS_W[7] * fsrsInitD(3) + (1 - FSRS_W[7]) * (D - FSRS_W[6] * (g - 3)));
+  let nextS;
+  if (g === 1) {
+    nextS = Math.min(S, FSRS_W[11] * D ** -FSRS_W[12] * ((S + 1) ** FSRS_W[13] - 1) * Math.exp(FSRS_W[14] * (1 - R)));
+  } else {
+    const hard = g === 2 ? FSRS_W[15] : 1;
+    nextS = S * (Math.exp(FSRS_W[8]) * (11 - D) * S ** -FSRS_W[9] * (Math.exp(FSRS_W[10] * (1 - R)) - 1) * hard + 1);
+  }
+  return { S: Math.max(0.05, nextS), D: nextD, last: now, lapses: (track.lapses || 0) + (g === 1 ? 1 : 0) };
+}
+
+/** Map memory stability onto the six named stages shown in the Shrine. */
+function stageFromStability(S) {
+  if (S >= BURN_STABILITY_DAYS) return 5;
+  if (S >= 30) return 4;
+  if (S >= 7) return 3;
+  if (S >= 1) return 2;
+  return 1;
+}
+
+function scheduleItem(cur, ratings, now = Date.now()) {
+  const fsrs = { ...(cur.fsrs || {}) };
+  // A track added to an item you already know (e.g. tone questions on words) starts
+  // from the read track's memory when answered right, instead of dragging the item back to stage 1.
+  Object.entries(ratings).forEach(([track, g]) => {
+    if (g >= 3 && !fsrs[track] && fsrs.read) fsrs[track] = { ...fsrs.read };
+  });
+  Object.entries(ratings).forEach(([track, g]) => { if (g) fsrs[track] = fsrsUpdate(fsrs[track], g, now); });
+  const tracks = Object.values(fsrs);
+  const weakest = Math.min(...tracks.map((t) => t.S));
+  const stage = stageFromStability(weakest);
+  // A lapse sends the item back for a same-session relearn after 10 minutes.
+  const relearn = Object.values(ratings).includes(1);
+  const next = stage >= 5 ? Infinity : relearn ? now + 10 * 60 * 1000 : Math.min(...tracks.map((t) => t.last + fsrsInterval(t.S) * DAY));
+  return { ...cur, fsrs, stage, next };
+}
+
+const lapsesOf = (s) => (s?.fsrs ? Object.values(s.fsrs).reduce((n, t) => n + (t.lapses || 0), 0) : 0);
+const isLeech = (s) => !!s && s.stage >= 1 && s.stage < 5 && lapsesOf(s) >= LEECH_LAPSES && !s.leechCleared;
+
+const todayKey = (t = Date.now()) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 function normalizeAnswer(s) {
   return (s || "")
@@ -354,7 +844,7 @@ class SuvarnaMobileAudioEngine {
         const u = new SpeechSynthesisUtterance(text);
         u.lang = lv ? "lo-LA" : "th-TH";
         const voice = lv || e.voice || this.thaiVoice();
-        if (voice) u.voice = voice;
+        try { if (voice) u.voice = voice; } catch { /* stale voice object */ }
         u.rate = e.rate || this.rate;
         return u;
       })
@@ -422,6 +912,17 @@ class SuvarnaMobileAudioEngine {
     });
   }
 }
+
+/** Short vibration on Android (Galaxy and others); iOS ignores it. */
+const haptic = (kind) => {
+  try {
+    navigator.vibrate?.(kind === "ok" ? 12 : [28, 40, 28]);
+  } catch {
+    /* not supported */
+  }
+};
+const IS_ANDROID = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+const ANDROID_VOICE_HINT = "On a Galaxy: Settings → General management → Text-to-speech → Preferred engine: Speech Services by Google, then download Thai in its settings.";
 
 let audioSingleton = null;
 const getAudio = () => {
@@ -520,7 +1021,7 @@ function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
       <div
-        className={`relative w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"} max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[#0F172A]/95 shadow-2xl`}
+        className={`relative w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"} max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-3xl pb-[env(safe-area-inset-bottom)] sm:pb-0 sm:rounded-3xl border border-white/10 bg-[#0F172A]/95 shadow-2xl`}
         style={{ boxShadow: `0 0 60px ${accent}22` }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -536,9 +1037,9 @@ function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
   );
 }
 
-function Card({ children, className = "", glow }) {
+function Card({ children, className = "", glow, style }) {
   return (
-    <div className={`rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={glow ? { boxShadow: `0 0 40px ${glow}1f` } : undefined}>
+    <div className={`rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={{ ...(glow ? { boxShadow: `0 0 40px ${glow}1f` } : {}), ...style }}>
       {children}
     </div>
   );
@@ -613,12 +1114,354 @@ function ToneContour({ tone, width = 300, height = 160 }) {
 }
 
 /* ============================================================================
+ * Today Path: one ordered daily session sized to the learner's minutes.
+ * ========================================================================== */
+const EAR_DAILY_TRIALS = 20;
+
+function computeStreak(log) {
+  let streak = 0;
+  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) + (log[k].traces || 0) + (log[k].bridge || 0) + (log[k].signs || 0) > 0);
+  let t = Date.now();
+  if (!active(todayKey(t))) t -= DAY;
+  while (active(todayKey(t))) {
+    streak += 1;
+    t -= DAY;
+  }
+  return streak;
+}
+
+function weekAccuracy(log) {
+  let right = 0;
+  let total = 0;
+  for (let i = 0; i < 7; i += 1) {
+    const d = log[todayKey(Date.now() - i * DAY)];
+    if (d) { right += d.reviewsRight || 0; total += d.reviews || 0; }
+  }
+  return total >= 10 ? right / total : null;
+}
+
+function forecast(srs, now) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const days = Array(7).fill(0);
+  Object.values(srs).forEach((s) => {
+    if (!s || s.stage < 1 || s.stage >= 5 || !Number.isFinite(s.next)) return;
+    const d = Math.max(0, Math.floor((s.next - start.getTime()) / DAY));
+    if (d < 7) days[d] += 1;
+  });
+  return days;
+}
+
+function ForecastChart({ days }) {
+  const max = Math.max(4, ...days);
+  const labels = days.map((_, i) => (i === 0 ? "Today" : new Date(Date.now() + i * DAY).toLocaleDateString(undefined, { weekday: "short" })));
+  return (
+    <svg viewBox="0 0 280 92" className="w-full max-w-md" role="img" aria-label={`Reviews due over the next 7 days: ${days.join(", ")}`}>
+      {days.map((n, i) => {
+        const h = (n / max) * 60;
+        const x = 6 + i * 39;
+        return (
+          <g key={i}>
+            <rect x={x} y={70 - h} width="28" height={Math.max(h, 1.5)} rx="5" fill={i === 0 ? COLORS.gold : COLORS.cyan} opacity={i === 0 ? 1 : 0.75} />
+            <text x={x + 14} y={66 - h} textAnchor="middle" fontSize="10" fill="#E2E8F0" fontWeight="700">{n || ""}</text>
+            <text x={x + 14} y={86} textAnchor="middle" fontSize="9.5" fill="#94A3B8">{labels[i]}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+
+const PRACTICE_GOALS = { trace: 3, mekong: 4, sign: 1, shadow: 5 };
+/**
+ * The fourth Today Path step rotates by day so writing, the Mekong laws, street signs and
+ * speaking each come round. What is due wins the day: write reviews first, then Mekong laws.
+ * Once picked, today's activity stays put even after its due list empties.
+ */
+function todayPractice({ srs, mode, bridgeSched, log, now = Date.now() }) {
+  const today = log[todayKey(now)] || {};
+  const writes = writeDue(srs, mode, now);
+  const laws = lawsDue(bridgeSched, now);
+  const startedGlyphs = traceTargets(mode).some((t) => srs[t.id]);
+  const dayNo = Math.floor(new Date(todayKey(now)).getTime() / DAY);
+  const rotation = ["trace", "mekong", "sign", "shadow"].filter((k) => k !== "trace" || startedGlyphs);
+  let kind = rotation[dayNo % rotation.length];
+  // Keep whatever was already started today.
+  const begun = ["trace", "mekong", "sign", "shadow"].find((k) => (today[{ trace: "traces", mekong: "bridge", sign: "signs", shadow: "shadow" }[k]] || 0) > 0);
+  if (begun) kind = begun;
+  else if (writes.length >= 3) kind = "trace";
+  else if (laws.length) kind = "mekong";
+  const count = today[{ trace: "traces", mekong: "bridge", sign: "signs", shadow: "shadow" }[kind]] || 0;
+  const goal = PRACTICE_GOALS[kind];
+  const done = count >= goal;
+  if (kind === "trace") {
+    const show = writes.slice(0, 3).map((t) => t.g).join(" ");
+    return { kind, label: show ? `Trace 3 letters: ${show}` : "Trace 3 letters", thai: !!show, done, note: `${Math.min(count, goal)} / ${goal} traced${writes.length ? ` · ${writes.length} due` : ""}` };
+  }
+  if (kind === "mekong") {
+    const law = laws[0] || nextNewLaw(bridgeSched);
+    return { kind, label: `Mekong law: ${law ? law.name : "review"}`, done, note: `${Math.min(count, goal)} / ${goal} words${laws.length ? ` · ${laws.length} law${laws.length > 1 ? "s" : ""} due` : law ? " · new law" : ""}` };
+  }
+  if (kind === "sign") return { kind, label: "Read a street sign against the clock", done, note: done ? "Read today" : "Street Reader" };
+  return { kind, label: "Shadow 5 syllables", done, note: `${Math.min(count, goal)} / ${goal} attempts` };
+}
+
+function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech, practice, onPractice }) {
+  const today = log[todayKey()] || {};
+  const acc = weekAccuracy(log);
+  const streak = computeStreak(log);
+  const lessonBatch = Math.min(lessonQueue.length, dailyMinutes <= 5 ? 3 : 5);
+  const lessonsPaused = (acc != null && acc < 0.8) || reviewCount >= 30;
+  const steps = [
+    { id: "reviews", label: reviewCount ? `${reviewCount} review${reviewCount > 1 ? "s" : ""}` : "Reviews", min: Math.max(1, Math.ceil((reviewCount * 10) / 60)), done: reviewCount === 0, note: reviewCount === 0 ? (today.reviews ? `${today.reviews} done today` : "Nothing due") : null, onClick: onReviews, disabled: !reviewCount },
+    { id: "ear", label: "Ear set", min: 3, done: (today.ear || 0) >= EAR_DAILY_TRIALS, note: `${Math.min(today.ear || 0, EAR_DAILY_TRIALS)} / ${EAR_DAILY_TRIALS} trials`, onClick: onEar },
+  ];
+  if (leeches.length) steps.push({ id: "leech", label: `Leech drill: ${leeches.slice(0, 3).map((l) => l.th).join(" ")}`, thai: true, min: 2, done: (today.drills || 0) > 0, onClick: onLeech });
+  if (lessonQueue.length) {
+    steps.push({
+      id: "lessons",
+      label: `${lessonBatch} new item${lessonBatch > 1 ? "s" : ""}`,
+      min: 3,
+      done: (today.lessons || 0) >= lessonBatch,
+      note: lessonsPaused ? (reviewCount >= 30 ? "Paused until reviews are under 30" : `Paused: ${Math.round(acc * 100)}% this week, aim for 80%`) : null,
+      onClick: onLessons,
+      disabled: lessonsPaused && !(today.lessons > 0),
+    });
+  }
+  if (practice) steps.push({ id: `practice-${practice.kind}`, label: practice.label, thai: practice.thai, min: 3, done: practice.done, note: practice.note, onClick: () => onPractice?.(practice.kind) });
+  let budget = dailyMinutes;
+  const planned = steps.filter((s) => { const keep = s.id === "reviews" || budget - s.min >= 0; if (keep) budget -= s.min; return keep; });
+  const total = planned.reduce((n, s) => n + s.min, 0);
+  const doneMin = planned.filter((s) => s.done).reduce((n, s) => n + s.min, 0);
+  const nextStep = planned.find((s) => !s.done && !s.disabled);
+  const reads = Object.values(srs).reduce((a, s) => [a[0] + (s?.stats?.read?.[0] || 0), a[1] + (s?.stats?.read?.[1] || 0)], [0, 0]);
+  const seconds = Object.values(srs).reduce((a, s) => [a[0] + (s?.stats?.second?.[0] || 0), a[1] + (s?.stats?.second?.[1] || 0)], [0, 0]);
+  const pct = ([r, n]) => (n ? `${Math.round((r / n) * 100)}%` : "–");
+
+  return (
+    <Card className="p-5 sm:p-6" glow={COLORS.gold}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/90">Today</p>
+          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">{planned.every((s) => s.done || s.disabled) ? "Path complete" : `${total}-minute path`}</h1>
+        </div>
+        <div className="flex items-center gap-2 rounded-2xl bg-white/5 px-3 py-2 text-sm">
+          <Flame size={16} className={streak ? "text-amber-400" : "text-slate-400"} />
+          <span className="font-bold text-white tabular-nums">{streak}</span>
+          <span className="text-slate-400">day{streak === 1 ? "" : "s"}</span>
+        </div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${total ? (doneMin / total) * 100 : 100}%` }} /></div>
+      <ol className="mt-4 space-y-2">
+        {planned.map((s) => {
+          const isNext = nextStep && s.id === nextStep.id;
+          return (
+            <li key={s.id}>
+              <button
+                onClick={s.onClick}
+                disabled={s.disabled}
+                className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${isNext ? "border-amber-400/70 bg-amber-400/10" : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"} disabled:cursor-default disabled:hover:bg-white/[0.03]`}
+              >
+                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${s.done ? "bg-emerald-400 text-emerald-950" : isNext ? "border-2 border-amber-400" : "border-2 border-white/20"}`}>
+                  {s.done && <Check size={15} strokeWidth={3} />}
+                </span>
+                <span className={`flex-1 font-semibold ${s.done ? "text-slate-400 line-through decoration-slate-500" : "text-white"}`} style={s.thai ? { fontFamily: FONT_STACKS.loop.th } : undefined}>{s.label}</span>
+                {s.note && <span className="hidden text-xs text-slate-400 sm:inline">{s.note}</span>}
+                <span className="text-xs tabular-nums text-slate-400">{s.min} min</span>
+              </button>
+              {s.note && <div className="px-12 pt-0.5 text-xs text-slate-400 sm:hidden">{s.note}</div>}
+            </li>
+          );
+        })}
+      </ol>
+      <div className="mt-5 grid gap-4 sm:grid-cols-[1.4fr_1fr]">
+        <div>
+          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Reviews due, next 7 days</div>
+          <ForecastChart days={forecast(srs, now)} />
+        </div>
+        <div className="grid grid-cols-3 gap-2 self-end text-center">
+          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(reads)}</div><div className="text-[11px] text-slate-400">reading</div></div>
+          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(seconds)}</div><div className="text-[11px] text-slate-400">tone / class</div></div>
+          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{acc == null ? "–" : `${Math.round(acc * 100)}%`}</div><div className="text-[11px] text-slate-400">this week</div></div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Three items most easily confused with `item` in the given script: a lookalike set first,
+ * then same tier, shared letters, similar length, same first tone and nearby level.
+ */
+function confusables(item, mode = "th") {
+  const text = (c) => (mode === "lo" ? c.lo : c.th);
+  const mine = text(item);
+  const group = TRAPS.find((g) => g.items.some((x) => x.th === item.th));
+  const seen = new Set([mine]);
+  const scored = courseItems(mode).filter((c) => c.id !== item.id).map((c) => {
+    const t = text(c);
+    let score = Math.random();
+    if (group && group.items.some((x) => x.th === c.th)) score += 6;
+    if (c.tier === item.tier) score += 3;
+    score += [...new Set(t)].filter((ch) => mine.includes(ch)).length * 1.5;
+    if (Math.abs(t.length - mine.length) <= 1) score += 1;
+    if (c.tone[0] && c.tone[0] === item.tone[0]) score += 0.5;
+    if (Math.abs(c.level - item.level) <= 1) score += 1;
+    return { c, t, score };
+  }).sort((a, b) => b.score - a.score);
+  const out = [];
+  for (const { c, t } of scored) {
+    if (seen.has(t)) continue;
+    seen.add(t);
+    out.push(c);
+    if (out.length === 3) break;
+  }
+  return out;
+}
+
+/** Contrast drill for leeches: pick the item among its lookalikes. */
+function leechOptions(item) {
+  return shuffle([item, ...confusables(item)]);
+}
+
+/** Which direction to review: "spell" (sound → Thai) once an item is known, alternating by due date. */
+function reviewDirection(st) {
+  if (!st || st.stage < 2 || !st.fsrs?.read) return "read";
+  const due = (t) => t.last + fsrsInterval(t.S) * DAY;
+  if (!st.fsrs.spell) return "spell";
+  return due(st.fsrs.spell) <= due(st.fsrs.read) ? "spell" : "read";
+}
+
+function LeechDrill({ open, leeches, mode, font, onClose, onFinish }) {
+  const [rounds, setRounds] = useState([]);
+  const [idx, setIdx] = useState(0);
+  const [pick, setPick] = useState(null);
+  const results = useRef({});
+  useEffect(() => {
+    if (!open) return;
+    const list = leeches.slice(0, 4);
+    setRounds(shuffle([...list, ...list, ...list]).map((item) => ({ item, options: leechOptions(item) })));
+    setIdx(0);
+    setPick(null);
+    results.current = {};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  if (!open) return null;
+  const round = rounds[idx];
+  const done = idx >= rounds.length;
+  const choose = (opt) => {
+    if (pick) return;
+    setPick(opt.id);
+    const ok = opt.id === round.item.id;
+    const r = results.current[round.item.id] || [0, 0];
+    results.current[round.item.id] = [r[0] + (ok ? 1 : 0), r[1] + 1];
+    getAudio().speakHumanVoice(round.item.ttsTh);
+  };
+  const finish = () => {
+    const cleared = Object.entries(results.current).filter(([, [r, n]]) => r === n).map(([id]) => id);
+    onFinish(cleared);
+  };
+  const scriptText = (o) => (mode === "lo" ? o.lo : o.th);
+  return (
+    <Modal open={open} onClose={done ? finish : onClose} title={done ? "Leech drill done" : `Leech drill ${idx + 1} / ${rounds.length}`} accent="#F43F5E">
+      {done ? (
+        <div className="py-4 text-center">
+          <Target size={40} className="mx-auto text-rose-300" />
+          <p className="mt-3 text-sm text-slate-300">Items you got right every time are no longer leeches. The rest stay in the drill.</p>
+          <button onClick={finish} className="mt-4 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Done</button>
+        </div>
+      ) : round && (
+        <div>
+          <p className="text-center text-sm text-slate-300">Which one is</p>
+          <p className="text-center text-xl font-bold text-white">{mode === "lo" ? round.item.loRoman : round.item.thRoman}</p>
+          <p className="text-center text-sm text-slate-400">{round.item.meaning}</p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {round.options.map((o) => {
+              const state = !pick ? "" : o.id === round.item.id ? "border-emerald-400 bg-emerald-500/15" : o.id === pick ? "border-rose-400 bg-rose-500/15" : "opacity-50";
+              return (
+                <button key={o.id} onClick={() => choose(o)} className={`rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center transition active:scale-95 ${state}`}>
+                  <Glyph text={scriptText(o)} script={mode === "lo" ? "lo" : "th"} font={font} className="text-5xl leading-[1.4] text-white" />
+                  {pick && <div className="text-xs text-slate-300">{mode === "lo" ? o.loRoman.split(" ·")[0] : o.thRoman.split(" ·")[0]} · {o.meaning.split(" ·")[0]}</div>}
+                </button>
+              );
+            })}
+          </div>
+          {pick && (
+            <div className="mt-3 space-y-2">
+              {pick !== round.item.id && <p className="text-sm text-rose-200">{round.item.trap}</p>}
+              <button onClick={() => { setPick(null); setIdx(idx + 1); }} className="w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Next</button>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ============================================================================
+ * Onboarding: three questions that set the starting path.
+ * ========================================================================== */
+const ONBOARD_QUESTIONS = [
+  { key: "mode", q: "Which script do you need first?", options: [
+    { v: "th", label: "Thai first", sub: "Lao can join later as a bridge." },
+    { v: "lo", label: "Lao first", sub: "Thai can join later as a bridge." },
+    { v: "dual", label: "Both together", sub: "Side by side from day one. Harder at the start." },
+  ] },
+  { key: "level", q: "Can you read any Thai or Lao already?", options: [
+    { v: "none", label: "Not yet", sub: "Start with Level 1." },
+    { v: "some", label: "Some letters", sub: "Start with Level 1, faster pace." },
+    { v: "reads", label: "I can read slowly", sub: "Open every level now." },
+  ] },
+  { key: "minutes", q: "How many minutes a day?", options: [
+    { v: 5, label: "5 minutes", sub: "Reviews plus a short drill." },
+    { v: 12, label: "12 minutes", sub: "Recommended." },
+    { v: 20, label: "20 minutes", sub: "Faster progress." },
+  ] },
+];
+
+function Onboarding({ onDone }) {
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const q = ONBOARD_QUESTIONS[step];
+  const choose = (v) => {
+    const next = { ...answers, [q.key]: v };
+    setAnswers(next);
+    if (step + 1 < ONBOARD_QUESTIONS.length) setStep(step + 1);
+    else onDone(next);
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur sm:items-center sm:p-4">
+      <div className="w-full max-w-lg rounded-t-3xl border border-white/10 bg-[#0F172A] p-6 sm:rounded-3xl">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 text-lg font-black text-black" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
+          <div className="text-sm font-semibold text-amber-300">Welcome to SuvarṇaKani</div>
+          <div className="ml-auto flex gap-1">{ONBOARD_QUESTIONS.map((_, i) => <span key={i} className={`h-1.5 w-6 rounded-full ${i <= step ? "bg-amber-400" : "bg-white/15"}`} />)}</div>
+        </div>
+        <h2 className="mt-5 text-xl font-bold text-white">{q.q}</h2>
+        <div className="mt-4 space-y-2">
+          {q.options.map((o) => (
+            <button key={String(o.v)} onClick={() => choose(o.v)} className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left transition hover:border-amber-400/60 hover:bg-amber-400/10">
+              <div className="font-semibold text-white">{o.label}</div>
+              <div className="text-sm text-slate-400">{o.sub}</div>
+            </button>
+          ))}
+        </div>
+        <button onClick={() => onDone({})} className="mt-4 text-xs text-slate-400 underline">Skip for now</button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
  * Module 1: SRS Shrine
  * ========================================================================== */
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar }) {
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice }) {
+  const course = useMemo(() => courseItems(mode), [mode]);
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [leechOpen, setLeechOpen] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -630,8 +1473,10 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
   const unlockedLevels = useMemo(() => {
     const set = new Set([1]);
     for (let n = 2; n <= LEVELS.length; n += 1) {
-      const prev = CURRICULUM.filter((i) => i.level === n - 1);
-      if (sandbox || prev.every((i) => stageOf(i.id) >= 2)) set.add(n);
+      const prev = course.filter((i) => i.level === n - 1);
+      // A level you have already started stays open when new items join the level before it.
+      const started = course.some((i) => i.level === n && stageOf(i.id) > 0);
+      if (sandbox || started || prev.every((i) => stageOf(i.id) >= 2)) set.add(n);
       else break;
     }
     if (sandbox) LEVELS.forEach((l) => set.add(l.n));
@@ -639,17 +1484,20 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srs, sandbox]);
 
-  const lessonQueue = useMemo(() => CURRICULUM.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0), [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lessonQueue = useMemo(() => course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0).sort((a, b) => a.level - b.level), [srs, unlockedLevels, course]); // eslint-disable-line react-hooks/exhaustive-deps
   const reviewQueue = useMemo(
-    () => CURRICULUM.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
-    [srs, now, sandbox]
+    () => course.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
+    [srs, now, sandbox, course]
   );
+  const reviewDirections = useMemo(() => Object.fromEntries(reviewQueue.map((i) => [i.id, reviewDirection(srs[i.id])])), [reviewQueue]); // eslint-disable-line react-hooks/exhaustive-deps
   const nextReview = useMemo(() => {
-    const times = CURRICULUM.map((i) => srs[i.id]).filter((s) => s && s.stage >= 1 && s.stage < 5 && s.next > now).map((s) => s.next);
+    const times = course.map((i) => srs[i.id]).filter((s) => s && s.stage >= 1 && s.stage < 5 && s.next > now).map((s) => s.next);
     return times.length ? Math.min(...times) : null;
   }, [srs, now]);
 
-  const counts = SRS_STAGES.map((_, idx) => CURRICULUM.filter((i) => stageOf(i.id) === idx).length);
+  const counts = SRS_STAGES.map((_, idx) => course.filter((i) => stageOf(i.id) === idx).length);
+
+  const leeches = useMemo(() => course.filter((i) => isLeech(srs[i.id])), [srs, course]);
 
   const finishLessons = (ids) => {
     setSrs((prev) => {
@@ -657,19 +1505,32 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
       ids.forEach((id) => { next[id] = { stage: 1, next: Date.now() }; });
       return next;
     });
+    logActivity({ lessons: ids.length });
     setLessonOpen(false);
   };
 
+  const finishLeechDrill = (clearedIds) => {
+    setSrs((prev) => {
+      const next = { ...prev };
+      clearedIds.forEach((id) => { if (next[id]) next[id] = { ...next[id], leechCleared: true }; });
+      return next;
+    });
+    logActivity({ drills: 1 });
+    setLeechOpen(false);
+  };
+
   const answer = (id, correct, parts = {}) => {
+    const grade = (ok) => (ok == null ? null : ok ? (parts.guessed ? 2 : 3) : 1);
     setSrs((prev) => {
       const cur = prev[id] || { stage: 1, next: 0 };
-      const stage = correct ? Math.min(5, cur.stage + 1) : Math.max(1, cur.stage - 1);
       const stats = { read: [0, 0], second: [0, 0], ...(cur.stats || {}) };
       const bump = (pair, ok) => [pair[0] + (ok ? 1 : 0), pair[1] + 1];
       if (parts.read != null) stats.read = bump(stats.read, parts.read);
       if (parts.second != null) stats.second = bump(stats.second, parts.second);
-      return { ...prev, [id]: { stage, next: stage >= 5 ? Infinity : Date.now() + SRS_INTERVAL[stage], stats } };
+      if (parts.spell != null) stats.spell = bump(stats.spell || [0, 0], parts.spell);
+      return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second), spell: grade(parts.spell) }), stats } };
     });
+    logActivity({ reviews: 1, reviewsRight: correct ? 1 : 0 });
   };
 
   const fmtWait = (t) => {
@@ -681,13 +1542,25 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
 
   return (
     <div className="space-y-5">
-      <Card className="overflow-hidden" glow={COLORS.gold}>
-        <div className="relative p-5 sm:p-7">
-          <div className="pointer-events-none absolute -right-6 -top-10 select-none text-[180px] leading-none text-amber-400/5" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
+      <TodayPath
+        srs={srs}
+        now={now}
+        reviewCount={reviewQueue.length}
+        lessonQueue={lessonQueue}
+        leeches={leeches}
+        log={log}
+        dailyMinutes={dailyMinutes}
+        onReviews={() => setReviewOpen(true)}
+        onLessons={() => setLessonOpen(true)}
+        onEar={onOpenEar}
+        onLeech={() => setLeechOpen(true)}
+        practice={todayPractice({ srs, mode, bridgeSched, log })}
+        onPractice={onPractice}
+      />
+      <Card className="overflow-hidden">
+        <div className="relative p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/80">SRS Shrine</p>
-          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">Read Thai &amp; Lao from first principles</h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-400">Learn the letters, then the tone equation, then the words that cross the Mekong.</p>
-          <div className="mt-5 grid grid-cols-2 gap-3 sm:max-w-md">
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:max-w-md">
             <button
               disabled={!lessonQueue.length}
               onClick={() => setLessonOpen(true)}
@@ -751,14 +1624,14 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
       </Card>
 
       {LEVELS.map((lvl) => {
-        const items = CURRICULUM.filter((i) => i.level === lvl.n);
+        const items = course.filter((i) => i.level === lvl.n);
         const unlocked = unlockedLevels.has(lvl.n);
         const done = items.filter((i) => stageOf(i.id) >= 2).length;
         return (
-          <Card key={lvl.n} className={`p-4 sm:p-5 ${unlocked ? "" : "opacity-60"}`}>
+          <Card key={lvl.n} className={`p-4 sm:p-5 ${unlocked ? "" : "opacity-60"}`} style={{ backgroundImage: lvl.bg }}>
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-400">
+                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest" style={{ color: lvl.accent }}>
                   {unlocked ? <Unlock size={13} /> : <Lock size={13} />} Level {lvl.n}
                 </div>
                 <h3 className="text-base font-bold text-white">{lvl.title}</h3>
@@ -799,8 +1672,9 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar })
         );
       })}
 
-      <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
-      <ReviewModal open={reviewOpen} queue={reviewQueue} mode={mode} font={font} onClose={() => setReviewOpen(false)} onAnswer={answer} />
+      <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
+      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} onClose={() => setReviewOpen(false)} onAnswer={answer} />
+      <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
     </div>
   );
 }
@@ -829,18 +1703,84 @@ function ItemHero({ item, mode, font }) {
 
 function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
   const [idx, setIdx] = useState(0);
-  const batch = useRef([]);
+  // The batch is frozen when the modal opens, so finishing items doesn't reshuffle it mid-lesson.
+  const [batch, setBatch] = useState([]);
+  // After the cards, a short quiz: every item must be answered right once before it
+  // enters SRS. Misses go to the back of the line, as in WaniKani.
+  const [quiz, setQuiz] = useState(null); // { line: [ids], input, result: null | "ok" | "miss", misses }
+  const quizInput = useRef(null);
   useEffect(() => {
     if (open) {
-      batch.current = queue;
+      setBatch(queue);
       setIdx(0);
+      setQuiz(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  const items = open ? batch.current : [];
+  useEffect(() => {
+    if (quiz && !quiz.result) quizInput.current?.focus();
+  }, [quiz]);
+  const items = open ? batch : [];
   const item = items[idx];
   if (!open || !item) return null;
   const last = idx === items.length - 1;
+
+  if (quiz) {
+    const qItem = items.find((i) => i.id === quiz.line[0]);
+    const done = items.length - new Set(quiz.line).size;
+    const check = (e) => {
+      e.preventDefault();
+      if (quiz.result) {
+        const [head, ...rest] = quiz.line;
+        const line = quiz.result === "ok" ? rest : [...rest, head];
+        if (!line.length) return onFinish(items.map((i) => i.id));
+        return setQuiz({ ...quiz, line, input: "", result: null });
+      }
+      if (!quiz.input.trim()) return undefined;
+      const ok = isCorrect(qItem, quiz.input);
+      haptic(ok ? "ok" : "miss");
+      const audio = getAudio();
+      if (mode === "lo") audio.speakHumanVoice(qItem.ttsLo || qItem.ttsTh, qItem.lo);
+      else audio.speakHumanVoice(qItem.ttsTh);
+      return setQuiz({ ...quiz, result: ok ? "ok" : "miss", misses: quiz.misses + (ok ? 0 : 1) });
+    };
+    return (
+      <Modal open={open} onClose={onClose} title={`Lesson quiz · ${done} / ${items.length}`} accent={TIER[qItem.tier].color}>
+        <form onSubmit={check}>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${(done / items.length) * 100}%` }} /></div>
+          <div className="mt-4 rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[qItem.tier].color}, ${TIER[qItem.tier].color}88)` }}>
+            <DualText th={qItem.th} lo={qItem.lo} mode={mode} font={font} className={`${qItem.th.length + qItem.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
+          </div>
+          <label htmlFor="lesson-quiz-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">Type the reading or the meaning</label>
+          <input
+            id="lesson-quiz-input"
+            ref={quizInput}
+            value={quiz.input}
+            onChange={(e) => setQuiz({ ...quiz, input: e.target.value })}
+            readOnly={!!quiz.result}
+            autoCapitalize="none"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${quiz.result === "ok" ? "border-emerald-400 bg-emerald-500/20" : quiz.result === "miss" ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
+          />
+          {quiz.result && (
+            <div className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className={`font-bold ${quiz.result === "ok" ? "text-emerald-300" : "text-rose-300"}`}>{quiz.result === "ok" ? "Got it" : "Not yet: it comes back at the end of this quiz"}</div>
+              <div className="mt-1 text-slate-200"><span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{qItem.loRoman}</span> : <>{qItem.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{qItem.loRoman}</span></>}</>} · <span className="text-slate-400">Meaning:</span> {qItem.meaning}</div>
+              {quiz.result === "miss" && <p className="mt-1 text-slate-400">{qItem.mnemonic}</p>}
+            </div>
+          )}
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={() => setQuiz(null)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm text-slate-300">Cards</button>
+            <button type="submit" className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">{quiz.result ? (quiz.line.length === 1 && quiz.result === "ok" ? "Add to SRS" : "Next") : "Check"}</button>
+          </div>
+        </form>
+      </Modal>
+    );
+  }
+
   return (
     <Modal open={open} onClose={onClose} title={`Lesson ${idx + 1} / ${items.length}`} accent={TIER[item.tier].color}>
       <ItemHero item={item} mode={mode} font={font} />
@@ -860,8 +1800,8 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
           {items.map((_, i) => <span key={i} className={`h-1.5 w-5 rounded-full ${i === idx ? "bg-amber-400" : "bg-white/15"}`} />)}
         </div>
         {last ? (
-          <button onClick={() => onFinish(items.map((i) => i.id))} className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">
-            <Check size={16} /> Add to SRS
+          <button onClick={() => setQuiz({ line: shuffle(items.map((i) => i.id)), input: "", result: null, misses: 0 })} className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">
+            <Check size={16} /> Quiz me
           </button>
         ) : (
           <button onClick={() => setIdx(idx + 1)} className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white">
@@ -906,6 +1846,7 @@ function diagnoseReading(item, input) {
 function diagnoseTone(item, picked) {
   const right = item.tone[0];
   if (picked === right) return null;
+  if (item.toneSet === "lo") return item.loParts ? `${item.loSyl[0]}: ${explainLaoTone(item.loParts[0])}` : `This word is ${TONES[right].name} (${TONES[right].chao}).`;
   const p = item.parts;
   if (!p) return `This word is ${TONES[right].name} (${TONES[right].chao}). Listen and compare with ${TONES[picked].name}.`;
   const res = computeTone(p);
@@ -933,14 +1874,24 @@ function diagnoseTone(item, picked) {
 
 function diagnoseClass(item, picked) {
   if (picked === item.cls) return null;
+  if (item.toneSet === "lo") return `${item.lo} is ${CLASSES[item.cls].name} class, not ${CLASSES[picked].name}. ${LAO_CLASS_RULE[item.cls]}`;
   return `${item.th} is ${CLASSES[item.cls].name} class, not ${CLASSES[picked].name}. ${CLASSES[item.cls].rule}`;
 }
 
 /** Which second question an item gets after its reading: tone or class. */
 function secondPrompt(item) {
-  if (item.tier === "glyph") return "class";
-  if (item.tone.length === 1) return "tone";
-  return null;
+  if (item.tier === "glyph") return item.cls ? "class" : null;
+  return item.tone.length ? "tone" : null;
+}
+
+/** Romanised syllables with the tone diacritics stripped, so the label can't give the tone away. */
+function syllableLabels(item) {
+  if (item.toneSet === "lo") {
+    const lp = item.loRoman.split(" ·")[0].split(/[-\s]+/).filter(Boolean);
+    return lp.length === item.tone.length ? lp : item.loSyl?.length === item.tone.length ? item.loSyl : item.tone.map((_, i) => `syllable ${i + 1}`);
+  }
+  const parts = item.thRoman.split(" ·")[0].normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[-\s]+/).filter(Boolean);
+  return parts.length === item.tone.length ? parts : item.tone.map((_, i) => `syllable ${i + 1}`);
 }
 
 function ToneChoice({ onPick, picked, correct, disabled, options = TONE_ORDER }) {
@@ -1023,24 +1974,44 @@ function ClassChoice({ onPick, picked, correct, disabled }) {
   );
 }
 
-function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
+function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer }) {
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState("read"); // read → second → result
   const [readOk, setReadOk] = useState(null);
   const [pick, setPick] = useState(null);
+  const [tonePicks, setTonePicks] = useState([]);
+  const [dirs, setDirs] = useState({});
+  const [spell, setSpell] = useState(null); // { options, pick }
   const [score, setScore] = useState({ right: 0, wrong: 0 });
   const inputRef = useRef(null);
+  const pending = useRef(null);
+
+  // An answer is saved when the learner moves on, so "I guessed" can still
+  // lower its rating. Closing mid-result saves it too.
+  const commit = (guessed = false) => {
+    if (!pending.current) return;
+    const { id, ok, parts } = pending.current;
+    pending.current = null;
+    onAnswer(id, ok, { ...parts, guessed });
+  };
+  const close = () => {
+    commit();
+    onClose();
+  };
 
   useEffect(() => {
     if (open) {
+      pending.current = null;
       setList(shuffle(queue));
+      setDirs(directions);
       setIdx(0);
       setInput("");
       setPhase("read");
       setReadOk(null);
       setPick(null);
+      setTonePicks([]);
       setScore({ right: 0, wrong: 0 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1050,12 +2021,38 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
     if (open && phase === "read") inputRef.current?.focus();
   }, [open, idx, phase]);
 
+  // Reverse reviews: hear the word, see its reading and meaning, pick the spelling.
+  useEffect(() => {
+    const it = list[idx];
+    if (!open || !it || dirs[it.id] !== "spell") return setSpell(null);
+    setSpell({ id: it.id, options: shuffle([it, ...confusables(it, mode === "lo" ? "lo" : "th")]), pick: null });
+    const audio = getAudio();
+    if (mode === "lo") audio.speakHumanVoice(it.ttsLo || it.ttsTh, it.lo);
+    else audio.speakHumanVoice(it.ttsTh);
+    return undefined;
+  }, [open, idx, list, dirs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!spell || spell.pick) return undefined;
+    const onKey = (e) => {
+      const n = Number(e.key);
+      if (n >= 1 && n <= spell.options.length) document.querySelectorAll("[data-spell-opt]")[n - 1]?.click();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [spell]);
+
   if (!open) return null;
   const item = list[idx];
   const finished = idx >= list.length;
   const kind = item ? secondPrompt(item) : null;
-  const secondRight = kind === "tone" ? item.tone[0] : kind === "class" ? item.cls : null;
-  const secondOk = pick == null ? null : pick === secondRight;
+  const sylTones = kind === "tone" ? item.tone : [];
+  const multi = sylTones.length > 1;
+  const sylLabels = multi ? syllableLabels(item) : [];
+  const secondRight = kind === "tone" ? item.tone[tonePicks.length] ?? item.tone[0] : kind === "class" ? item.cls : null;
+  const secondOk = multi
+    ? (tonePicks.length < sylTones.length ? null : tonePicks.every((t, i) => t === sylTones[i]))
+    : pick == null ? null : pick === secondRight;
 
   const speak = () => {
     const audio = getAudio();
@@ -1065,17 +2062,30 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
 
   const finish = (rOk, sOk) => {
     const ok = rOk && (sOk == null || sOk);
+    haptic(ok ? "ok" : "miss");
     setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
-    onAnswer(item.id, ok, { read: rOk, second: sOk, kind });
+    pending.current = { id: item.id, ok, parts: { read: rOk, second: sOk, kind } };
     setPhase("result");
     speak();
   };
 
-  const next = () => {
+  const pickSpelling = (opt) => {
+    if (!spell || spell.pick) return;
+    const ok = opt.id === item.id;
+    haptic(ok ? "ok" : "miss");
+    setSpell({ ...spell, pick: opt.id });
+    setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
+    pending.current = { id: item.id, ok, parts: { spell: ok } };
+    setPhase("result");
+  };
+
+  const next = (guessed = false) => {
+    commit(guessed);
     setInput("");
     setPhase("read");
     setReadOk(null);
     setPick(null);
+    setTonePicks([]);
     setIdx(idx + 1);
   };
 
@@ -1092,29 +2102,86 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
 
   const onPick = (k) => {
     if (phase !== "second") return;
+    if (multi) {
+      // Words are asked one syllable at a time; the tone track passes only if every syllable is right.
+      const picks = [...tonePicks, k];
+      setTonePicks(picks);
+      if (picks.length < sylTones.length) return;
+      setPick(k);
+      finish(readOk, picks.every((t, i) => t === sylTones[i]));
+      return;
+    }
     setPick(k);
     finish(readOk, k === secondRight);
   };
 
   const readingNote = phase === "result" && !readOk ? diagnoseReading(item, input) : null;
   const secondNote = phase === "result" && secondOk === false
-    ? kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
+    ? multi
+      ? sylTones.map((t, i) => (tonePicks[i] === t ? null : `${sylLabels[i]} is ${TONES[t].name} (${TONES[t].chao}), not ${TONES[tonePicks[i]].name}.${item.loParts ? ` ${explainLaoTone(item.loParts[i])}` : ""}`)).filter(Boolean).join(" ")
+      : kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
     : null;
   const allOk = phase === "result" && readOk && secondOk !== false;
 
   return (
-    <Modal open={open} onClose={onClose} title={finished ? "Review complete" : `Review ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
+    <Modal open={open} onClose={close} title={finished ? "Review complete" : `Review ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
       {finished ? (
         <div className="py-6 text-center">
           <Trophy size={44} className="mx-auto text-amber-400" />
           <div className="mt-3 text-2xl font-black text-white">{score.right} / {score.right + score.wrong}</div>
-          <p className="mt-1 text-sm text-slate-400">An item moves up a stage only when both its reading and its tone (or class) are right. Missed items drop a stage and come back sooner.</p>
-          <button onClick={onClose} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
+          <p className="mt-1 text-sm text-slate-400">Each item's reading and its tone (or class) are scheduled separately, for about 90% recall. Missed items come back in 10 minutes, then sooner than before.</p>
+          <button onClick={close} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
+        </div>
+      ) : spell && spell.id === item.id ? (
+        <div>
+          <div className="text-center text-xs font-bold uppercase tracking-widest text-slate-400">Which spelling? (keys 1–4)</div>
+          <div className="mt-3 flex items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+            <button type="button" onClick={speak} aria-label="Play again" className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-amber-500 text-black active:scale-95"><Volume2 size={28} /></button>
+            <div>
+              <div className="text-2xl font-bold text-white">{mode === "lo" ? item.loRoman : item.thRoman.split(" ·")[0]}</div>
+              {/* Thai in brackets (e.g. "child (เด็ก)") would give the spelling away. */}
+              <div className="text-slate-300">{item.meaning.replace(/\s*\([^)]*[\u0E00-\u0EFF][^)]*\)/g, "")}</div>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {spell.options.map((o, i) => {
+              const right = o.id === item.id;
+              const picked = spell.pick === o.id;
+              const state = !spell.pick ? "border-white/10 bg-white/[0.04]" : right ? "border-emerald-400 bg-emerald-500/20" : picked ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
+              return (
+                <button key={o.id} data-spell-opt type="button" onClick={() => pickSpelling(o)} disabled={!!spell.pick} className={`relative rounded-2xl border-2 px-2 py-4 text-center transition ${state}`}>
+                  <span className="absolute left-2 top-1.5 text-[11px] text-slate-500">{i + 1}</span>
+                  <span className={`${(mode === "lo" ? o.lo : o.th).length > 5 ? "text-3xl" : "text-5xl"} leading-[1.5] text-white`} style={{ fontFamily: FONT_STACKS[font][mode === "lo" ? "lo" : "th"] }}>{mode === "lo" ? o.lo : o.th}</span>
+                </button>
+              );
+            })}
+          </div>
+          {phase === "result" && (
+            <div className="mt-3 space-y-1 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              {spell.pick === item.id ? (
+                <div className="font-bold text-emerald-300">Correct</div>
+              ) : (
+                <>
+                  <div className="font-bold text-rose-300">Spelling missed</div>
+                  {(() => { const o = spell.options.find((x) => x.id === spell.pick); return o ? <p className="text-rose-200">{mode === "lo" ? o.lo : o.th} is {mode === "lo" ? o.loRoman : o.thRoman.split(" ·")[0]}, "{o.meaning}". {item.trap || ""}</p> : null; })()}
+                </>
+              )}
+              <div className="text-slate-300"><DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-3xl leading-[1.5] text-white" /></div>
+            </div>
+          )}
+          {phase === "result" && (
+            <div className="mt-4 flex gap-2">
+              {spell.pick === item.id && (
+                <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5">I guessed</button>
+              )}
+              <button type="button" onClick={() => next()} className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">Next</button>
+            </div>
+          )}
         </div>
       ) : (
         <form onSubmit={submit}>
           <div className="rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
-            <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35] text-white" />
+            <DualText th={item.th} lo={item.lo} mode={mode} font={font} className={`${item.th.length + item.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
           </div>
           <label htmlFor="review-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">1 · Type the reading or the meaning</label>
           <input
@@ -1125,17 +2192,35 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
             readOnly={phase !== "read"}
             autoCapitalize="none"
             autoCorrect="off"
+            autoComplete="off"
             spellCheck={false}
+            enterKeyHint="go"
             placeholder="e.g. maa / horse"
             className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${readOk === true ? "border-emerald-400 bg-emerald-500/20" : readOk === false ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
           />
           {kind && phase !== "read" && (
             <div className="mt-4">
               <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
-                2 · {kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
+                2 · {multi ? "Tone of each syllable (keys 1–5)" : kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
               </div>
-              {kind === "tone"
-                ? <ToneChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />
+              {multi && (
+                <div className="mb-3 flex flex-wrap justify-center gap-2">
+                  {sylLabels.map((label, i) => {
+                    const picked = tonePicks[i];
+                    const current = phase === "second" && i === tonePicks.length;
+                    const shown = phase === "result" ? sylTones[i] : picked;
+                    const wrong = phase === "result" && picked !== sylTones[i];
+                    return (
+                      <div key={i} className={`flex min-w-[64px] flex-col items-center rounded-xl border px-3 py-1.5 text-sm ${current ? "border-amber-400 bg-amber-500/15 text-white" : wrong ? "border-rose-400/60 bg-rose-500/10 text-rose-100" : "border-white/10 bg-white/[0.04] text-slate-200"}`}>
+                        <span className="font-semibold">{label}</span>
+                        <span className="text-[11px]" style={{ color: shown ? TONES[shown].ink : "#94A3B8" }}>{shown ? TONES[shown].name : current ? "?" : "…"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {multi && phase === "result" ? null : kind === "tone"
+                ? <ToneChoice key={tonePicks.length} onPick={onPick} picked={multi ? null : pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} options={item.toneSet === "lo" ? LAO_TONE_ORDER : TONE_ORDER} />
                 : <ClassChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />}
             </div>
           )}
@@ -1147,7 +2232,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
               {readingNote && <p className="text-rose-200">{readingNote}</p>}
               {secondNote && <p className="text-rose-200">{secondNote}</p>}
               <div className="text-slate-200">
-                <span className="text-slate-400">Reading:</span> {item.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}
+                <span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{item.loRoman}</span> : <>{item.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}</>}
                 <br /><span className="text-slate-400">Meaning:</span> {item.meaning}
               </div>
               <div className="flex flex-wrap gap-1.5">{item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}{item.cls && <ClassBadge cls={item.cls} small />}</div>
@@ -1156,9 +2241,16 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
             </div>
           )}
           {phase !== "second" && (
-            <button type="submit" className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black active:scale-[0.99]">
-              {phase === "result" ? "Next" : "Check"}
-            </button>
+            <div className="mt-4 flex gap-2">
+              {allOk && (
+                <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5" title="Right, but you weren't sure: it will come back sooner">
+                  I guessed
+                </button>
+              )}
+              <button type="submit" className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black active:scale-[0.99]">
+                {phase === "result" ? "Next" : "Check"}
+              </button>
+            </div>
           )}
         </form>
       )}
@@ -1254,10 +2346,89 @@ const EAR_SETS = [
     { th: "ป๋า", tone: "rising", r: "pǎa", m: "dad / patron (slang)" },
   ] },
 ];
+// Two-syllable words: one tone question per syllable, so the ear learns tones in running speech.
+const EAR_WORD_SETS = [
+  { id: "w-food", label: "Food", words: [
+    { th: "ข้าวผัด", r: "khâaw-phàt", m: "fried rice", tones: ["falling", "low"] },
+    { th: "ไก่ย่าง", r: "kài-yâang", m: "grilled chicken", tones: ["low", "falling"] },
+    { th: "มะม่วง", r: "má-mûang", m: "mango", tones: ["high", "falling"] },
+    { th: "มะนาว", r: "má-naaw", m: "lime", tones: ["high", "mid"] },
+    { th: "ทุเรียน", r: "thú-rian", m: "durian", tones: ["high", "mid"] },
+    { th: "กาแฟ", r: "kaa-fɛɛ", m: "coffee", tones: ["mid", "mid"] },
+    { th: "อาหาร", r: "aa-hǎan", m: "food", tones: ["mid", "rising"] },
+    { th: "น้ำแข็ง", r: "náam-khɛ̌ng", m: "ice", tones: ["high", "rising"] },
+    { th: "อร่อย", r: "à-rɔ̀i", m: "delicious", tones: ["low", "low"] },
+  ] },
+  { id: "w-people", label: "People and places", words: [
+    { th: "ผู้หญิง", r: "phûu-yǐng", m: "woman", tones: ["falling", "rising"] },
+    { th: "ผู้ชาย", r: "phûu-chaai", m: "man", tones: ["falling", "mid"] },
+    { th: "พี่น้อง", r: "phîi-nɔ́ɔng", m: "siblings", tones: ["falling", "high"] },
+    { th: "แม่น้ำ", r: "mɛ̂ɛ-náam", m: "river", tones: ["falling", "high"] },
+    { th: "ห้องน้ำ", r: "hɔ̂ng-náam", m: "bathroom", tones: ["falling", "high"] },
+    { th: "ตลาด", r: "tà-làat", m: "market", tones: ["low", "low"] },
+    { th: "ประเทศ", r: "prà-thêet", m: "country", tones: ["low", "falling"] },
+    { th: "โรงเรียน", r: "roong-rian", m: "school", tones: ["mid", "mid"] },
+    { th: "เชียงใหม่", r: "chiang-mài", m: "Chiang Mai", tones: ["mid", "low"] },
+  ] },
+  { id: "w-talk", label: "Everyday talk", words: [
+    { th: "ขอบคุณ", r: "khɔ̀ɔp-khun", m: "thank you", tones: ["low", "mid"] },
+    { th: "ขอโทษ", r: "khɔ̌ɔ-thôot", m: "sorry", tones: ["rising", "falling"] },
+    { th: "สบาย", r: "sà-baai", m: "comfortable, well", tones: ["low", "mid"] },
+    { th: "สนุก", r: "sà-nùk", m: "fun", tones: ["low", "low"] },
+    { th: "ภาษา", r: "phaa-sǎa", m: "language", tones: ["mid", "rising"] },
+    { th: "หนังสือ", r: "nǎng-sʉ̌ʉ", m: "book", tones: ["rising", "rising"] },
+    { th: "เท่าไร", r: "thâo-rai", m: "how much", tones: ["falling", "mid"] },
+    { th: "ไม่ใช่", r: "mâi-châi", m: "it isn't", tones: ["falling", "falling"] },
+    { th: "ร้อนมาก", r: "rɔ́ɔn-mâak", m: "very hot", tones: ["high", "falling"] },
+  ] },
+];
+
+// Lao sets ask which word you heard, by spelling. They play only with a real Lao voice:
+// a Thai voice reading Lao would teach Bangkok tones, and Vientiane tones differ.
+const EAR_LAO_SETS = [
+  { id: "l-maa", label: "ມາ · ມ້າ · ໝາ", words: [
+    { lo: "ມາ", r: "maa", m: "come" },
+    { lo: "ມ້າ", r: "maa", m: "horse" },
+    { lo: "ໝາ", r: "maa", m: "dog" },
+  ] },
+  { id: "l-khaa", label: "ຂາ · ຂ່າ · ຂ້າ", words: [
+    { lo: "ຂາ", r: "khaa", m: "leg" },
+    { lo: "ຂ່າ", r: "khaa", m: "galangal" },
+    { lo: "ຂ້າ", r: "khaa", m: "kill" },
+  ] },
+  { id: "l-naa", label: "ນາ · ນ້າ · ໜ້າ · ໜາ", words: [
+    { lo: "ນາ", r: "naa", m: "rice field" },
+    { lo: "ນ້າ", r: "naa", m: "aunt / uncle (parent's younger sibling)" },
+    { lo: "ໜ້າ", r: "naa", m: "face" },
+    { lo: "ໜາ", r: "naa", m: "thick" },
+  ] },
+  { id: "l-paa", label: "ປາ · ປ່າ · ປ້າ", words: [
+    { lo: "ປາ", r: "paa", m: "fish" },
+    { lo: "ປ່າ", r: "paa", m: "forest" },
+    { lo: "ປ້າ", r: "paa", m: "aunt (parent's older sister)" },
+  ] },
+  { id: "l-suea", label: "ເສືອ · ເສື່ອ · ເສື້ອ", words: [
+    { lo: "ເສືອ", r: "sʉa", m: "tiger" },
+    { lo: "ເສື່ອ", r: "sʉa", m: "mat" },
+    { lo: "ເສື້ອ", r: "sʉa", m: "shirt" },
+  ] },
+  { id: "l-mai", label: "ໄມ້ · ໃໝ່ · ໄໝ", words: [
+    { lo: "ໄມ້", r: "mai", m: "wood" },
+    { lo: "ໃໝ່", r: "mai", m: "new" },
+    { lo: "ໄໝ", r: "mai", m: "silk" },
+  ] },
+];
+
+const EAR_DECKS = [
+  { id: "single", label: "Single syllables", sub: "Minimal sets like มา · ม้า · หมา" },
+  { id: "words", label: "Two-syllable words", sub: "Name the tone of each syllable" },
+  { id: "lao", label: "Lao sets", sub: "Which Lao word did you hear?" },
+];
+
 const EAR_TRIALS = 20;
 const EAR_RATES = [0.8, 0.95, 1.05];
 
-const emptyEar = () => ({ tones: Object.fromEntries(TONE_ORDER.map((t) => [t, [0, 0]])), confusions: {}, sessions: 0 });
+const emptyEar = () => ({ tones: Object.fromEntries(TONE_ORDER.map((t) => [t, [0, 0]])), confusions: {}, sessions: 0, lao: {} });
 
 function earAccuracy(ear, tone) {
   const [r, n] = ear.tones[tone] || [0, 0];
@@ -1265,9 +2436,24 @@ function earAccuracy(ear, tone) {
 }
 
 /** Pick the next trial, favouring tones and confusions the learner gets wrong. */
-function pickEarTrial(ear, prevKey) {
+function pickEarTrial(ear, prevKey, deck = "single") {
   const options = [];
-  EAR_SETS.forEach((set) => set.words.forEach((w) => {
+  if (deck === "words") {
+    EAR_WORD_SETS.forEach((set) => set.words.forEach((w) => {
+      const accs = w.tones.map((t) => earAccuracy(ear, t));
+      const weight = 1 + accs.reduce((n, a) => n + (a == null ? 0.5 : (1 - a) * 1.5), 0);
+      const key = `${set.id}:${w.th}`;
+      if (key !== prevKey) options.push({ set, word: w, key, weight });
+    }));
+  } else if (deck === "lao") {
+    EAR_LAO_SETS.forEach((set) => set.words.forEach((w) => {
+      const [r, n] = ear.lao?.[set.id] || [0, 0];
+      const weight = 1 + (n ? (1 - r / n) * 3 : 1);
+      const key = `${set.id}:${w.lo}`;
+      if (key !== prevKey) options.push({ set, word: w, key, weight });
+    }));
+  }
+  if (deck === "single") EAR_SETS.forEach((set) => set.words.forEach((w) => {
     const acc = earAccuracy(ear, w.tone);
     const confusion = Object.entries(ear.confusions)
       .filter(([k]) => k.startsWith(`${w.tone}>`) && set.words.some((o) => k.endsWith(`>${o.tone}`)))
@@ -1284,7 +2470,7 @@ function pickEarTrial(ear, prevKey) {
   return options[options.length - 1];
 }
 
-function EarDojo({ ear, setEar }) {
+function EarDojo({ ear, setEar, logActivity }) {
   const audio = getAudio();
   const [, force] = useState(0);
   useEffect(() => audio.onVoices(() => force((n) => n + 1)), [audio]);
@@ -1293,17 +2479,24 @@ function EarDojo({ ear, setEar }) {
   const [count, setCount] = useState(0);
   const [pick, setPick] = useState(null);
   const [session, setSession] = useState({ right: 0, total: 0 });
+  const [deck, setDeck] = useState("single");
+  const [sylPicks, setSylPicks] = useState([]);
   const voices = audio.thaiVoices();
+  const laoVoice = audio.laoVoice();
+  const isLao = deck === "lao";
+  const isWords = deck === "words";
 
+  const say = (w, voice, rate) => (w.lo ? audio.speakHumanVoice(w.lo, w.lo, { rate }) : audio.speakHumanVoice(w.th, undefined, { voice, rate }));
   const playTrial = (t) => {
     const voice = voices.length ? voices[Math.floor(Math.random() * voices.length)] : undefined;
     const rate = EAR_RATES[Math.floor(Math.random() * EAR_RATES.length)];
-    audio.speakHumanVoice(t.word.th, undefined, { voice, rate });
+    say(t.word, voice, rate);
     return { voice, rate };
   };
 
   const nextTrial = (prevKey) => {
-    const t = pickEarTrial(ear, prevKey);
+    setSylPicks([]);
+    const t = pickEarTrial(ear, prevKey, deck);
     const meta = playTrial(t);
     setTrial({ ...t, ...meta });
     setPick(null);
@@ -1316,11 +2509,50 @@ function EarDojo({ ear, setEar }) {
     nextTrial(null);
   };
 
+  // Two-syllable words: collect one tone per syllable, then score the word as a whole.
+  const answerSyllable = (tone) => {
+    if (pick || !trial) return;
+    const picks = [...sylPicks, tone];
+    setSylPicks(picks);
+    if (picks.length < trial.word.tones.length) return;
+    const ok = picks.every((p, i) => p === trial.word.tones[i]);
+    setPick(ok ? "right" : "wrong");
+    setSession((s) => ({ right: s.right + (ok ? 1 : 0), total: s.total + 1 }));
+    logActivity({ ear: 1 });
+    setEar((prev) => {
+      const tones = { ...prev.tones };
+      const confusions = { ...prev.confusions };
+      trial.word.tones.forEach((t, i) => {
+        const hit = picks[i] === t;
+        tones[t] = [tones[t][0] + (hit ? 1 : 0), tones[t][1] + 1];
+        if (!hit) confusions[`${t}>${picks[i]}`] = (confusions[`${t}>${picks[i]}`] || 0) + 1;
+      });
+      return { ...prev, tones, confusions };
+    });
+    if (ok) audio.playRanatToneChime(trial.word.tones);
+    else say(trial.word, trial.voice, trial.rate);
+  };
+
+  const answerLao = (w) => {
+    if (pick || !trial) return;
+    const ok = w.lo === trial.word.lo;
+    setPick(w.lo);
+    setSession((s) => ({ right: s.right + (ok ? 1 : 0), total: s.total + 1 }));
+    logActivity({ ear: 1 });
+    setEar((prev) => {
+      const cur = prev.lao?.[trial.set.id] || [0, 0];
+      return { ...prev, lao: { ...(prev.lao || {}), [trial.set.id]: [cur[0] + (ok ? 1 : 0), cur[1] + 1] } };
+    });
+    if (!ok) audio.speakSequence([{ th: w.lo, lo: w.lo, rate: trial.rate }, { th: trial.word.lo, lo: trial.word.lo, rate: trial.rate }], 600);
+    else haptic("ok");
+  };
+
   const answer = (tone) => {
     if (pick || !trial) return;
     setPick(tone);
     const ok = tone === trial.word.tone;
     setSession((s) => ({ right: s.right + (ok ? 1 : 0), total: s.total + 1 }));
+    logActivity({ ear: 1 });
     setEar((prev) => {
       const tones = { ...prev.tones, [trial.word.tone]: [prev.tones[trial.word.tone][0] + (ok ? 1 : 0), prev.tones[trial.word.tone][1] + 1] };
       const confusions = { ...prev.confusions };
@@ -1351,8 +2583,10 @@ function EarDojo({ ear, setEar }) {
   };
 
   const topConfusions = Object.entries(ear.confusions).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  const setTones = trial ? TONE_ORDER.filter((t) => trial.set.words.some((w) => w.tone === t)) : TONE_ORDER;
-  const chosenWord = trial && pick ? trial.set.words.find((w) => w.tone === pick) : null;
+  const setTones = trial && !isWords && !isLao ? TONE_ORDER.filter((t) => trial.set.words.some((w) => w.tone === t)) : TONE_ORDER;
+  const chosenWord = trial && pick && !isWords && !isLao ? trial.set.words.find((w) => w.tone === pick) : null;
+  const laoBlocked = isLao && !laoVoice;
+  const laoSetStats = EAR_LAO_SETS.map((set) => ({ set, stat: ear.lao?.[set.id] || [0, 0] }));
 
   return (
     <div className="space-y-4">
@@ -1360,15 +2594,34 @@ function EarDojo({ ear, setEar }) {
       {!running ? (
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
           <Card className="p-5" glow={TONES.rising.color}>
-            <h3 className="text-lg font-bold text-white">{session.total ? `Session done: ${session.right} / ${session.total}` : "Train your ear on minimal sets"}</h3>
-            <p className="mt-1 max-w-prose text-sm text-slate-300">
+            <div className="mb-4 grid gap-2 sm:grid-cols-3">
+              {EAR_DECKS.map((d) => (
+                <button key={d.id} data-ear-deck={d.id} onClick={() => { setDeck(d.id); setSession({ right: 0, total: 0 }); }} className={`rounded-2xl border px-3 py-2 text-left transition ${deck === d.id ? "border-amber-400 bg-amber-400/10" : "border-white/10 hover:bg-white/5"}`}>
+                  <div className="text-sm font-bold text-white">{d.label}</div>
+                  <div className="text-[11px] text-slate-400">{d.sub}</div>
+                </button>
+              ))}
+            </div>
+            <h3 className="text-lg font-bold text-white">{session.total ? `Session done: ${session.right} / ${session.total}` : isWords ? "Hear tones in running words" : isLao ? "Hear Vientiane tones" : "Train your ear on minimal sets"}</h3>
+            {isWords && (
+              <p className="mt-1 max-w-prose text-sm text-slate-300">
+                Each trial plays a two-syllable word such as <span style={{ fontFamily: FONT_STACKS.loop.th }}>ข้าวผัด</span>. Pick the tone of the first syllable, then the second. The word stays hidden until you finish, and both answers feed your per-tone scores below.
+              </p>
+            )}
+            {isLao && (
+              <p className="mt-1 max-w-prose text-sm text-slate-300">
+                Each trial plays one Lao word from a set like <span style={{ fontFamily: FONT_STACKS.loop.lo }}>ມາ · ມ້າ · ໝາ</span>. Pick the spelling you heard. Vientiane tones are not the Bangkok ones, so this deck needs a Lao voice; it never falls back to Thai.
+                <span className="mt-2 block text-xs text-slate-400">{laoVoice ? `Lao voice: ${laoVoice.name}.` : "No Lao voice on this device. Lao voices are rare on phones; Microsoft Edge on a computer usually offers one. Until then this deck stays locked."}</span>
+              </p>
+            )}
+            <p className={`mt-1 max-w-prose text-sm text-slate-300 ${isWords || isLao ? "hidden" : ""}`}>
               Each trial plays one word from a set like <span style={{ fontFamily: FONT_STACKS.loop.th }}>มา · ม้า · หมา</span> with a random speed{voices.length > 1 ? " and voice" : ""}. The word stays hidden until you answer, so you train your ear, not your reading. If you miss, you hear your choice and then the right answer, back to back.
             </p>
-            <p className="mt-3 text-xs text-slate-400">
-              {voices.length ? `${voices.length} Thai voice${voices.length > 1 ? "s" : ""} on this device.` : "No Thai voice found on this device. Install one in your text-to-speech settings first."}{" "}
+            <p className={`mt-3 text-xs text-slate-400 ${isLao ? "hidden" : ""}`}>
+              {voices.length ? `${voices.length} Thai voice${voices.length > 1 ? "s" : ""} on this device.` : (IS_ANDROID ? `No Thai voice found. ${ANDROID_VOICE_HINT}` : "No Thai voice found on this device. Install one in your text-to-speech settings first.")}{" "}
               Device voices sometimes blur tones; recorded native audio is planned.
             </p>
-            <button onClick={start} className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black active:scale-[0.98]">
+            <button data-ear-start onClick={start} disabled={laoBlocked} className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black active:scale-[0.98] disabled:opacity-40">
               <Play size={18} /> {session.total ? "Another 20" : `Start ${EAR_TRIALS} trials`}
             </button>
           </Card>
@@ -1389,6 +2642,14 @@ function EarDojo({ ear, setEar }) {
                 );
               })}
             </div>
+            {laoSetStats.some(({ stat }) => stat[1]) && (
+              <div className="mt-4 text-xs text-slate-300">
+                <div className="mb-1 font-bold uppercase tracking-wider text-slate-400">Lao sets</div>
+                {laoSetStats.filter(({ stat }) => stat[1]).map(({ set, stat }) => (
+                  <div key={set.id} className="flex justify-between"><span style={{ fontFamily: FONT_STACKS.loop.lo }}>{set.label}</span><span className="tabular-nums">{Math.round((stat[0] / stat[1]) * 100)}% /{stat[1]}</span></div>
+                ))}
+              </div>
+            )}
             {topConfusions.length > 0 && (
               <div className="mt-4 text-xs text-slate-300">
                 <div className="mb-1 font-bold uppercase tracking-wider text-slate-400">Most confused</div>
@@ -1403,18 +2664,74 @@ function EarDojo({ ear, setEar }) {
       ) : (
         <Card className="mx-auto max-w-xl p-5" glow={TONES.rising.color}>
           <div className="flex items-center justify-between text-xs text-slate-400">
-            <span>{trial?.set.label && <span style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.set.label}</span>}</span>
+            <span>{trial?.set.label && <span style={isWords ? undefined : { fontFamily: FONT_STACKS.loop[isLao ? "lo" : "th"] }}>{trial.set.label}</span>}</span>
             <span className="tabular-nums">{count + 1} / {EAR_TRIALS}</span>
           </div>
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400" style={{ width: `${(count / EAR_TRIALS) * 100}%` }} /></div>
           <div className="my-6 flex flex-col items-center gap-3">
-            <button onClick={() => trial && audio.speakHumanVoice(trial.word.th, undefined, { voice: trial.voice, rate: trial.rate })} className="flex h-24 w-24 items-center justify-center rounded-full bg-amber-500 text-black shadow-[0_0_40px_#F59E0B66] active:scale-95" aria-label="Play the syllable again">
+            <button onClick={() => trial && say(trial.word, trial.voice, trial.rate)} className="flex h-24 w-24 items-center justify-center rounded-full bg-amber-500 text-black shadow-[0_0_40px_#F59E0B66] active:scale-95" aria-label="Play the syllable again">
               <Volume2 size={40} />
             </button>
-            <div className="text-xs text-slate-400">{pick ? "" : "Tap to hear it again. Which contour?"}{trial ? ` · ${trial.rate}×` : ""}</div>
+            <div className="text-xs text-slate-400">{pick ? "" : isLao ? "Tap to hear it again. Which word?" : isWords ? `Tap to hear it again. Syllable ${Math.min(sylPicks.length + 1, trial?.word.tones?.length || 2)} of ${trial?.word.tones?.length || 2}: which contour?` : "Tap to hear it again. Which contour?"}{trial ? ` · ${trial.rate}×` : ""}</div>
           </div>
-          <ToneChoice onPick={answer} picked={pick} correct={pick ? trial.word.tone : null} disabled={!!pick} options={setTones} />
-          {pick && (
+          {isWords && trial && (
+            <div className="mb-3 flex justify-center gap-2">
+              {trial.word.tones.map((t, i) => {
+                const p = sylPicks[i];
+                const state = !pick ? (i === sylPicks.length ? "now" : p ? "set" : "wait") : p === t ? "right" : "wrong";
+                return (
+                  <span key={i} data-ear-syl={state} className={`flex min-w-[88px] items-center justify-center gap-1 rounded-xl border px-2 py-1 text-xs ${state === "now" ? "border-amber-400 text-amber-200" : state === "right" ? "border-emerald-400 text-emerald-200" : state === "wrong" ? "border-rose-400 text-rose-200" : "border-white/10 text-slate-400"}`}>
+                    {i + 1}. {p ? TONES[p].name : "?"}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          {isWords && trial && <ToneChoice key={`${trial.key}-${sylPicks.length}`} onPick={answerSyllable} picked={null} correct={null} disabled={!!pick} options={TONE_ORDER} />}
+          {isLao && trial && (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {trial.set.words.map((w, i) => {
+                const state = !pick ? "idle" : w.lo === trial.word.lo ? "right" : w.lo === pick ? "wrong" : "idle";
+                return (
+                  <button key={w.lo} data-ear-lao={i} disabled={!!pick} onClick={() => answerLao(w)} className={`rounded-2xl border p-2 text-center transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"}`}>
+                    <div className="text-3xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.lo }}>{w.lo}</div>
+                    <div className="text-[11px] text-slate-400">{w.m}</div>
+                    {pick && laoSyllable(w.lo) && <div className="mt-1"><ToneBadge tone={laoSyllable(w.lo).tone} small /></div>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!isWords && !isLao && <ToneChoice onPick={answer} picked={pick} correct={pick ? trial.word.tone : null} disabled={!!pick} options={setTones} />}
+          {pick && isWords && (
+            <div className="mt-4 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className="flex flex-wrap items-baseline gap-3">
+                <span className="text-4xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.word.th}</span>
+                <span className="text-slate-200">{trial.word.r} · {trial.word.m}</span>
+                <span className="flex gap-1">{trial.word.tones.map((t, i) => <ToneBadge key={i} tone={t} small />)}</span>
+              </div>
+              <p className={pick === "right" ? "font-semibold text-emerald-300" : "text-rose-200"}>
+                {pick === "right" ? "Both syllables right." : `Missed: ${trial.word.tones.map((t, i) => (sylPicks[i] === t ? null : `syllable ${i + 1} is ${TONES[t].name}, not ${TONES[sylPicks[i]].name}`)).filter(Boolean).join("; ")}. You just heard it again.`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => audio.playRanatToneChime(trial.word.tones)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5"><Music size={13} className="mr-1 inline" />Hear the contours</button>
+                <button onClick={() => say(trial.word, trial.voice, trial.rate)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5"><Volume2 size={13} className="mr-1 inline" />Hear the word</button>
+                <button onClick={advance} className="ml-auto rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+              </div>
+            </div>
+          )}
+          {pick && isLao && (
+            <div className="mt-4 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <p className={pick === trial.word.lo ? "font-semibold text-emerald-300" : "text-rose-200"}>
+                {pick === trial.word.lo ? "Correct." : <>You heard <span style={{ fontFamily: FONT_STACKS.loop.lo }}>{trial.word.lo}</span> ({trial.word.m}). You just heard your pick, then the right one.</>}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => audio.speakSequence(trial.set.words.map((w) => ({ th: w.lo, lo: w.lo, rate: trial.rate })), 500)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200 hover:bg-white/5"><Volume2 size={13} className="mr-1 inline" />Hear the whole set</button>
+                <button onClick={advance} className="ml-auto rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+              </div>
+            </div>
+          )}
+          {pick && !isWords && !isLao && (
             <div className="mt-4 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
               <div className="flex flex-wrap items-baseline gap-3">
                 <span className="text-4xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{trial.word.th}</span>
@@ -1453,26 +2770,142 @@ function EarDojo({ ear, setEar }) {
 const TRACE_SIZE = 320;
 const TRACE_FONT_PX = 220;
 const TRACE_BASELINE = 230;
-const TRACE_FONT = '"Noto Serif Thai", "Sarabun", serif';
+const TRACE_FONTS = { th: FONT_STACKS.loop.th, lo: FONT_STACKS.loop.lo };
+const TRACE_FONT = TRACE_FONTS.th;
+const TRACE_FONT_FACE = { th: "Noto Serif Thai", lo: "Noto Serif Lao" };
 
-const TRACE_GLYPHS = [
-  { g: "ก", name: "gaw gài", cls: "mid", start: [150, 148], path: "Loopless. Begin at the beak on the upper left, arch over the roof, drop the right leg." },
-  { g: "ข", name: "khǎw khài", cls: "high", start: [126, 140], path: "Head loop top-left. Drop the left wall, round the floor, climb the right wall." },
-  { g: "ด", name: "daw dèk", cls: "mid", start: [156, 180], path: "Loop inside the bowl. Run down-left to the foot, climb the left wall, arch over, come down the right." },
-  { g: "ต", name: "taw tào", cls: "mid", start: [159, 172], path: "Same as ด, but dip into a notch in the middle of the roof." },
-  { g: "ค", name: "khaw khwaai", cls: "low", start: [150, 168], path: "Loop hangs inside the straight left wall. Start at the loop and follow the body round to the right foot." },
-  { g: "ผ", name: "phǎw phʉ̂ng", cls: "high", start: [131, 126], path: "Head loop top-left. Down, up to a LOW inner peak, down, then up the right wall." },
-  { g: "พ", name: "phaw phaan", cls: "low", start: [111, 126], path: "Head loop top-left. Down, up to a FULL-HEIGHT inner peak, down, then up the right wall." },
-  { g: "น", name: "naw nǔu", cls: "low", start: [114, 126], path: "Head loop top-left. Down the left wall, up the diagonal, finish in a curled tail at the bottom-right." },
-];
+// Hand-written stroke notes, with start points measured by hand for Noto Serif Thai.
+const TRACE_NOTES = {
+  ก: { start: [150, 148], path: "Loopless. Begin at the beak on the upper left, arch over the roof, drop the right leg." },
+  ข: { start: [126, 140], path: "Head loop top-left. Drop the left wall, round the floor, climb the right wall." },
+  ด: { start: [156, 180], path: "Loop inside the bowl. Run down-left to the foot, climb the left wall, arch over, come down the right." },
+  ต: { start: [159, 172], path: "Same as ด, but dip into a notch in the middle of the roof." },
+  ค: { start: [150, 168], path: "Loop hangs inside the straight left wall. Start at the loop and follow the body round to the right foot." },
+  ผ: { start: [131, 126], path: "Head loop top-left. Down, up to a LOW inner peak, down, then up the right wall." },
+  พ: { start: [111, 126], path: "Head loop top-left. Down, up to a FULL-HEIGHT inner peak, down, then up the right wall." },
+  น: { start: [114, 126], path: "Head loop top-left. Down the left wall, up the diagonal, finish in a curled tail at the bottom-right." },
+};
 
-function Tracer() {
-  const [sel, setSel] = useState(0);
+/** Every single-letter glyph item becomes a trace target, in the script the learner studies. */
+function traceTargets(mode) {
+  const script = mode === "lo" ? "lo" : "th";
+  const seen = new Set();
+  const out = [];
+  courseItems(mode).forEach((it) => {
+    const g = it[script];
+    if (it.tier !== "glyph" || [...g].length !== 1 || seen.has(g)) return;
+    seen.add(g);
+    const roman = script === "lo" ? it.loRoman : it.thRoman;
+    out.push({ id: it.id, g, script, level: it.level, cls: it.cls, name: roman.split("·").pop().trim(), meaning: it.meaning, note: script === "th" ? TRACE_NOTES[g] : null });
+  });
+  return out;
+}
+
+const fmtDue = (t) => {
+  const d = Math.round((t - Date.now()) / DAY);
+  return d <= 0 ? "now" : d === 1 ? "tomorrow" : `in ${d} days`;
+};
+const writeDueAt = (w) => (w ? w.last + fsrsInterval(w.S) * DAY : 0);
+/** Started glyphs whose write track is due, or that have never been traced cleanly. */
+function writeDue(srs, mode, now = Date.now()) {
+  return traceTargets(mode).filter((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= now);
+}
+
+function renderGlyphMask(g, script, extraStroke = 0) {
+  const S = TRACE_SIZE;
+  const c = document.createElement("canvas");
+  c.width = S;
+  c.height = S;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.font = `${TRACE_FONT_PX}px ${TRACE_FONTS[script]}`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#000";
+  if (extraStroke) {
+    ctx.lineWidth = extraStroke;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#000";
+    ctx.strokeText(g, S / 2, TRACE_BASELINE);
+  }
+  ctx.fillText(g, S / 2, TRACE_BASELINE);
+  return ctx;
+}
+
+const headStartCache = new Map();
+/**
+ * Find the head loop: the small closed counters of the rendered glyph. Flood the background
+ * in from the edges; whatever blank area stays unreached is enclosed by ink. The topmost-left
+ * small counter is the head (big counters like ๐ or the bowl of บ are not heads).
+ */
+function detectHeadStart(g, script) {
+  const key = `${script}:${g}`;
+  if (headStartCache.has(key)) return headStartCache.get(key);
+  const S = TRACE_SIZE;
+  const A = renderGlyphMask(g, script).getImageData(0, 0, S, S).data;
+  const ink = new Uint8Array(S * S);
+  for (let i = 0; i < S * S; i += 1) ink[i] = A[i * 4 + 3] > 90 ? 1 : 0;
+  const label = new Int32Array(S * S);
+  const flood = (seed, id) => {
+    const stack = [seed];
+    label[seed] = id;
+    let n = 0; let sx = 0; let sy = 0;
+    while (stack.length) {
+      const p = stack.pop();
+      n += 1; sx += p % S; sy += (p / S) | 0;
+      const x = p % S;
+      const nb = [p - S, p + S, x > 0 ? p - 1 : -1, x < S - 1 ? p + 1 : -1];
+      nb.forEach((q) => {
+        if (q >= 0 && q < S * S && !ink[q] && !label[q]) { label[q] = id; stack.push(q); }
+      });
+    }
+    return { n, cx: sx / n, cy: sy / n };
+  };
+  for (let i = 0; i < S; i += 1) {
+    [i, (S - 1) * S + i, i * S, i * S + S - 1].forEach((p) => { if (!ink[p] && !label[p]) flood(p, 1); });
+  }
+  const holes = [];
+  let id = 2;
+  for (let p = 0; p < S * S; p += 1) {
+    if (!ink[p] && !label[p]) {
+      const h = flood(p, id);
+      id += 1;
+      // Curls up on an ascender (ฬ) are not where the pen starts.
+      if (h.n >= 30 && h.n <= 1800 && h.cy > 105) holes.push(h);
+    }
+  }
+  holes.sort((a, b) => (a.cy + a.cx * 0.35) - (b.cy + b.cx * 0.35));
+  const start = holes.length ? [Math.round(holes[0].cx), Math.round(holes[0].cy)] : null;
+  headStartCache.set(key, start);
+  return start;
+}
+
+function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
+  const targets = useMemo(() => traceTargets(mode), [mode]);
+  // Open on the first letter due to write, so the Today Path lands on real work.
+  const [sel, setSel] = useState(() => Math.max(0, targets.findIndex((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= Date.now())));
   const [result, setResult] = useState(null);
+  const [auto, setAuto] = useState({});
   const canvasRef = useRef(null);
   const strokes = useRef([]);
   const drawing = useRef(false);
-  const glyph = TRACE_GLYPHS[sel];
+  const activePointer = useRef(null);
+  const penSeen = useRef(false);
+  const glyph = targets[Math.min(sel, targets.length - 1)];
+  const font = TRACE_FONTS[glyph.script];
+  const key = `${glyph.script}:${glyph.g}`;
+  const start = glyph.note?.start || auto[key] || null;
+  const now = Date.now();
+  const due = targets.filter((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= now);
+
+  useEffect(() => {
+    if (glyph.note || key in auto) return undefined;
+    let live = true;
+    (async () => {
+      try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[glyph.script]}"`, glyph.g); } catch { /* fallback font */ }
+      const s = detectHeadStart(glyph.g, glyph.script);
+      if (live) setAuto((a) => ({ ...a, [key]: s }));
+    })();
+    return () => { live = false; };
+  }, [glyph, key, auto]);
 
   const getCtx = () => {
     const c = canvasRef.current;
@@ -1491,65 +2924,87 @@ function Tracer() {
   }, []);
 
   const clear = useCallback(() => {
+    activePointer.current = null;
     const ctx = getCtx();
     if (ctx) ctx.clearRect(0, 0, TRACE_SIZE, TRACE_SIZE);
     strokes.current = [];
     setResult(null);
   }, []);
 
-  useEffect(() => { clear(); }, [sel, clear]);
+  useEffect(() => { clear(); }, [sel, mode, clear]);
 
   const pos = (e) => {
     const r = canvasRef.current.getBoundingClientRect();
     return [((e.clientX - r.left) / r.width) * TRACE_SIZE, ((e.clientY - r.top) / r.height) * TRACE_SIZE];
   };
 
+  // Once an S Pen (or any stylus) has touched the canvas, finger and palm
+  // contacts are ignored so a resting hand doesn't draw.
   const down = (e) => {
     e.preventDefault();
-    canvasRef.current.setPointerCapture?.(e.pointerId);
+    if (e.pointerType === "pen") penSeen.current = true;
+    else if (e.pointerType === "touch" && penSeen.current) return;
+    if (activePointer.current != null) return;
+    activePointer.current = e.pointerId;
+    try {
+      canvasRef.current.setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer already gone */
+    }
     drawing.current = true;
     strokes.current.push([pos(e)]);
     setResult(null);
   };
   const move = (e) => {
-    if (!drawing.current) return;
-    const p = pos(e);
+    if (!drawing.current || e.pointerId !== activePointer.current) return;
     const s = strokes.current[strokes.current.length - 1];
-    const prev = s[s.length - 1];
-    s.push(p);
     const ctx = getCtx();
     ctx.strokeStyle = "#F59E0B";
-    ctx.lineWidth = 14;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.shadowColor = "#F59E0B";
     ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.moveTo(prev[0], prev[1]);
-    ctx.lineTo(p[0], p[1]);
-    ctx.stroke();
+    // Pens report up to 240 samples a second; draw all of them, not just one per frame.
+    const samples = e.nativeEvent.getCoalescedEvents?.() || [];
+    (samples.length ? samples : [e.nativeEvent]).forEach((ev) => {
+      const p = pos(ev);
+      const prev = s[s.length - 1];
+      s.push(p);
+      ctx.lineWidth = e.pointerType === "pen" && ev.pressure > 0 ? 6 + ev.pressure * 16 : 14;
+      ctx.beginPath();
+      ctx.moveTo(prev[0], prev[1]);
+      ctx.lineTo(p[0], p[1]);
+      ctx.stroke();
+    });
   };
-  const up = () => { drawing.current = false; };
+  const up = (e) => {
+    if (e && e.pointerId !== activePointer.current) return;
+    drawing.current = false;
+    activePointer.current = null;
+  };
+
+  // A trace is a write review for a glyph you have started: it moves only its own
+  // write track, so a shaky hand never drags the reading schedule back.
+  const recordWrite = (score) => {
+    const cur = srs[glyph.id];
+    if (!cur || !setSrs) return null;
+    const g = score >= 70 ? 3 : score >= 50 ? 2 : 1;
+    if (!cur.write && g < 3) return null;
+    const write = fsrsUpdate(cur.write, g);
+    setSrs((s) => ({ ...s, [glyph.id]: { ...s[glyph.id], write } }));
+    return write;
+  };
 
   const check = async () => {
     if (!strokes.current.length) return;
-    try { await document.fonts?.load(`${TRACE_FONT_PX}px "Noto Serif Thai"`, glyph.g); } catch { /* fallback font */ }
+    try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[glyph.script]}"`, glyph.g); } catch { /* fallback font */ }
     const S = TRACE_SIZE;
-    const mk = () => { const c = document.createElement("canvas"); c.width = S; c.height = S; return c.getContext("2d", { willReadFrequently: true }); };
-    const gctx = mk();
-    gctx.font = `${TRACE_FONT_PX}px ${TRACE_FONT}`;
-    gctx.textAlign = "center";
-    gctx.fillStyle = "#000";
-    gctx.fillText(glyph.g, S / 2, TRACE_BASELINE);
-    const tctx = mk();
-    tctx.font = gctx.font;
-    tctx.textAlign = "center";
-    tctx.lineWidth = 26;
-    tctx.lineJoin = "round";
-    tctx.strokeStyle = "#000";
-    tctx.strokeText(glyph.g, S / 2, TRACE_BASELINE);
-    tctx.fillText(glyph.g, S / 2, TRACE_BASELINE);
-    const uctx = mk();
+    const gctx = renderGlyphMask(glyph.g, glyph.script);
+    const tctx = renderGlyphMask(glyph.g, glyph.script, 26);
+    const uc = document.createElement("canvas");
+    uc.width = S;
+    uc.height = S;
+    const uctx = uc.getContext("2d", { willReadFrequently: true });
     uctx.strokeStyle = "#000";
     uctx.lineWidth = 22;
     uctx.lineCap = "round";
@@ -1572,21 +3027,61 @@ function Tracer() {
     const coverage = gTot ? gHit / gTot : 0;
     const accuracy = uTot ? uIn / uTot : 0;
     const first = strokes.current[0][0];
-    const startDist = Math.hypot(first[0] - glyph.start[0], first[1] - glyph.start[1]);
-    const score = Math.round(100 * (0.55 * coverage + 0.45 * accuracy));
-    setResult({ coverage, accuracy, score, startOk: startDist < 34 });
+    const startOk = start ? Math.hypot(first[0] - start[0], first[1] - start[1]) < 34 : null;
+    // Starting away from the head loop costs points: the habit is the point of the drill.
+    const score = Math.round(100 * (0.55 * coverage + 0.45 * accuracy) - (startOk === false ? 10 : 0));
+    const write = recordWrite(score);
+    logActivity?.({ traces: 1 });
+    setResult({ coverage, accuracy, score, startOk, write });
+    haptic(score >= 70 ? "ok" : "bad");
     const audio = getAudio();
     audio.playRanatToneChime(score >= 70 ? ["high"] : ["low"]);
   };
 
+  const nextDue = () => {
+    const t = due.find((d) => d.id !== glyph.id) || due[0];
+    if (t) setSel(targets.indexOf(t));
+  };
+
+  const dotFor = (t) => {
+    const s = srs[t.id];
+    if (!s) return null;
+    if (writeDueAt(s.write) <= now) return "#F59E0B";
+    return "#34D399";
+  };
+
+  const levels = [...new Set(targets.map((t) => t.level))];
+
   return (
     <div className="space-y-4">
-      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Feel the loop under your finger." color={COLORS.cyan} />
-      <div className="flex flex-wrap gap-2">
-        {TRACE_GLYPHS.map((t, i) => (
-          <button key={t.g} onClick={() => setSel(i)} className={`h-12 w-12 rounded-xl border text-2xl transition ${i === sel ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONT }}>
-            {t.g}
+      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Every letter you have started gets its own write schedule." color={COLORS.cyan} />
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#F59E0B" }} /> due to write</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#34D399" }} /> written, not due</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border border-white/20" /> not started in the Shrine</span>
+        {due.length > 0 && (
+          <button data-trace-next onClick={nextDue} className="ml-auto rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 font-semibold text-amber-200">
+            Next due ({due.length})
           </button>
+        )}
+      </div>
+      <div className="max-h-56 space-y-2 overflow-y-auto pr-1 sm:max-h-none">
+        {levels.map((lv) => (
+          <div key={lv}>
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Level {lv}</div>
+            <div className="grid grid-cols-7 gap-1.5 sm:flex sm:flex-wrap">
+            {targets.filter((t) => t.level === lv).map((t) => {
+              const i = targets.indexOf(t);
+              const dot = dotFor(t);
+              return (
+                <button key={t.id} data-trace-glyph={t.id} onClick={() => setSel(i)} aria-label={t.name} className={`relative h-11 rounded-xl border text-2xl transition sm:w-11 ${t === glyph ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONTS[t.script] }}>
+                  {t.g}
+                  {dot && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ background: dot }} />}
+                </button>
+              );
+            })}
+            </div>
+          </div>
         ))}
       </div>
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -1600,54 +3095,72 @@ function Tracer() {
                 </g>
               ))}
               <line x1={0} x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="#22D3EE33" strokeDasharray="6 6" />
-              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#22D3EE26" stroke="#22D3EE88" strokeWidth="1.5" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</text>
-              <circle cx={glyph.start[0]} cy={glyph.start[1]} r="16" fill="#F59E0B33" stroke="#F59E0B" strokeWidth="2">
-                <animate attributeName="r" values="13;18;13" dur="1.6s" repeatCount="indefinite" />
-              </circle>
-              <text x={glyph.start[0]} y={glyph.start[1] + 5} textAnchor="middle" fontSize="14" fontWeight="800" fill="#FDE68A">1</text>
+              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#22D3EE26" stroke="#22D3EE88" strokeWidth="1.5" style={{ fontFamily: font }}>{glyph.g}</text>
+              {start && (
+                <g data-trace-start>
+                  <circle cx={start[0]} cy={start[1]} r="16" fill="#F59E0B33" stroke="#F59E0B" strokeWidth="2">
+                    <animate attributeName="r" values="13;18;13" dur="1.6s" repeatCount="indefinite" />
+                  </circle>
+                  <text x={start[0]} y={start[1] + 5} textAnchor="middle" fontSize="14" fontWeight="800" fill="#FDE68A">1</text>
+                </g>
+              )}
             </svg>
-            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} />
+            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} />
           </div>
           <div className="mt-3 flex gap-2">
             <button onClick={clear} className="flex-1 rounded-xl border border-white/10 py-2 text-sm text-slate-300 hover:bg-white/5"><Eraser size={15} className="mr-1 inline" />Clear</button>
-            <button onClick={check} className="flex-1 rounded-xl bg-cyan-500 py-2 text-sm font-bold text-black"><Check size={15} className="mr-1 inline" />Check</button>
+            <button data-trace-check onClick={check} className="flex-1 rounded-xl bg-cyan-500 py-2 text-sm font-bold text-black"><Check size={15} className="mr-1 inline" />Check</button>
           </div>
         </Card>
         <div className="space-y-3">
           <Card className="p-4">
             <div className="flex items-baseline gap-3">
-              <span className="text-5xl text-white" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</span>
+              <span className="text-5xl text-white" style={{ fontFamily: font }}>{glyph.g}</span>
               <div>
                 <div className="font-semibold text-white">{glyph.name}</div>
-                <div className="mt-1"><ClassBadge cls={glyph.cls} small /></div>
+                <div className="text-xs text-slate-400">{glyph.meaning}</div>
+                {glyph.cls && <div className="mt-1"><ClassBadge cls={glyph.cls} small /></div>}
               </div>
             </div>
-            <p className="mt-3 text-sm text-slate-300">{glyph.path}</p>
-            <p className="mt-2 text-xs text-slate-400">The tracer always uses head-loop type, because that is where the loops are visible.</p>
+            <p className="mt-3 text-sm text-slate-300">
+              {glyph.note?.path || (start ? "Start inside the head loop at (1), close the loop, then run the body in one stroke." : "No head loop on this one. Start at the top-left of the first stroke and keep the pen down.")}
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              {srs[glyph.id] ? (srs[glyph.id].write ? `Write track: next due ${fmtDue(writeDueAt(srs[glyph.id].write))}.` : "Score 70 or more once to start this letter's write schedule.") : "Practice only. Start this letter in the Shrine to schedule writing reviews."}
+            </p>
           </Card>
           {result && (
             <Card className="p-4">
               <div className="flex items-center gap-3">
-                <div className="text-4xl font-black" style={{ color: result.score >= 70 ? "#34D399" : result.score >= 45 ? COLORS.gold : "#F43F5E" }}>{result.score}</div>
+                <div data-trace-score className="text-4xl font-black" style={{ color: result.score >= 70 ? "#34D399" : result.score >= 45 ? COLORS.gold : "#F43F5E" }}>{result.score}</div>
                 <div className="text-sm text-slate-300">
                   {result.score >= 70 ? "Clean trace." : result.score >= 45 ? "Close. Follow the outline more tightly." : "Try again, slower, on the outline."}
+                  {result.write && <div className="text-xs text-cyan-300">Write review saved. Next due {fmtDue(writeDueAt(result.write))}.</div>}
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.coverage * 100)}%</div>coverage</div>
                 <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.accuracy * 100)}%</div>on the line</div>
-                <div className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${result.startOk ? "text-emerald-300" : "text-rose-300"}`}>{result.startOk ? "Yes" : "No"}</div>started at 1</div>
+                <div className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${result.startOk == null ? "text-slate-300" : result.startOk ? "text-emerald-300" : "text-rose-300"}`}>{result.startOk == null ? "n/a" : result.startOk ? "Yes" : "No"}</div>started at 1</div>
               </div>
             </Card>
           )}
-          <Card className="p-4 text-sm text-slate-300">
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Feel the difference</div>
-            <ul className="list-disc space-y-1 pl-5">
-              <li><b>ด vs ค</b>: ด's loop sits inside the bowl with a diagonal run to the foot. ค's loop hangs off a straight left wall.</li>
-              <li><b>ผ vs พ</b>: same start, but พ's inner peak climbs to full height.</li>
-              <li><b>ก</b> has no loop at all. Start at the beak.</li>
-            </ul>
-          </Card>
+          {glyph.script === "th" ? (
+            <Card className="p-4 text-sm text-slate-300">
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Feel the difference</div>
+              <ul className="list-disc space-y-1 pl-5">
+                <li><b>ด vs ค</b>: ด's loop sits inside the bowl with a diagonal run to the foot. ค's loop hangs off a straight left wall.</li>
+                <li><b>ผ vs พ</b>: same start, but พ's inner peak climbs to full height.</li>
+                <li><b>บ vs ป</b>: ป is บ with a tall right wall. Lift the pen only after the wall.</li>
+                <li><b>ก</b> has no loop at all. Start at the beak.</li>
+              </ul>
+            </Card>
+          ) : (
+            <Card className="p-4 text-sm text-slate-300">
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Lao hand</div>
+              <p>Lao letters keep the loop-first habit but are rounder and lower. Draw the loop small and tight, then let the body swing.</p>
+            </Card>
+          )}
         </div>
       </div>
     </div>
@@ -2171,6 +3684,1029 @@ function Slicer({ mode, font }) {
 }
 
 /* ============================================================================
+ * Module: Mekong Predictor (build the Lao spelling from the Thai, or back)
+ * ========================================================================== */
+const BRIDGE_LAWS = [
+  { id: "cluster", name: "Clusters drop", rule: "Thai keeps old pl-, kr-, kl- clusters. Lao drops the second consonant.", words: [
+    { th: "ปลา", lo: "ປາ", r: "plaa → paa", m: "fish", tl: "ปา", naive: [["ປລາ", "You kept the l. Lao drops the second consonant of a cluster."]] },
+    { th: "ครู", lo: "ຄູ", r: "khruu → khuu", m: "teacher", tl: "คู", naive: [["ຄຣູ", "You kept the r. Lao drops it: ຄູ."], ["ຄລູ", "Lao drops the second consonant entirely."]] },
+    { th: "กลาง", lo: "ກາງ", r: "klaang → kaang", m: "middle", tl: "กาง", naive: [["ກລາງ", "You kept the l. Lao drops the second consonant of a cluster."]] },
+    { th: "ใกล้", lo: "ໃກ້", r: "klâi → kai", m: "near", tl: "ใก้", naive: [["ໃກລ້", "You kept the l. Lao drops it, and the tone mark moves onto ກ."]] },
+  ] },
+  { id: "r-h", name: "ร becomes ຮ", rule: "In native words Thai r usually corresponds to Lao h (ຮ).", words: [
+    { th: "รัก", lo: "ຮັກ", r: "rák → hak", m: "love", tl: "ฮัก", naive: [["ລັກ", "Here Lao uses ຮ (h), not ລ. ລັກ means 'steal'."], ["ຣັກ", "Lao ຣ is for names and loans. Native words use ຮ."]] },
+    { th: "ร้อน", lo: "ຮ້ອນ", r: "ráwn → hon", m: "hot", tl: "ฮ้อน", naive: [["ລ້ອນ", "Native Thai ร → Lao ຮ here."]] },
+    { th: "เรือน", lo: "ເຮືອນ", r: "rʉan → heuan", m: "house", tl: "เฮือน", naive: [["ເລືອນ", "Native Thai ร → Lao ຮ here."]] },
+    { th: "รู้", lo: "ຮູ້", r: "rúu → hu", m: "know", tl: "ฮู้", naive: [["ລູ້", "Native Thai ร → Lao ຮ here."]] },
+  ] },
+  { id: "ch-x", name: "ช and ซ become ຊ", rule: "Thai ch (ช) and s (ซ) both correspond to Lao ຊ, pronounced s or x.", words: [
+    { th: "ช้าง", lo: "ຊ້າງ", r: "cháang → xang", m: "elephant", tl: "ซ้าง", naive: [["ຈ້າງ", "Thai ช is not Lao ຈ. Use ຊ."], ["ສ້າງ", "ສ is the high-class s. Thai ช (low) → Lao ຊ (low)."]] },
+    { th: "ชื่อ", lo: "ຊື່", r: "chʉ̂ʉ → xeu", m: "name", tl: "ซื่อ", naive: [["ຊື່ອ", "Lao drops the silent อ that Thai writes after ื."]] },
+    { th: "ซื้อ", lo: "ຊື້", r: "sʉ́ʉ → xeu", m: "buy", tl: "ซื้อ", naive: [["ຊື້ອ", "Lao drops the silent อ that Thai writes after ื."]] },
+    { th: "ชาย", lo: "ຊາຍ", r: "chaai → xai", m: "man / male", tl: "ซาย", naive: [["ຈາຍ", "Thai ช → Lao ຊ, not ຈ."]] },
+  ] },
+  { id: "silent", name: "Silent letters vanish", rule: "Thai keeps etymological letters and silences them with ◌์. Lao writes only what is spoken.", words: [
+    { th: "เบียร์", lo: "ເບຍ", r: "bia", m: "beer", tl: "เบีย", naive: [["ເບຍຣ໌", "Lao has no silent letters here. Drop the ร์."]] },
+    { th: "ศูนย์", lo: "ສູນ", r: "sǔun → sun", m: "zero / centre", tl: "สูน", naive: [["ສູນຍ໌", "Drop the silent ย์. And ศ becomes plain ສ."]] },
+    { th: "อาทิตย์", lo: "ອາທິດ", r: "aa-thít → athit", m: "sun / week", tl: "อาทิด", naive: [["ອາທິຕ", "Lao spells the final t sound with ດ."]] },
+    { th: "ไปรษณีย์", lo: "ໄປສະນີ", r: "prai-sà-nii → paisanii", m: "post office", tl: "ไปสะนี", naive: [["ໄປຣສະນີ", "Drop the r of the cluster too."]] },
+  ] },
+  { id: "hn", name: "ห นำ becomes one letter", rule: "Lao fuses silent h + n and h + m into single letters ໜ and ໝ. Other combinations stay as two letters.", words: [
+    { th: "หมา", lo: "ໝາ", r: "mǎa → maa", m: "dog", tl: "หมา", naive: [["ຫມາ", "Lao writes ຫ + ມ as the single letter ໝ."]] },
+    { th: "หนาว", lo: "ໜາວ", r: "nǎaw → nao", m: "cold", tl: "หนาว", naive: [["ຫນາວ", "Lao writes ຫ + ນ as the single letter ໜ."]] },
+    { th: "หมู", lo: "ໝູ", r: "mǔu → mu", m: "pig / pork", tl: "หมู", naive: [["ຫມູ", "Lao writes ຫ + ມ as ໝ."]] },
+    { th: "หนึ่ง", lo: "ໜຶ່ງ", r: "nʉ̀ng → neung", m: "one", tl: "หนึ่ง", naive: [["ຫນຶ່ງ", "Lao writes ຫ + ນ as ໜ."]] },
+  ] },
+  { id: "sanskrit", name: "Sanskrit letters merge", rule: "Thai keeps several letters for one sound (ศ ษ ส, ภ พ, ธ ท, ณ น). Lao uses one: ສ, ພ, ທ, ນ.", words: [
+    { th: "ภาษา", lo: "ພາສາ", r: "phaa-sǎa → phasa", m: "language", tl: "พาสา", naive: [["ພາຊາ", "ษ is an s sound: Lao ສ."]] },
+    { th: "ศาลา", lo: "ສາລາ", r: "sǎa-laa → sala", m: "pavilion", tl: "สาลา", naive: [["ຊາລາ", "ศ is the high-class s: Lao ສ."]] },
+    { th: "พิเศษ", lo: "ພິເສດ", r: "phí-sèet → phiset", m: "special", tl: "พิเสด", naive: [["ພິເສສ", "As a final, ษ sounds -t. Lao spells final t with ດ."]] },
+    { th: "ธรรมดา", lo: "ທຳມະດາ", r: "tham-má-daa → thammada", m: "ordinary", tl: "ทำมะดา", naive: [["ທັມມະດາ", "Lao writes the -am syllable with ຳ."]] },
+  ] },
+  { id: "ua", name: "◌ัว becomes ◌ົວ", rule: "The Thai vowel -ua written ◌ัว is written ◌ົວ in Lao.", words: [
+    { th: "บัว", lo: "ບົວ", r: "bua", m: "lotus", tl: "บัว", naive: [["ບັວ", "Lao uses ◌ົ (mai kon) for -ua, not ◌ັ."]] },
+    { th: "หัว", lo: "ຫົວ", r: "hǔa → hua", m: "head", tl: "หัว", naive: [["ຫັວ", "Lao uses ◌ົ for -ua."]] },
+    { th: "ผัว", lo: "ຜົວ", r: "phǔa → phua", m: "husband", tl: "ผัว", naive: [["ຜັວ", "Lao uses ◌ົ for -ua."]] },
+  ] },
+  { id: "o", name: "Hidden o gets written", rule: "Thai leaves the short o between consonants unwritten (นก). Lao writes it with ◌ົ.", words: [
+    { th: "นก", lo: "ນົກ", r: "nók → nok", m: "bird", tl: "นก", naive: [["ນກ", "Lao always writes the short o: ◌ົ."]] },
+    { th: "คน", lo: "ຄົນ", r: "khon", m: "person", tl: "คน", naive: [["ຄນ", "Lao writes the hidden o with ◌ົ."]] },
+    { th: "ผม", lo: "ຜົມ", r: "phǒm → phom", m: "hair", tl: "ผม", naive: [["ຜມ", "Lao writes the hidden o with ◌ົ."]] },
+    { th: "รถ", lo: "ລົດ", r: "rót → lot", m: "car", tl: "ลด", exception: "Law breaker: here Thai ร becomes ລ, not ຮ, and final ถ becomes ດ.", naive: [["ຮົດ", "This one breaks the ร → ຮ law: it's ລົດ."]] },
+  ] },
+  { id: "ia", name: "เ◌ีย becomes ເ◌ຍ or ◌ຽ", rule: "Open -ia (เ◌ีย) is ເ◌ຍ in Lao. With a final consonant it becomes ◌ຽ◌.", words: [
+    { th: "เมีย", lo: "ເມຍ", r: "mia", m: "wife", tl: "เมีย", naive: [["ເມີຍ", "Lao doesn't write the ◌ີ: just ເ◌ຍ."]] },
+    { th: "เสีย", lo: "ເສຍ", r: "sǐa → sia", m: "broken / lose", tl: "เสีย", naive: [["ເສີຍ", "Lao doesn't write the ◌ີ: just ເ◌ຍ."]] },
+    { th: "เรียน", lo: "ຮຽນ", r: "rian → hian", m: "study", tl: "เฮียน", naive: [["ເຮຍນ", "With a final consonant, -ia is written ◌ຽ: ຮຽນ."], ["ເລຍນ", "Native ร → ຮ, and closed -ia is ◌ຽ: ຮຽນ."]] },
+    { th: "เขียน", lo: "ຂຽນ", r: "khǐan → khian", m: "write", tl: "เขียน", naive: [["ເຂຍນ", "With a final consonant, -ia is written ◌ຽ: ຂຽນ."]] },
+  ] },
+  { id: "ao", name: "เ◌า becomes ເ◌ົາ", rule: "Thai -ao (เ◌า) is written ເ◌ົາ in Lao, with ◌ົ on top.", words: [
+    { th: "เขา", lo: "ເຂົາ", r: "khǎo → khao", m: "he / she", tl: "เขา", naive: [["ເຂາ", "Lao adds ◌ົ: ເຂົາ."]] },
+    { th: "เรา", lo: "ເຮົາ", r: "rao → hao", m: "we", tl: "เฮา", naive: [["ເລົາ", "Native ร → ຮ: ເຮົາ."], ["ເຮາ", "Lao adds ◌ົ: ເຮົາ."]] },
+    { th: "เมา", lo: "ເມົາ", r: "mao", m: "drunk", tl: "เมา", naive: [["ເມາ", "Lao adds ◌ົ: ເມົາ."]] },
+  ] },
+];
+
+const LAO_FILLERS = ["ກ", "ຂ", "ຄ", "ດ", "ຕ", "ນ", "ບ", "ມ", "ລ", "ສ", "ຫ", "ອ", "າ", "ິ", "ີ", "ັ", "່", "້"];
+const THAI_FILLERS = ["ก", "ข", "ค", "ด", "ต", "น", "บ", "ม", "ร", "ล", "ส", "ห", "อ", "า", "ิ", "ี", "ั", "่", "้", "์"];
+const isMark = (ch) => COMBINING.test(ch);
+const showTile = (ch) => (isMark(ch) ? `◌${ch}` : ch);
+
+function buildTiles(target, naive, fillers) {
+  const need = [...target];
+  const extra = new Set();
+  naive.forEach(([w]) => [...w].forEach((ch) => { if (!need.includes(ch)) extra.add(ch); }));
+  const pool = shuffle(fillers.filter((f) => !need.includes(f) && !extra.has(f))).slice(0, Math.max(2, 6 - extra.size));
+  return shuffle([...need, ...extra, ...pool].map((ch, i) => ({ ch, key: `${i}-${ch}` })));
+}
+
+const emptyBridge = () => Object.fromEntries(BRIDGE_LAWS.map((l) => [l.id, [0, 0]]));
+// Each law gets an FSRS track once you first try it; due laws come back like any review.
+const lawDueAt = (t) => t.last + fsrsInterval(t.S) * DAY;
+const lawsDue = (sched, now = Date.now()) => BRIDGE_LAWS.filter((l) => sched[l.id] && lawDueAt(sched[l.id]) <= now).sort((a, b) => lawDueAt(sched[a.id]) - lawDueAt(sched[b.id]));
+const nextNewLaw = (sched) => BRIDGE_LAWS.find((l) => !sched[l.id]) || null;
+
+function MekongPredictor({ mode, font, bridge, setBridge, sched = {}, setSched, logActivity }) {
+  const [dir, setDir] = useState(mode === "lo" ? "lo2th" : "th2lo");
+  const [lawId, setLawId] = useState(() => (lawsDue(sched)[0] || nextNewLaw(sched) || BRIDGE_LAWS[0]).id);
+  const [wi, setWi] = useState(0);
+  const [built, setBuilt] = useState([]);
+  const [result, setResult] = useState(null);
+  const law = BRIDGE_LAWS.find((l) => l.id === lawId);
+  const word = law.words[wi % law.words.length];
+  const toLao = dir === "th2lo";
+  const source = toLao ? word.th : word.lo;
+  const target = toLao ? word.lo : word.th;
+  const tiles = useMemo(
+    () => buildTiles(target, toLao ? word.naive : [], toLao ? LAO_FILLERS : THAI_FILLERS),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lawId, wi, dir]
+  );
+  const audio = getAudio();
+
+  useEffect(() => { setBuilt([]); setResult(null); }, [lawId, wi, dir]);
+
+  const answer = built.map((t) => t.ch).join("");
+  const check = () => {
+    if (!built.length) return;
+    const ok = answer === target;
+    const naiveHit = toLao ? word.naive.find(([w]) => w === answer) : null;
+    setResult({ ok, note: ok ? null : naiveHit ? naiveHit[1] : null });
+    setBridge((prev) => {
+      const cur = prev[law.id] || [0, 0];
+      return { ...prev, [law.id]: [cur[0] + (ok ? 1 : 0), cur[1] + 1] };
+    });
+    setSched?.((prev) => ({ ...prev, [law.id]: fsrsUpdate(prev[law.id], ok ? 3 : 1) }));
+    logActivity?.({ bridge: 1 });
+    audio.speakHumanVoice(word.tl, word.lo);
+  };
+  const next = () => {
+    const nextIdx = wi + 1;
+    if (nextIdx >= law.words.length) {
+      const li = BRIDGE_LAWS.findIndex((l) => l.id === law.id);
+      const due = lawsDue(sched).find((l) => l.id !== law.id);
+      setLawId((due || BRIDGE_LAWS[(li + 1) % BRIDGE_LAWS.length]).id);
+      setWi(0);
+    } else setWi(nextIdx);
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Languages} title="Mekong Predictor" sub="Apply the bridge laws to spell a word on the other side of the river. Building the answer yourself makes the rule stick." color={COLORS.purple} />
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip active={dir === "th2lo"} color={COLORS.purple} onClick={() => setDir("th2lo")}>ไทย → ລາວ</Chip>
+        <Chip active={dir === "lo2th"} color={COLORS.purple} onClick={() => setDir("lo2th")}>ລາວ → ไทย</Chip>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <Card className="p-5" glow={COLORS.purple}>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">Law {BRIDGE_LAWS.findIndex((l) => l.id === law.id) + 1} · {law.name}</div>
+          <div className="mt-3 text-center">
+            <div className="text-xs text-slate-400">{toLao ? "Thai" : "Lao"}</div>
+            <Glyph text={source} script={toLao ? "th" : "lo"} font={font} className="text-6xl leading-[1.5] text-white" />
+            <div className="text-sm text-slate-300">{word.m}</div>
+          </div>
+          <div className="my-3 text-center text-2xl text-purple-300">⇣</div>
+          <div className={`mx-auto flex min-h-[84px] max-w-sm items-center justify-center rounded-2xl border-2 border-dashed px-4 ${result ? (result.ok ? "border-emerald-400 bg-emerald-500/10" : "border-rose-400 bg-rose-500/10") : "border-purple-400/50"}`}>
+            {built.length ? (
+              <Glyph text={answer} script={toLao ? "lo" : "th"} font={font} className="text-5xl leading-[1.6] text-white" />
+            ) : (
+              <span className="text-sm text-slate-400">Tap tiles in reading order</span>
+            )}
+          </div>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {tiles.map((t) => {
+              const used = built.some((b) => b.key === t.key);
+              return (
+                <button
+                  key={t.key}
+                  disabled={used || !!result}
+                  onClick={() => setBuilt([...built, t])}
+                  className="min-w-[48px] rounded-xl border border-purple-400/40 bg-purple-500/15 px-2 py-1 text-3xl leading-[1.5] text-white transition active:scale-95 disabled:opacity-25"
+                  style={{ fontFamily: FONT_STACKS[font][toLao ? "lo" : "th"] }}
+                >
+                  {showTile(t.ch)}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {!result ? (
+              <>
+                <button onClick={() => setBuilt(built.slice(0, -1))} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-200"><ChevronLeft size={14} className="mr-1 inline" />Undo</button>
+                <button onClick={() => setBuilt([])} className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-200"><Eraser size={14} className="mr-1 inline" />Clear</button>
+                <button onClick={check} className="rounded-xl bg-purple-500 px-5 py-2 text-sm font-bold text-white"><Check size={14} className="mr-1 inline" />Check</button>
+              </>
+            ) : (
+              <button onClick={next} className="rounded-xl bg-amber-500 px-5 py-2 text-sm font-bold text-black">Next word <ChevronRight size={14} className="inline" /></button>
+            )}
+          </div>
+          {result && (
+            <div className="mt-4 space-y-1 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className={`font-bold ${result.ok ? "text-emerald-300" : "text-rose-300"}`}>{result.ok ? "Correct" : "Not quite"}</div>
+              {!result.ok && (
+                <div className="text-slate-200">Answer: <Glyph text={target} script={toLao ? "lo" : "th"} font={font} className="text-2xl" /></div>
+              )}
+              {result.note && <p className="text-rose-200">{result.note}</p>}
+              <p className="text-slate-300">{word.r} · {law.rule}</p>
+              {word.exception && <p className="text-amber-300">{word.exception}</p>}
+              <AudioButtons ttsTh={word.th} ttsLo={word.tl} loRaw={word.lo} mode="dual" compact />
+            </div>
+          )}
+        </Card>
+        <Card className="p-4">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">The ten laws</div>
+          <p className="mb-2 text-[11px] text-slate-400">Each law you try comes back on its own schedule. Due laws open first and show up on the Today Path.</p>
+          <div className="space-y-1.5">
+            {BRIDGE_LAWS.map((l, i) => {
+              const [r, n] = bridge[l.id] || [0, 0];
+              const acc = n ? r / n : 0;
+              const t = sched[l.id];
+              const isDue = t && lawDueAt(t) <= Date.now();
+              return (
+                <button key={l.id} onClick={() => { setLawId(l.id); setWi(0); }} className={`w-full rounded-xl px-2.5 py-1.5 text-left transition ${l.id === law.id ? "bg-purple-500/20" : "hover:bg-white/5"}`}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-100">{i + 1}. {l.name}</span>
+                    <span className="flex items-center gap-1.5 tabular-nums text-slate-400">
+                      {isDue && <span data-law-due className="rounded-full bg-amber-400/20 px-1.5 text-[10px] font-bold text-amber-300">due</span>}
+                      {n ? `${Math.round(acc * 100)}%` : "–"}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-purple-400" style={{ width: `${acc * 100}%` }} /></div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Module: Street Reader (real-world signs in street type)
+ * Tokens: { t, r, m, tone?, id?, tts? }. `id` links to a curriculum item.
+ * ========================================================================== */
+const STREET_PACKS = [
+  { id: "cafe", script: "th", title: "Café menu", place: "Bangkok", style: "cafe", lines: [
+    [{ t: "ข้าว", id: "v-khaaw" }, { t: "ผัด", r: "phàt", m: "stir-fried", tone: ["low"] }, { t: "กุ้ง", r: "kûng", m: "shrimp", tone: ["falling"] }, { price: true, t: "๘๐", r: "pɛ̀ɛt-sìp", m: "80", tts: "แปดสิบ" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "น้ำ", id: "v-naam" }, { t: "มะนาว", r: "má-naaw", m: "lime", tone: ["high", "mid"] }, { price: true, t: "๓๕", r: "sǎam-sìp-hâa", m: "35", tts: "สามสิบห้า" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "ส้มตำ", r: "sôm-tam", m: "papaya salad", tone: ["falling", "mid"] }, { t: "แซ่บ", id: "v-saep" }, { price: true, t: "๖๐", r: "hòk-sìp", m: "60", tts: "หกสิบ" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "กาแฟ", r: "kaa-fɛɛ", m: "coffee", tone: ["mid", "mid"] }, { t: "เย็น", r: "yen", m: "cold / iced", tone: ["mid"] }, { price: true, t: "๕๕", r: "hâa-sìp-hâa", m: "55", tts: "ห้าสิบห้า" }, { price: true, t: "บาท", id: "v-baht" }],
+  ] },
+  { id: "bts", script: "th", title: "Skytrain station", place: "Bangkok", style: "transit", lines: [
+    [{ t: "สถานี", r: "sà-thǎa-nii", m: "station", tone: ["low", "rising", "mid"] }, { t: "สยาม", r: "sà-yǎam", m: "Siam", tone: ["low", "rising"] }],
+    [{ t: "ทางออก", id: "v-exit" }, { t: "๓", id: "n-3" }],
+    [{ t: "ห้องน้ำ", id: "v-toilet" }, { t: "ชาย", r: "chaai", m: "men", tone: ["mid"] }, { t: "หญิง", r: "yǐng", m: "women", tone: ["rising"] }],
+  ] },
+  { id: "shop", script: "th", title: "Convenience store", place: "Bangkok", style: "shop", lines: [
+    [{ t: "น้ำ", id: "v-naam" }, { t: "ดื่ม", r: "dʉ̀ʉm", m: "drinking", tone: ["low"] }, { price: true, t: "๑๐", r: "sìp", m: "10", tts: "สิบ" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "ขนม", id: "v-khanom" }, { t: "ลด", r: "lót", m: "discount (reduce)", tone: ["high"] }, { price: true, t: "๒๐%", r: "yîi-sìp pəə-sen", m: "20%", tts: "ยี่สิบเปอร์เซ็นต์" }],
+    [{ t: "เปิด", id: "v-open" }, { price: true, t: "๒๔", r: "yîi-sìp-sìi", m: "24", tts: "ยี่สิบสี่" }, { t: "ชั่วโมง", r: "chûa-moong", m: "hours", tone: ["falling", "mid"] }],
+  ] },
+  { id: "temple", script: "th", title: "Temple notice", place: "Chiang Mai", style: "temple", lines: [
+    [{ t: "กรุณา", r: "kà-rú-naa", m: "please", tone: ["low", "high", "mid"] }, { t: "ถอด", r: "thɔ̀ɔt", m: "take off", tone: ["low"] }, { t: "รองเท้า", r: "rɔɔng-tháaw", m: "shoes", tone: ["mid", "high"] }],
+    [{ t: "ห้าม", id: "v-forbid" }, { t: "ถ่าย", r: "thàai", m: "take (a photo)", tone: ["low"] }, { t: "รูป", r: "rûup", m: "picture", tone: ["falling"] }],
+  ] },
+  { id: "market", script: "lo", title: "Morning market", place: "Vientiane", style: "market", lines: [
+    [{ t: "ຕະຫຼາດ", id: "v-talaat" }, { t: "ເຊົ້າ", r: "sao", m: "morning", tts: "เซ้า" }],
+    [{ t: "ໝາກໄມ້", r: "mak mai", m: "fruit", tts: "หมากไม้" }, { t: "ລາຄາ", id: "v-price" }, { price: true, t: "໒໐໐໐໐", r: "sao phan", m: "20,000", tts: "ซาวพัน" }, { price: true, t: "ກີບ", id: "v-baht" }],
+    [{ t: "ເຂົ້າໜຽວ", r: "khao niao", m: "sticky rice", tts: "เข้าเหนียว" }, { price: true, t: "໑໐໐໐໐", r: "sip phan", m: "10,000", tts: "สิบพัน" }, { price: true, t: "ກີບ", id: "v-baht" }],
+  ] },
+  { id: "talk-th", script: "th", title: "At the counter", place: "Bangkok", style: "chat", speakers: ["You", "Barista", "You", "Barista", "You", "Barista"], lines: [
+    [{ t: "สวัสดี", id: "v-hello" }, { t: "ครับ", id: "p-khrap" }],
+    [{ t: "สวัสดี", id: "v-hello" }, { t: "ค่ะ", id: "p-kha" }, { t: "รับ", r: "ráp", m: "receive / have (what would you like?)", tone: ["high"] }, { t: "อะไร", r: "à-rai", m: "what", tone: ["low", "mid"] }, { t: "คะ", id: "p-kha-q" }],
+    [{ t: "กาแฟ", r: "kaa-fɛɛ", m: "coffee", tone: ["mid", "mid"] }, { t: "เย็น", r: "yen", m: "iced", tone: ["mid"] }, { t: "เท่าไร", id: "p-howmuch" }, { t: "ครับ", id: "p-khrap" }],
+    [{ t: "๕๕", r: "hâa-sìp-hâa", m: "55", tts: "ห้าสิบห้า" }, { t: "บาท", id: "v-baht" }, { t: "ค่ะ", id: "p-kha" }],
+    [{ t: "ขอบคุณ", id: "v-thanks" }, { t: "ครับ", id: "p-khrap" }],
+    [{ t: "ไม่เป็นไร", id: "p-mai-pen-rai" }, { t: "ค่ะ", id: "p-kha" }],
+  ] },
+  { id: "talk-lo", script: "lo", title: "Market chat", place: "Luang Prabang", style: "chat", speakers: ["You", "Seller", "You", "Seller", "You"], lines: [
+    [{ t: "ສະບາຍດີ", id: "v-hello" }, { t: "ເຈົ້າ", id: "p-khrap", m: "polite particle / yes" }],
+    [{ t: "ສະບາຍດີ", id: "v-hello" }, { t: "ແຊບ", id: "v-saep" }, { t: "ເດີ", id: "p-na" }],
+    [{ t: "ອັນນີ້", r: "an nii", m: "this one", tts: "อันนี้" }, { t: "ເທົ່າໃດ", id: "p-howmuch" }],
+    [{ t: "໕໐໐໐", r: "ha phan", m: "5,000", tts: "ห้าพัน" }, { t: "ກີບ", id: "v-baht" }],
+    [{ t: "ຂອບໃຈ", id: "v-thanks" }, { t: "ເຈົ້າ", id: "p-khrap", m: "polite particle / yes" }],
+  ] },
+];
+
+const STREET_STYLES = {
+  cafe: { card: "linear-gradient(170deg, #3a1f0e, #1d1009)", ink: "#FFE7C2", accent: "#FFB86B", border: "#ffb86b44" },
+  transit: { card: "linear-gradient(170deg, #0e3b2a, #08241a)", ink: "#F2FFF8", accent: "#7CF0B0", border: "#7cf0b044" },
+  shop: { card: "linear-gradient(170deg, #f5f5f0, #e7e5df)", ink: "#1a1a1a", accent: "#E4002B", border: "#00000022" },
+  temple: { card: "linear-gradient(170deg, #5a1414, #2e0909)", ink: "#FFE08A", accent: "#F5C542", border: "#f5c54244" },
+  market: { card: "linear-gradient(170deg, #12324a, #0a1c2b)", ink: "#EAF6FF", accent: "#7FD1FF", border: "#7fd1ff44" },
+  chat: { card: "linear-gradient(170deg, #3a1630, #1f0b1a)", ink: "#FFE4F1", accent: "#F472B6", border: "#f472b644" },
+};
+
+function resolveToken(tok, script) {
+  if (!tok.id) return tok;
+  const item = CURRICULUM.find((c) => c.id === tok.id);
+  if (!item) return tok;
+  const lao = script === "lo";
+  return {
+    ...tok,
+    r: tok.r || (lao ? item.loRoman : item.thRoman.split(" ·")[0]),
+    m: tok.m || item.meaning,
+    tone: tok.tone || (lao ? undefined : item.tone),
+    tts: tok.tts || (lao ? item.ttsLo : item.ttsTh),
+    item,
+  };
+}
+
+function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
+  const packs = STREET_PACKS.filter((p) => mode === "dual" || p.script === mode);
+  const [pid, setPid] = useState(packs[0]?.id);
+  const pack = packs.find((p) => p.id === pid) || packs[0];
+  const [sel, setSel] = useState(null);
+  const [timer, setTimer] = useState({ start: null, last: null });
+  const [, tick] = useState(0);
+  useEffect(() => { setSel(null); setTimer({ start: null, last: null }); }, [pid]);
+  useEffect(() => {
+    if (!timer.start) return undefined;
+    const id = setInterval(() => tick((n) => n + 1), 200);
+    return () => clearInterval(id);
+  }, [timer.start]);
+  if (!pack) return null;
+  const style = STREET_STYLES[pack.style];
+  const tokens = pack.lines.flat().map((t) => resolveToken(t, pack.script));
+  const words = tokens.filter((t) => !t.price);
+  const known = (t) => t.item && (srs[t.item.id]?.stage || 0) >= 1;
+  const knownPct = Math.round((words.filter(known).length / words.length) * 100);
+  const font = pack.script === "lo" ? '"Noto Sans Lao", "Phetsarath OT", sans-serif' : '"Kanit", "Noto Sans Thai", sans-serif';
+  const selTok = sel != null ? tokens[sel] : null;
+  const audio = getAudio();
+
+  const toggleTimer = () => {
+    if (!timer.start) return setTimer({ start: Date.now(), last: null });
+    const secs = (Date.now() - timer.start) / 1000;
+    setTimer({ start: null, last: secs });
+    logActivity?.({ signs: 1 });
+    if (!best[pack.id] || secs < best[pack.id]) {
+      setBest({ ...best, [pack.id]: secs });
+    }
+    return undefined;
+  };
+
+  const addToSrs = (item) => setSrs((prev) => (prev[item.id]?.stage ? prev : { ...prev, [item.id]: { stage: 1, next: Date.now() } }));
+  let flat = -1;
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={BookOpen} title="Street Reader" sub="Real signs and short exchanges in the loopless type you meet on the street. Green words you know; tap the rest." color="#FFB86B" />
+      <div className="flex flex-wrap gap-2">
+        {packs.map((p) => (
+          <Chip key={p.id} active={p.id === pack.id} color="#FFB86B" onClick={() => setPid(p.id)}>
+            {p.title} <span className="text-xs opacity-70">{p.place}</span>
+          </Chip>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${knownPct}%` }} /></div>
+            <span className="text-sm text-slate-300">You can read <b className="text-white">{knownPct}%</b> of this</span>
+          </div>
+          <div className="rounded-3xl p-5 shadow-2xl sm:p-7" style={{ background: style.card, border: `1px solid ${style.border}`, fontFamily: font }}>
+            <div className="mb-3 text-xs uppercase tracking-[0.2em]" style={{ color: style.accent, fontFamily: UI_FONT }}>{pack.place}</div>
+            <div className="space-y-2">
+              {pack.lines.map((line, li) => (
+                <div key={li} className="flex flex-wrap items-baseline gap-x-1 gap-y-1 border-b border-dashed pb-2 last:border-0" style={{ borderColor: style.border }}>
+                  {pack.speakers && <span className="mr-2 w-16 shrink-0 text-xs font-bold uppercase tracking-wider" style={{ color: style.accent, fontFamily: UI_FONT }}>{pack.speakers[li]}</span>}
+                  {line.map((raw, ri) => {
+                    flat += 1;
+                    const i = flat;
+                    const t = tokens[i];
+                    const isKnown = known(t);
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => { setSel(i); audio.speakHumanVoice(t.tts || t.t, pack.script === "lo" ? t.t : undefined); }}
+                        className={`rounded-md px-0.5 text-3xl leading-[1.6] transition sm:text-4xl ${t.price ? "text-2xl sm:text-3xl" : ""} ${t.price && ri === line.findIndex((x) => x.price) ? "ml-auto" : ""}`}
+                        style={{
+                          color: t.price ? style.accent : style.ink,
+                          borderBottom: t.price ? "none" : `3px solid ${isKnown ? "#34D399" : "#22D3EE"}`,
+                          background: sel === i ? `${style.accent}33` : "transparent",
+                        }}
+                      >
+                        {raw.t}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <button onClick={toggleTimer} className={`rounded-xl px-4 py-2 font-bold ${timer.start ? "bg-rose-500 text-white" : "bg-amber-500 text-black"}`}>
+              {timer.start ? `Done · ${((Date.now() - timer.start) / 1000).toFixed(1)} s` : "Time my reading"}
+            </button>
+            {timer.last != null && <span className="text-slate-200">{timer.last.toFixed(1)} s</span>}
+            {best[pack.id] && <span className="text-slate-400">Best {best[pack.id].toFixed(1)} s</span>}
+            <span className="text-xs text-slate-400">Read it all aloud, then stop the timer.</span>
+          </div>
+        </div>
+        <Card className="p-4">
+          {selTok ? (
+            <div className="space-y-2">
+              <div className="text-5xl leading-[1.5] text-white" style={{ fontFamily: font }}>{selTok.t}</div>
+              <div className="text-slate-200">{selTok.r} · {selTok.m}</div>
+              {selTok.tone && <div className="flex flex-wrap gap-1">{selTok.tone.map((tn, i) => <ToneBadge key={i} tone={tn} small />)}</div>}
+              {selTok.item?.parts && <div className="text-xs text-slate-300">{computeTone(selTok.item.parts).formula}</div>}
+              <div className="text-xs text-slate-400">Head-loop form: <span className="text-2xl text-slate-200" style={{ fontFamily: FONT_STACKS.loop[pack.script] }}>{selTok.t}</span></div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button onClick={() => audio.speakHumanVoice(selTok.tts || selTok.t, pack.script === "lo" ? selTok.t : undefined)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200"><Volume2 size={13} className="mr-1 inline" />Speak</button>
+                {selTok.item && (known(selTok) ? (
+                  <span className="rounded-xl bg-emerald-500/15 px-3 py-2 text-xs text-emerald-300"><Check size={13} className="mr-1 inline" />In your SRS</span>
+                ) : (
+                  <button onClick={() => addToSrs(selTok.item)} className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-black">+ Add to SRS</button>
+                ))}
+              </div>
+              {!selTok.item && !selTok.price && <p className="text-xs text-slate-400">Not in the course yet; listen and read it here.</p>}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">Tap any word on the sign for its reading, meaning and tone. Words from the course can go straight into your SRS.</p>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Hub tabs: Lab (Reactor, Orbit, Bridge) and Read (Slicer, Street Reader)
+ * ========================================================================== */
+/* ============================================================================
+ * Shadow Mirror: say the syllable back and see your pitch over the target.
+ * Pitch is tracked on the device (YIN autocorrelation); no audio leaves it.
+ * ========================================================================== */
+const CHAO_ST = 2.5; // semitones per Chao step, so 1–5 spans a 10-semitone voice
+const SHADOW_PASS = 70;
+const SHADOW_UNLOCK = { acc: 0.8, trials: 10 };
+
+const emptyShadow = () => ({ base: null, tones: Object.fromEntries(TONE_ORDER.map((t) => [t, { best: 0, tries: 0 }])), lines: {} });
+
+/** YIN pitch estimate for one frame, in Hz, or null when unvoiced. */
+function detectPitch(buf, sr) {
+  let rms = 0;
+  for (let i = 0; i < buf.length; i += 1) rms += buf[i] * buf[i];
+  if (Math.sqrt(rms / buf.length) < 0.01) return null;
+  const minLag = Math.floor(sr / 450);
+  const maxLag = Math.min(Math.floor(sr / 70), Math.floor(buf.length / 2));
+  const w = buf.length - maxLag;
+  const d = new Float32Array(maxLag + 1);
+  for (let tau = 1; tau <= maxLag; tau += 1) {
+    let s = 0;
+    for (let i = 0; i < w; i += 1) {
+      const x = buf[i] - buf[i + tau];
+      s += x * x;
+    }
+    d[tau] = s;
+  }
+  let run = 0;
+  for (let tau = 1; tau <= maxLag; tau += 1) {
+    run += d[tau];
+    d[tau] = run ? (d[tau] * tau) / run : 1;
+  }
+  let tau = -1;
+  for (let t = minLag; t < maxLag; t += 1) {
+    if (d[t] < 0.15) {
+      while (t + 1 < maxLag && d[t + 1] < d[t]) t += 1;
+      tau = t;
+      break;
+    }
+  }
+  if (tau < 0) return null;
+  const a = d[tau - 1];
+  const b = d[tau];
+  const c = d[tau + 1] ?? b;
+  const shift = (a - 2 * b + c) ? (a - c) / (2 * (a - 2 * b + c)) : 0;
+  return sr / (tau + shift);
+}
+
+const median = (xs) => {
+  const s = [...xs].sort((a, b) => a - b);
+  return s.length ? s[Math.floor(s.length / 2)] : null;
+};
+const toSt = (hz, base) => 12 * Math.log2(hz / base);
+
+/** The longest voiced stretch (gaps of up to 3 frames allowed), octave-fixed and smoothed. */
+function voicedSegment(frames) {
+  let best = [];
+  let cur = [];
+  let gap = 0;
+  frames.forEach((f) => {
+    if (f.hz) {
+      cur.push(f);
+      gap = 0;
+    } else if (cur.length && (gap += 1) > 3) {
+      if (cur.length > best.length) best = cur;
+      cur = [];
+      gap = 0;
+    }
+  });
+  if (cur.length > best.length) best = cur;
+  if (best.length < 6) return null;
+  // Octave errors show up as sudden jumps of about 12 semitones between frames.
+  const mid = median(best.map((f) => f.hz));
+  const fixed = [];
+  best.forEach((f, i) => {
+    let st = toSt(f.hz, mid);
+    if (i) {
+      while (st - fixed[i - 1] > 7) st -= 12;
+      while (fixed[i - 1] - st > 7) st += 12;
+    }
+    fixed.push(st);
+  });
+  const smooth = fixed.map((_, i) => median(fixed.slice(Math.max(0, i - 2), i + 3)));
+  return { st: smooth, hz: smooth.map((s) => mid * 2 ** (s / 12)) };
+}
+
+function resample(xs, n) {
+  return Array.from({ length: n }, (_, i) => {
+    const p = (i / (n - 1)) * (xs.length - 1);
+    const lo = Math.floor(p);
+    const hi = Math.min(xs.length - 1, lo + 1);
+    return xs[lo] + (xs[hi] - xs[lo]) * (p - lo);
+  });
+}
+
+/** Target contour in semitones relative to the mid level (Chao 3). */
+const targetSt = (tone, n = 24) => resample(TONES[tone].chao.split("").map((d) => (Number(d) - 3) * CHAO_ST), n);
+
+function scoreShadow(tone, seg, base) {
+  const n = 24;
+  const T = targetSt(tone, n);
+  const L = resample(base ? seg.hz.map((h) => toSt(h, base)) : seg.st, n);
+  const mean = (xs) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const mT = mean(T);
+  const mL = mean(L);
+  const rmse = Math.sqrt(mean(L.map((x, i) => ((x - mL) - (T[i] - mT)) ** 2)));
+  const shape = Math.max(0, Math.min(100, 100 - rmse * 25));
+  const offset = mL - mT;
+  const height = base ? Math.max(0, Math.min(100, 100 - Math.max(0, Math.abs(offset) - 1) * 25)) : null;
+  const score = Math.round(height == null ? shape : 0.6 * shape + 0.4 * height);
+  const third = Math.floor(n / 3);
+  const slope = (xs) => mean(xs.slice(-third)) - mean(xs.slice(0, third));
+  const sT = slope(T);
+  const sL = slope(L);
+  // A dip means the middle sits below both ends, as in Rising 214.
+  const dips = (xs) => Math.min(...xs.slice(third, 2 * third)) < Math.min(mean(xs.slice(0, 3)), mean(xs.slice(-3))) - 1;
+  const dipT = dips(T);
+  const dipL = dips(L);
+  const name = TONES[tone].name;
+  let tip;
+  if (dipT && !dipL) tip = `${name} dips before it climbs: let your voice sag first, then lift.`;
+  else if (sT <= -2 && sL > -1) tip = `${name} needs a clear drop: start high and let it fall.`;
+  else if (sT >= 2 && sL < 1) tip = `${name} has to end higher than it starts: push the pitch up at the end.`;
+  else if (Math.abs(sT) < 1.5 && Math.abs(sL) > 2.5) tip = `Keep ${name} level: your pitch ${sL > 0 ? "rose" : "fell"} about ${Math.abs(sL).toFixed(0)} semitones.`;
+  else if (height != null && offset > 2) tip = `${shape >= 70 ? "Right shape, but pitched" : "Pitched"} high for ${name}. Relax down toward your normal voice.`;
+  else if (height != null && offset < -2) tip = `${shape >= 70 ? "Right shape, but too" : "Too"} low for ${name}. Lift it a little.`;
+  else if (score >= SHADOW_PASS) tip = `That matches the ${name} contour.`;
+  else tip = `Close. Listen once more and copy where the pitch starts and ends.`;
+  return { score, shape: Math.round(shape), height: height == null ? null : Math.round(height), trace: L, tip };
+}
+
+function micErrorText(e) {
+  const n = e?.name || e?.message;
+  if (n === "unsupported") return "This browser has no microphone access.";
+  if (n === "NotFoundError" || n === "OverconstrainedError") return "No microphone was found on this device.";
+  return "The microphone is blocked here. Embedded previews never allow it: open SuvarnaKani.html directly in Safari or Chrome and allow the microphone when asked.";
+}
+
+/** Records up to `ms` and calls onFrame with each pitch frame; resolves with all frames. */
+function useMicPitch() {
+  const stopRef = useRef(null);
+  const capture = useCallback(async (ms, onFrame) => {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error("unsupported");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AC();
+    if (ctx.state === "suspended") await ctx.resume();
+    const an = ctx.createAnalyser();
+    an.fftSize = 2048;
+    ctx.createMediaStreamSource(stream).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    const frames = [];
+    const t0 = performance.now();
+    return new Promise((resolve) => {
+      let raf = 0;
+      let lastT = -1;
+      const finish = () => {
+        cancelAnimationFrame(raf);
+        stream.getTracks().forEach((t) => t.stop());
+        ctx.close();
+        stopRef.current = null;
+        resolve(frames);
+      };
+      stopRef.current = finish;
+      const step = () => {
+        const t = performance.now() - t0;
+        if (t >= ms) return finish();
+        if (t - lastT >= 30) {
+          lastT = t;
+          an.getFloatTimeDomainData(buf);
+          const f = { t, hz: detectPitch(buf, ctx.sampleRate) };
+          frames.push(f);
+          onFrame?.(frames);
+        }
+        raf = requestAnimationFrame(step);
+        return undefined;
+      };
+      raf = requestAnimationFrame(step);
+    });
+  }, []);
+  const stop = useCallback(() => stopRef.current?.(), []);
+  useEffect(() => () => stopRef.current?.(), []);
+  return { capture, stop };
+}
+
+function ShadowPlot({ tone, trace, live, height = 200 }) {
+  const width = 360;
+  const pad = { l: 30, r: 12, t: 12, b: 12 };
+  const range = 8; // ± semitones shown
+  const y = (st) => pad.t + ((range - Math.max(-range, Math.min(range, st))) / (2 * range)) * (height - pad.t - pad.b);
+  const x = (i, n) => pad.l + (n > 1 ? i / (n - 1) : 0) * (width - pad.l - pad.r);
+  const path = (xs) => xs.map((v, i) => `${i ? "L" : "M"} ${x(i, xs.length).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const T = targetSt(tone, 40);
+  const t = TONES[tone];
+  const liveXs = (live || []).filter((v) => v != null);
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto max-h-[260px] w-full" role="img" aria-label={`${t.name} target contour with your pitch`}>
+      {[1, 2, 3, 4, 5].map((l) => (
+        <g key={l}>
+          <line x1={pad.l} x2={width - pad.r} y1={y((l - 3) * CHAO_ST)} y2={y((l - 3) * CHAO_ST)} stroke="#ffffff14" strokeDasharray="3 5" />
+          <text x={10} y={y((l - 3) * CHAO_ST) + 4} fill="#94A3B8" fontSize="11">{l}</text>
+        </g>
+      ))}
+      <defs>
+        <linearGradient id={`shadow-grad-${tone}`} gradientUnits="userSpaceOnUse" x1={pad.l} x2={width - pad.r} y1="0" y2="0">
+          <stop offset="0" stopColor={t.grad[0]} />
+          <stop offset="1" stopColor={t.grad[1]} />
+        </linearGradient>
+      </defs>
+      <path d={path(T)} fill="none" stroke={`url(#shadow-grad-${tone})`} strokeOpacity="0.35" strokeWidth="22" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={path(T)} fill="none" stroke={`url(#shadow-grad-${tone})`} strokeWidth="3" strokeDasharray="6 6" strokeLinecap="round" />
+      {trace && <path d={path(trace)} fill="none" stroke="#fff" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" style={{ filter: "drop-shadow(0 0 4px #ffffffaa)" }} />}
+      {!trace && liveXs.length > 1 && <path d={path(liveXs)} fill="none" stroke="#fff" strokeOpacity="0.8" strokeWidth="3" strokeLinecap="round" />}
+    </svg>
+  );
+}
+
+
+/* ============================================================================
+ * Dialogue shadowing: say whole lines and see every syllable's contour.
+ * ========================================================================== */
+const SHADOW_DIALOGUES = [
+  { id: "counter", title: "At the counter", lines: [
+    { who: "Barista", th: "สวัสดีค่ะ รับอะไรคะ", r: "sà-wàt-dii khâ, ráp à-rai khá", m: "Hello, what would you like?", syl: ["sà", "wàt", "dii", "khâ", "ráp", "à", "rai", "khá"], tones: ["low", "low", "mid", "falling", "high", "low", "mid", "high"] },
+    { who: "You", th: "กาแฟเย็นครับ", r: "kaa-fɛɛ yen khráp", m: "An iced coffee, please.", syl: ["kaa", "fɛɛ", "yen", "khráp"], tones: ["mid", "mid", "mid", "high"] },
+    { who: "Barista", th: "อะไรอีกไหมคะ", r: "à-rai ìik mǎi khá", m: "Anything else?", syl: ["à", "rai", "ìik", "mǎi", "khá"], tones: ["low", "mid", "low", "rising", "high"] },
+    { who: "You", th: "ไม่ครับ เท่าไรครับ", r: "mâi khráp, thâo-rai khráp", m: "No thanks. How much?", syl: ["mâi", "khráp", "thâo", "rai", "khráp"], tones: ["falling", "high", "falling", "mid", "high"] },
+    { who: "Barista", th: "ห้าสิบห้าบาทค่ะ", r: "hâa-sìp-hâa bàat khâ", m: "Fifty-five baht.", syl: ["hâa", "sìp", "hâa", "bàat", "khâ"], tones: ["falling", "low", "falling", "low", "falling"] },
+    { who: "You", th: "ขอบคุณครับ", r: "khɔ̀ɔp-khun khráp", m: "Thank you.", syl: ["khɔ̀ɔp", "khun", "khráp"], tones: ["low", "mid", "high"] },
+  ] },
+  { id: "way", title: "Asking the way", lines: [
+    { who: "You", th: "ขอโทษครับ", r: "khɔ̌ɔ-thôot khráp", m: "Excuse me.", syl: ["khɔ̌ɔ", "thôot", "khráp"], tones: ["rising", "falling", "high"] },
+    { who: "You", th: "ห้องน้ำอยู่ที่ไหน", r: "hɔ̂ng-náam yùu thîi-nǎi", m: "Where is the bathroom?", syl: ["hɔ̂ng", "náam", "yùu", "thîi", "nǎi"], tones: ["falling", "high", "low", "falling", "rising"] },
+    { who: "Local", th: "ตรงไปค่ะ", r: "trong pai khâ", m: "Go straight.", syl: ["trong", "pai", "khâ"], tones: ["mid", "mid", "falling"] },
+    { who: "You", th: "พูดช้าๆ หน่อยครับ", r: "phûut cháa-cháa nɔ̀i khráp", m: "Please speak slowly.", syl: ["phûut", "cháa", "cháa", "nɔ̀i", "khráp"], tones: ["falling", "high", "high", "low", "high"] },
+    { who: "Local", th: "ตรงไป แล้วเลี้ยวซ้าย", r: "trong pai, lɛ́ɛo líao sáai", m: "Straight on, then turn left.", syl: ["trong", "pai", "lɛ́ɛo", "líao", "sáai"], tones: ["mid", "mid", "high", "high", "high"] },
+    { who: "You", th: "ขอบคุณมากครับ", r: "khɔ̀ɔp-khun mâak khráp", m: "Thank you very much.", syl: ["khɔ̀ɔp", "khun", "mâak", "khráp"], tones: ["low", "mid", "falling", "high"] },
+  ] },
+];
+const PHRASE_PTS = 12; // contour points per syllable
+
+/** Every voiced frame from the first to the last, octave-fixed and smoothed, in semitones. */
+function voicedRun(frames) {
+  const v = frames.filter((f) => f.hz);
+  if (v.length < 8) return null;
+  const mid = median(v.map((f) => f.hz));
+  const st = [];
+  v.forEach((f, i) => {
+    let x = toSt(f.hz, mid);
+    if (i) {
+      while (x - st[i - 1] > 7) x -= 12;
+      while (st[i - 1] - x > 7) x += 12;
+    }
+    st.push(x);
+  });
+  const smooth = st.map((_, i) => median(st.slice(Math.max(0, i - 2), i + 3)));
+  return { st: smooth, hz: smooth.map((x) => mid * 2 ** (x / 12)) };
+}
+
+/**
+ * Score a spoken line against the chained Chao contours of its syllables. Dynamic time
+ * warping lines the two up, since nobody gives every syllable the same length; each
+ * syllable is then scored by how far your warped pitch sits from its own contour.
+ */
+function scorePhrase(line, run, base) {
+  const T = line.tones.flatMap((t) => targetSt(t, PHRASE_PTS));
+  const n = T.length;
+  const raw = base ? run.hz.map((h) => toSt(h, base)) : run.st;
+  const L = resample(raw, Math.max(n, Math.min(raw.length, n * 2)));
+  const mean = (xs) => xs.reduce((a, x) => a + x, 0) / xs.length;
+  const mT = mean(T);
+  const mL = mean(L);
+  const t0 = T.map((x) => x - mT);
+  const l0 = L.map((x) => x - mL);
+  const m = l0.length;
+  const band = Math.max(PHRASE_PTS * 2, Math.abs(m - n) + PHRASE_PTS);
+  const D = Array.from({ length: n + 1 }, () => new Float64Array(m + 1).fill(Infinity));
+  D[0][0] = 0;
+  for (let i = 1; i <= n; i += 1) {
+    const centre = Math.round((i * m) / n);
+    for (let j = Math.max(1, centre - band); j <= Math.min(m, centre + band); j += 1) {
+      D[i][j] = Math.abs(t0[i - 1] - l0[j - 1]) + Math.min(D[i - 1][j - 1], D[i - 1][j], D[i][j - 1]);
+    }
+  }
+  // Walk back to find which of your frames match each target point.
+  const matched = Array.from({ length: n }, () => []);
+  let i = n;
+  let j = m;
+  while (i > 0 && j > 0) {
+    matched[i - 1].push(l0[j - 1]);
+    const opts = [[D[i - 1][j - 1], i - 1, j - 1], [D[i - 1][j], i - 1, j], [D[i][j - 1], i, j - 1]];
+    opts.sort((a, b) => a[0] - b[0]);
+    [, i, j] = opts[0];
+  }
+  const warped = matched.map((xs, k) => (xs.length ? mean(xs) : t0[k]));
+  const perSyl = line.tones.map((tone, k) => {
+    const seg = warped.slice(k * PHRASE_PTS, (k + 1) * PHRASE_PTS);
+    const tgt = t0.slice(k * PHRASE_PTS, (k + 1) * PHRASE_PTS);
+    const err = mean(seg.map((x, q) => Math.abs(x - tgt[q])));
+    const slope = (xs) => mean(xs.slice(-4)) - mean(xs.slice(0, 4));
+    return { tone, score: Math.round(Math.max(0, Math.min(100, 100 - (err - 0.5) * 22))), dir: slope(seg) - slope(tgt), off: mean(seg) - mean(tgt) };
+  });
+  const score = Math.round(mean(perSyl.map((p) => p.score)));
+  const worst = perSyl.reduce((w, p, k) => (p.score < perSyl[w].score ? k : w), 0);
+  const w = perSyl[worst];
+  const name = TONES[w.tone].name;
+  let tip;
+  if (score >= SHADOW_PASS) tip = "Every syllable follows its contour. Try it at full speed.";
+  else if (Math.abs(w.dir) > 2) tip = `"${line.syl[worst]}" is ${name}: ${w.dir > 0 ? "yours rose where it should" : "yours fell where it should"} ${w.dir > 0 ? (TONES[w.tone].chao.endsWith("1") ? "fall" : "stay level") : "rise or stay level"}.`;
+  else if (Math.abs(w.off) > 1.5) tip = `"${line.syl[worst]}" is ${name}: pitch it ${w.off > 0 ? "lower" : "higher"} than you did.`;
+  else tip = `Closest to fix: "${line.syl[worst]}" (${name}). Listen to the line again and copy that syllable.`;
+  return { score, perSyl, warped, target: t0, tip };
+}
+
+function PhrasePlot({ line, result, live, height = 190 }) {
+  const width = 360;
+  const pad = { l: 8, r: 8, t: 22, b: 10 };
+  const range = 8;
+  const y = (st) => pad.t + ((range - Math.max(-range, Math.min(range, st))) / (2 * range)) * (height - pad.t - pad.b);
+  const k = line.tones.length;
+  const segW = (width - pad.l - pad.r) / k;
+  const T = line.tones.map((t) => targetSt(t, PHRASE_PTS));
+  const meanT = T.flat().reduce((a, x) => a + x, 0) / (k * PHRASE_PTS);
+  const segPath = (xs, s) => xs.map((v, i) => `${i ? "L" : "M"} ${(pad.l + s * segW + 6 + (i / (xs.length - 1)) * (segW - 12)).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+  const liveXs = (live || []).filter((v) => v != null);
+  const livePath = liveXs.length > 1 ? liveXs.map((v, i) => `${i ? "L" : "M"} ${(pad.l + (i / (liveXs.length - 1)) * (width - pad.l - pad.r)).toFixed(1)} ${y(v).toFixed(1)}`).join(" ") : null;
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="mx-auto mt-3 w-full" role="img" aria-label="Target contour for each syllable, with your pitch">
+      {line.tones.map((tone, s) => {
+        const ps = result?.perSyl[s];
+        return (
+          <g key={s}>
+            {s > 0 && <line x1={pad.l + s * segW} x2={pad.l + s * segW} y1={pad.t - 4} y2={height - pad.b} stroke="#ffffff1a" />}
+            <text x={pad.l + s * segW + segW / 2} y={13} textAnchor="middle" fontSize="11" fill={ps ? (ps.score >= SHADOW_PASS ? "#6EE7B7" : "#FDA4AF") : "#CBD5E1"}>{line.syl[s]}</text>
+            <path d={segPath(T[s].map((v) => v - meanT), s)} fill="none" stroke={TONES[tone].color} strokeOpacity="0.35" strokeWidth="16" strokeLinecap="round" />
+            {result && <path data-phrase-trace d={segPath(result.warped.slice(s * PHRASE_PTS, (s + 1) * PHRASE_PTS), s)} fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />}
+          </g>
+        );
+      })}
+      {!result && livePath && <path d={livePath} fill="none" stroke="#fff" strokeOpacity="0.7" strokeWidth="2.5" />}
+    </svg>
+  );
+}
+
+function DialogueShadow({ shadow, setShadow, logActivity }) {
+  const audio = getAudio();
+  const mic = useMicPitch();
+  const [did, setDid] = useState(SHADOW_DIALOGUES[0].id);
+  const dlg = SHADOW_DIALOGUES.find((d) => d.id === did);
+  const [li, setLi] = useState(0);
+  const line = dlg.lines[li];
+  const key = `${dlg.id}:${li}`;
+  const [phase, setPhase] = useState("idle");
+  const [live, setLive] = useState([]);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setResult(null); setLive([]); setErr(null); }, [did, li]);
+
+  const record = async () => {
+    audio.cancelSpeech();
+    audio.stopTones();
+    setErr(null);
+    setResult(null);
+    setLive([]);
+    setPhase("recording");
+    try {
+      const frames = await mic.capture(1200 + line.tones.length * 450, (fr) => {
+        const v = fr.filter((f) => f.hz).map((f) => f.hz);
+        const ref = shadow.base || median(v);
+        setLive(v.map((h) => toSt(h, ref)));
+      });
+      const run = voicedRun(frames);
+      if (!run) setErr("I couldn't hear the line. Say it a little louder, close to the microphone.");
+      else {
+        const r = scorePhrase(line, run, shadow.base);
+        setResult(r);
+        setShadow((s) => ({ ...s, lines: { ...(s.lines || {}), [key]: Math.max(s.lines?.[key] || 0, r.score) } }));
+        logActivity?.({ shadow: 1 });
+        haptic(r.score >= SHADOW_PASS ? "ok" : "bad");
+      }
+    } catch (e) {
+      setErr(micErrorText(e));
+    }
+    setPhase("idle");
+  };
+
+  const playUpTo = () => audio.speakSequence(dlg.lines.slice(0, li + 1).map((l) => ({ th: l.th })), 500);
+  const busy = phase !== "idle";
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+      <Card className="p-5" glow={TONES.high.color}>
+        <div className="flex flex-wrap gap-2">
+          {SHADOW_DIALOGUES.map((d) => <Chip key={d.id} active={d.id === did} color={TONES.high.color} onClick={() => { setDid(d.id); setLi(0); }}>{d.title}</Chip>)}
+        </div>
+        <ol className="mt-3 space-y-1.5">
+          {dlg.lines.map((l, i) => {
+            const best = shadow.lines?.[`${dlg.id}:${i}`];
+            return (
+              <li key={i}>
+                <button data-dialogue-line={i} onClick={() => setLi(i)} className={`flex w-full items-baseline gap-2 rounded-xl px-3 py-1.5 text-left transition ${i === li ? "bg-white/10" : "hover:bg-white/5"} ${l.who === "You" ? "" : "pl-6"}`}>
+                  <span className={`w-14 shrink-0 text-[11px] font-bold uppercase ${l.who === "You" ? "text-amber-300" : "text-slate-400"}`}>{l.who}</span>
+                  <span className="flex-1 text-lg text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{l.th}</span>
+                  {best != null && <span className={`text-xs tabular-nums ${best >= SHADOW_PASS ? "text-emerald-300" : "text-slate-400"}`}>{best}</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="mt-4 rounded-2xl bg-white/[0.04] p-3">
+          <div className="text-2xl leading-[1.6] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{line.th}</div>
+          <div className="text-sm text-slate-200">{line.r}</div>
+          <div className="text-xs text-slate-400">{line.m}</div>
+          <PhrasePlot line={line} result={result} live={phase === "recording" ? live : null} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button onClick={() => audio.speakHumanVoice(line.th)} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50"><Volume2 size={16} /> Hear line</button>
+          <button onClick={playUpTo} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-sm text-slate-200 disabled:opacity-50"><Play size={14} /> From the top</button>
+          {phase === "recording" ? (
+            <button onClick={mic.stop} className="flex items-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white"><Mic size={16} className="animate-pulse" /> Listening… tap to stop</button>
+          ) : (
+            <button data-dialogue-say onClick={record} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50"><Mic size={16} /> Say the line</button>
+          )}
+        </div>
+        {result && (
+          <div className="mt-4 rounded-2xl bg-white/[0.04] p-3 text-sm">
+            <div className="flex items-baseline gap-3">
+              <span data-dialogue-score className={`text-3xl font-black tabular-nums ${result.score >= SHADOW_PASS ? "text-emerald-300" : "text-amber-300"}`}>{result.score}</span>
+              <span className="flex flex-wrap gap-1">{result.perSyl.map((p, k) => <span key={k} className={`rounded-md px-1.5 text-xs ${p.score >= SHADOW_PASS ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>{line.syl[k]} {p.score}</span>)}</span>
+            </div>
+            <p className="mt-1 text-slate-200">{result.tip}</p>
+            {li < dlg.lines.length - 1 && <button onClick={() => setLi(li + 1)} className="mt-2 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">Next line <ChevronRight size={12} className="inline" /></button>}
+          </div>
+        )}
+        {err && <p className="mt-3 flex gap-2 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{err}</p>}
+      </Card>
+      <Card className="p-4 text-xs leading-relaxed text-slate-400">
+        Each box is one syllable's contour, coloured by tone. After you speak, your pitch is stretched to line up with the syllables (people never give every syllable the same length) and each one is scored on its own. Real speech flattens tones a little and pitch drifts down over a sentence, so aim for the direction of each syllable rather than a perfect copy. {shadow.base ? `Height is scored against your voice at ${shadow.base} Hz.` : "Set your voice under Syllables to score height too."}
+      </Card>
+    </div>
+  );
+}
+
+function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
+  const audio = getAudio();
+  const mic = useMicPitch();
+  const unlocked = (tone) => {
+    if (sandbox) return true;
+    const [, n] = ear.tones[tone] || [0, 0];
+    return n >= SHADOW_UNLOCK.trials && earAccuracy(ear, tone) >= SHADOW_UNLOCK.acc;
+  };
+  const [tone, setTone] = useState(() => TONE_ORDER.find(unlocked) || "mid");
+  const words = useMemo(() => EAR_SETS.flatMap((s) => s.words).filter((w) => w.tone === tone), [tone]);
+  const [wi, setWi] = useState(0);
+  const word = words[wi % words.length];
+  const [phase, setPhase] = useState("idle"); // idle | calibrating | recording
+  const [live, setLive] = useState([]);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setResult(null); setLive([]); setWi(0); }, [tone]);
+  const [view, setView] = useState("syllables");
+
+  const liveSt = (frames) => {
+    const voiced = frames.filter((f) => f.hz).map((f) => f.hz);
+    const ref = shadow.base || median(voiced);
+    return voiced.map((h) => toSt(h, ref));
+  };
+
+  const record = async (calibrate) => {
+    audio.cancelSpeech();
+    audio.stopTones();
+    setErr(null);
+    setResult(null);
+    setLive([]);
+    setPhase(calibrate ? "calibrating" : "recording");
+    try {
+      const frames = await mic.capture(calibrate ? 2000 : 2200, (fr) => setLive(liveSt(fr)));
+      const seg = voicedSegment(frames);
+      if (!seg) {
+        setErr("I couldn't hear a voice. Hold the syllable a little longer, closer to the microphone.");
+      } else if (calibrate) {
+        const base = Math.round(median(seg.hz));
+        setShadow((s) => ({ ...s, base }));
+      } else {
+        const r = scoreShadow(tone, seg, shadow.base);
+        setResult(r);
+        setShadow((s) => {
+          const cur = s.tones[tone] || { best: 0, tries: 0 };
+          return { ...s, tones: { ...s.tones, [tone]: { best: Math.max(cur.best, r.score), tries: cur.tries + 1 } } };
+        });
+        logActivity?.({ shadow: 1 });
+      }
+    } catch (e) {
+      setErr(micErrorText(e));
+    }
+    setPhase("idle");
+  };
+
+  const busy = phase !== "idle";
+  const t = TONES[tone];
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Mic} title="Shadow Mirror" sub="Hear the model, say it back, and see your pitch drawn over the target contour. Analysis runs on this device; no audio is sent anywhere." color={TONES.falling.color} />
+      <div className="flex gap-2">
+        <Chip active={view === "syllables"} color={TONES.falling.color} onClick={() => setView("syllables")}>Syllables</Chip>
+        <Chip active={view === "dialogue"} color={TONES.falling.color} onClick={() => setView("dialogue")}><span data-shadow-dialogue>Dialogue</span></Chip>
+      </div>
+      {view === "dialogue" ? <DialogueShadow shadow={shadow} setShadow={setShadow} logActivity={logActivity} /> : (<>
+      <div className="grid grid-cols-5 gap-2">
+        {TONE_ORDER.map((tn) => {
+          const open = unlocked(tn);
+          const acc = earAccuracy(ear, tn);
+          const best = shadow.tones[tn]?.best || 0;
+          return (
+            <button
+              key={tn}
+              onClick={() => open && setTone(tn)}
+              disabled={!open}
+              className={`rounded-2xl border p-2 text-center transition ${tone === tn ? "border-white/40 bg-white/10" : "border-white/10 bg-white/[0.03]"} ${open ? "" : "opacity-60"}`}
+              title={open ? "" : `Reach ${SHADOW_UNLOCK.acc * 100}% on ${TONES[tn].name} in the Ear Dojo`}
+            >
+              <ToneMini tone={tn} height={26} />
+              <div className="mt-1 text-xs font-semibold" style={{ color: TONES[tn].ink }}>{TONES[tn].name}</div>
+              <div className="text-[11px] text-slate-400">
+                {open ? (best ? `best ${best}` : "ready") : <span><Lock size={10} className="mr-0.5 inline" />ear {acc == null ? "–" : `${Math.round(acc * 100)}%`}</span>}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {!unlocked(tone) ? (
+        <Card className="p-5 text-sm text-slate-300">
+          <p>Shadowing opens for a tone once you can hear it: reach {SHADOW_UNLOCK.acc * 100}% on it over at least {SHADOW_UNLOCK.trials} trials in the Ear Dojo. Ears first, then mouth.</p>
+        </Card>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+          <Card className="p-5" glow={t.color}>
+            <div className="flex flex-wrap items-center gap-2">
+              {words.map((w, i) => (
+                <Chip key={w.th} active={i === wi % words.length} color={t.color} onClick={() => { setWi(i); setResult(null); setLive([]); }}>
+                  <span style={{ fontFamily: FONT_STACKS.loop.th }}>{w.th}</span>
+                </Chip>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap items-baseline gap-3">
+              <span className="text-5xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{word.th}</span>
+              <span className="text-slate-200">{word.r} · {word.m}</span>
+              <ToneBadge tone={tone} small />
+            </div>
+            <ShadowPlot tone={tone} trace={result?.trace} live={phase === "recording" ? live : null} />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button onClick={() => audio.speakHumanVoice(word.th)} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50">
+                <Volume2 size={16} /> Hear model
+              </button>
+              {phase === "recording" ? (
+                <button onClick={mic.stop} className="flex items-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white">
+                  <Mic size={16} className="animate-pulse" /> Listening… tap to stop
+                </button>
+              ) : (
+                <button onClick={() => record(false)} disabled={busy} className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-50">
+                  <Mic size={16} /> Say it
+                </button>
+              )}
+            </div>
+            {result && (
+              <div className="mt-4 rounded-2xl bg-white/[0.04] p-3 text-sm">
+                <div className="flex items-baseline gap-3">
+                  <span className={`text-3xl font-black tabular-nums ${result.score >= SHADOW_PASS ? "text-emerald-300" : "text-amber-300"}`}>{result.score}</span>
+                  <span className="text-slate-400">shape {result.shape}{result.height != null ? ` · height ${result.height}` : " · height not scored until you set your voice"}</span>
+                </div>
+                <p className="mt-1 text-slate-200">{result.tip}</p>
+              </div>
+            )}
+            {err && <p className="mt-3 flex gap-2 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{err}</p>}
+          </Card>
+          <div className="space-y-3">
+            <Card className="p-4 text-sm">
+              <div className="mb-1 font-semibold text-white">Your voice</div>
+              {shadow.base ? (
+                <p className="text-slate-300">Your mid level is set to <b className="text-white">{shadow.base} Hz</b>. Height is scored against it.</p>
+              ) : (
+                <p className="text-slate-300">Say a long, relaxed <span className="text-lg" style={{ fontFamily: FONT_STACKS.loop.th }}>อา</span> at your normal speaking pitch. That becomes your Mid level, so High and Low can be scored by height as well as shape.</p>
+              )}
+              <button onClick={() => record(true)} disabled={busy} className="mt-2 flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-xs font-semibold text-slate-100 disabled:opacity-50">
+                <Mic size={14} className={phase === "calibrating" ? "animate-pulse text-rose-300" : ""} /> {phase === "calibrating" ? "Listening…" : shadow.base ? "Set again" : "Set my voice"}
+              </button>
+            </Card>
+            <Card className="p-4 text-xs leading-relaxed text-slate-400">
+              The coloured band is the {t.name} contour ({t.chao} on the 1–5 Chao scale), mapped to about {CHAO_ST} semitones per step. Your pitch is the white line. Shape counts most; a score of {SHADOW_PASS} or more is a pass. Tones open here once you hear them reliably in the Ear Dojo.
+            </Card>
+          </div>
+        </div>
+      )}
+      </>)}
+    </div>
+  );
+}
+
+function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
+      {tabs.map((t) => (
+        <button key={t.id} onClick={() => onChange(t.id)} className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${active === t.id ? "bg-white/10 text-amber-300" : "text-slate-400 hover:text-white"}`}>
+          <t.icon size={15} /> {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ============================================================================
  * Audio Studio drawer
  * ========================================================================== */
 function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
@@ -2201,7 +4737,7 @@ function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
           <button onClick={() => audio.playRanatToneChime(["mid", "low", "falling", "high", "rising"])} className="rounded-xl bg-amber-500/15 py-2 text-sm text-amber-200"><Music size={14} className="mr-1 inline" />5 tone chimes</button>
         </div>
         <div className="mt-3 space-y-1 text-xs">
-          <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings."}</div>
+          <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : (IS_ANDROID ? `No Thai voice found. ${ANDROID_VOICE_HINT}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings.")}</div>
           <div className={lo ? "text-emerald-300" : "text-slate-400"}>{lo ? `Lao voice: ${lo.name}` : "No Lao voice: Lao items are read with Thai-script approximations."}</div>
           <p className="pt-1 text-slate-400">Voice and chimes never play at the same time; starting one stops the other.</p>
         </div>
@@ -2213,18 +4749,40 @@ function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
 /* ============================================================================
  * App shell
  * ========================================================================== */
+const LAB_TABS = [
+  { id: "reactor", label: "Tone Reactor", icon: FlaskConical },
+  { id: "orbit", label: "Vowel Orbit", icon: Orbit },
+  { id: "bridge", label: "Mekong Predictor", icon: Languages },
+];
+const EAR_TABS = [
+  { id: "dojo", label: "Ear Dojo", icon: Ear },
+  { id: "shadow", label: "Shadow Mirror", icon: Mic },
+];
+const READ_TABS = [
+  { id: "slicer", label: "Script Slicer", icon: Scissors },
+  { id: "street", label: "Street Reader", icon: BookOpen },
+];
+// Older saved tabs map onto the new hubs.
+const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"] };
+
 const TABS = [
   { id: "shrine", label: "Shrine", icon: Landmark },
   { id: "ear", label: "Ear", icon: Ear },
   { id: "tracer", label: "Tracer", icon: PenTool },
-  { id: "reactor", label: "Reactor", icon: FlaskConical },
-  { id: "orbit", label: "Orbit", icon: Orbit },
-  { id: "slicer", label: "Slicer", icon: Scissors },
+  { id: "lab", label: "Lab", icon: FlaskConical },
+  { id: "read", label: "Read", icon: BookOpen },
 ];
 
 export default function SuvarnaKani() {
   const initial = useMemo(() => loadState() || {}, []);
-  const [tab, setTab] = useState(initial.tab || "shrine");
+  const [tab, setTab] = useState(LEGACY_TAB[initial.tab]?.[0] || initial.tab || "shrine");
+  const [labTab, setLabTab] = useState(LEGACY_TAB[initial.tab]?.[1] === "reactor" || LEGACY_TAB[initial.tab]?.[1] === "orbit" ? LEGACY_TAB[initial.tab][1] : initial.labTab || "reactor");
+  const [readTab, setReadTab] = useState(initial.readTab || "slicer");
+  const [earTab, setEarTab] = useState(initial.earTab || "dojo");
+  const [shadow, setShadow] = useState(() => ({ ...emptyShadow(), ...(initial.shadow || {}) }));
+  const [bridge, setBridge] = useState(() => ({ ...emptyBridge(), ...(initial.bridge || {}) }));
+  const [bridgeSched, setBridgeSched] = useState(() => initial.bridgeSched || {});
+  const [streetBest, setStreetBest] = useState(() => initial.streetBest || {});
   const [mode, setMode] = useState(initial.mode || "dual");
   const [font, setFont] = useState(initial.font || "loop");
   const [sandbox, setSandbox] = useState(!!initial.sandbox);
@@ -2237,7 +4795,34 @@ export default function SuvarnaKani() {
     return fixed;
   });
   const [ear, setEar] = useState(() => ({ ...emptyEar(), ...(initial.ear || {}) }));
+  const [log, setLog] = useState(initial.log || {});
+  const [dailyMinutes, setDailyMinutes] = useState(initial.dailyMinutes || 12);
+  const [onboarded, setOnboarded] = useState(!!initial.onboarded || !!(initial.srs && Object.keys(initial.srs).length));
+  const logActivity = useCallback((delta) => {
+    setLog((prev) => {
+      const key = todayKey();
+      const day = { ...(prev[key] || {}) };
+      Object.entries(delta).forEach(([k, v]) => { day[k] = (day[k] || 0) + v; });
+      const next = { ...prev, [key]: day };
+      // Keep 60 days of history.
+      Object.keys(next).sort().slice(0, -60).forEach((k) => delete next[k]);
+      return next;
+    });
+  }, []);
+  const finishOnboarding = (a) => {
+    if (a.mode) setMode(a.mode);
+    if (a.level === "reads") setSandbox(true);
+    if (a.minutes) setDailyMinutes(a.minutes);
+    setOnboarded(true);
+  };
   const [studio, setStudio] = useState(false);
+  const goPractice = (kind) => {
+    if (kind === "trace") setTab("tracer");
+    if (kind === "mekong") { setTab("lab"); setLabTab("bridge"); }
+    if (kind === "sign") { setTab("read"); setReadTab("street"); }
+    if (kind === "shadow") { setTab("ear"); setEarTab("shadow"); }
+    window.scrollTo?.(0, 0);
+  };
   const [inspect, setInspect] = useState(null);
 
   useEffect(() => {
@@ -2263,16 +4848,30 @@ export default function SuvarnaKani() {
   }, []);
 
   useEffect(() => {
-    saveState({ tab, mode, font, sandbox, rate, muted, srs, ear });
-  }, [tab, mode, font, sandbox, rate, muted, srs, ear]);
+    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow });
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest]);
 
+  // Two taps instead of window.confirm, which embedded viewers block.
+  const [confirmReset, setConfirmReset] = useState(false);
   const resetProgress = () => {
-    if (window.confirm("Reset all SRS progress?")) setSrs({});
+    if (!confirmReset) {
+      setConfirmReset(true);
+      setTimeout(() => setConfirmReset(false), 4000);
+      return;
+    }
+    setSrs({});
+    setEar(emptyEar());
+    setLog({});
+    setBridge(emptyBridge());
+    setBridgeSched({});
+    setStreetBest({});
+    setShadow(emptyShadow());
+    setConfirmReset(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] pb-24 text-slate-100 sm:pb-8" style={{ backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
-      <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0B0F19]/85 backdrop-blur">
+    <div className="min-h-[100dvh] bg-[#0B0F19] pb-[calc(6rem+env(safe-area-inset-bottom))] text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
+      <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0B0F19]/85 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <div className="mr-auto flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 text-lg font-black text-black shadow-[0_0_20px_#F59E0B66]" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
@@ -2306,19 +4905,43 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} />}
-        {tab === "ear" && <EarDojo ear={ear} setEar={setEar} />}
-        {tab === "tracer" && <Tracer />}
-        {tab === "reactor" && <Reactor mode={mode} font={font} />}
-        {tab === "orbit" && <OrbitModule mode={mode} font={font} />}
-        {tab === "slicer" && <Slicer mode={mode} font={font} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} />}
+        {tab === "ear" && (
+          <>
+            <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
+            {earTab === "dojo" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
+            {earTab === "shadow" && <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />}
+          </>
+        )}
+        {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} />}
+        {tab === "lab" && (
+          <>
+            <SubTabs tabs={LAB_TABS} active={labTab} onChange={setLabTab} />
+            {labTab === "reactor" && <Reactor mode={mode} font={font} />}
+            {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
+            {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} />}
+          </>
+        )}
+        {tab === "read" && (
+          <>
+            <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
+            {readTab === "slicer" && <Slicer mode={mode} font={font} />}
+            {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} />}
+          </>
+        )}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
           <span><Zap size={12} className="mr-1 inline text-amber-400" />Progress is saved on this device.</span>
-          <button onClick={resetProgress} className="underline hover:text-slate-300">Reset progress</button>
+          <span className="flex items-center gap-1">
+            Daily goal:
+            {[5, 12, 20].map((m) => (
+              <button key={m} onClick={() => setDailyMinutes(m)} className={`rounded-lg px-2 py-0.5 ${dailyMinutes === m ? "bg-amber-500 font-bold text-black" : "hover:text-slate-200"}`}>{m} min</button>
+            ))}
+          </span>
+          <button onClick={resetProgress} className={`underline ${confirmReset ? "font-bold text-rose-300" : "hover:text-slate-300"}`}>{confirmReset ? "Tap again to erase all progress" : "Reset progress"}</button>
         </footer>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-[#0B0F19]/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
         {TABS.map((t) => (
           <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold ${tab === t.id ? "text-amber-400" : "text-slate-400"}`}>
             <t.icon size={20} />
@@ -2329,6 +4952,7 @@ export default function SuvarnaKani() {
 
       <AudioStudio open={studio} onClose={() => setStudio(false)} rate={rate} setRate={setRate} muted={muted} setMuted={setMuted} />
       <Inspector item={inspect} mode={mode} font={font} srs={srs} onClose={() => setInspect(null)} />
+      {!onboarded && <Onboarding onDone={finishOnboarding} />}
     </div>
   );
 }
