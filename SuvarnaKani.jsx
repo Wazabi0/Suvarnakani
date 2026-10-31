@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  Landmark, PenTool, FlaskConical, Orbit, Scissors, MessageCircle, Clock, Layers, Volume2, VolumeX, Music, Unlock, Lock,
+  Landmark, PenTool, FlaskConical, Orbit, Scissors, MessageCircle, Clock, Layers, BarChart3, Train, Library, Volume2, VolumeX, Music, Unlock, Lock,
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
   Cloud, Sun, Waves, Ear, Target, Flame, Mic,
@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.22.0";
+const APP_VERSION = "0.23.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -1514,7 +1514,7 @@ function restoreState(state) {
 }
 
 const IDB_NAME = "suvarnakani";
-const IDB_VERSION = 1;
+const IDB_VERSION = 2;
 function openDb() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") { reject(new Error("no IndexedDB")); return; }
@@ -1522,6 +1522,7 @@ function openDb() {
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains("snapshots")) db.createObjectStore("snapshots", { keyPath: "key" });
+      if (!db.objectStoreNames.contains("reviews")) db.createObjectStore("reviews", { autoIncrement: true }).createIndex("t", "t");
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -1556,6 +1557,34 @@ async function snapshotToday(state) {
     /* no IndexedDB (private window): the backup file still works */
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Review log (F4). Every answer is kept as { t, id, track, g } in IndexedDB for
+ * a year: about 40 bytes each, so ten thousand reviews stay well under a megabyte.
+ * The Ledger reads it for recall by track and tone confusions over time.
+ * ------------------------------------------------------------------------- */
+const REVIEW_KEEP_DAYS = 365;
+const reviewBuffer = [];
+let reviewFlushTimer = null;
+function logReview(id, track, g, extra) {
+  if (!g || !id) return;
+  reviewBuffer.push({ t: Date.now(), id, track, g, ...(extra || {}) });
+  clearTimeout(reviewFlushTimer);
+  reviewFlushTimer = setTimeout(flushReviews, 1200);
+}
+async function flushReviews() {
+  const batch = reviewBuffer.splice(0);
+  if (!batch.length) return;
+  try { await idbRequest("reviews", "readwrite", (s) => batch.forEach((r) => s.add(r))); } catch { /* no IndexedDB: the daily log still counts */ }
+}
+async function readReviews(sinceMs = 0) {
+  await flushReviews();
+  try { return (await idbRequest("reviews", "readonly", (s) => s.index("t").getAll(IDBKeyRange.lowerBound(sinceMs)))) || []; } catch { return []; }
+}
+async function pruneReviews() {
+  try { await idbRequest("reviews", "readwrite", (s) => { const r = s.index("t").openCursor(IDBKeyRange.upperBound(Date.now() - REVIEW_KEEP_DAYS * DAY)); r.onsuccess = () => { const c = r.result; if (c) { c.delete(); c.continue(); } }; }); } catch { /* ignore */ }
+}
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushReviews(); });
 
 /* ---------------------------------------------------------------------------
  * Android back gesture. Each open sheet (and leaving the Shrine) pushes one
@@ -1646,6 +1675,14 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.23.0", title: "Read the world", points: [
+    "Lantern Library (Read → Library): twelve short stories in Thai and in Lao. Tap any word, read aloud with the sentence lit up, and time your re-reads to see your speed grow.",
+    "Press and hold a story sentence to add it to the Sentence deck.",
+    "Street Reader has 23 signs: road signs, a pharmacy, a hospital, a river pier, neon and worn paint, and a menu that changes every day.",
+    "Ride the line (Read): signs in the order you meet them, with a few seconds less at each stop.",
+    "Ledger on the Shrine: your last 26 weeks, recall by track against the 90% target, confused tones, hardest items, time studied and what's due.",
+    "Every answer is now kept on the phone for a year, and the daily log keeps a year too.",
+  ] },
   { v: "0.22.0", title: "Words in the wild", points: [
     "Word Garden: 280 everyday words in seven beds (food, getting around, numbers and time, people, body, feelings, verbs). It opens after Level 4; plant a bed and its words join your lessons.",
     "Lesson cards play each word inside a short phrase.",
@@ -2040,7 +2077,7 @@ const EAR_DAILY_TRIALS = 20;
 
 function computeStreak(log) {
   let streak = 0;
-  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) + (log[k].traces || 0) + (log[k].bridge || 0) + (log[k].signs || 0) > 0);
+  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) + (log[k].traces || 0) + (log[k].bridge || 0) + (log[k].signs || 0) + (log[k].drills || 0) + (log[k].reads || 0) > 0);
   let t = Date.now();
   if (!active(todayKey(t))) t -= DAY;
   while (active(todayKey(t))) {
@@ -2376,13 +2413,14 @@ function Onboarding({ onDone }) {
 /* ============================================================================
  * Module 1: SRS Shrine
  * ========================================================================== */
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [] }) {
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [] }) {
   const prefs = usePrefs();
   const course = useMemo(() => courseItems(mode), [mode]);
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [leechOpen, setLeechOpen] = useState(false);
+  const [ledgerOpen, setLedgerOpen] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -2468,6 +2506,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       if (parts.spell != null) stats.spell = bump(stats.spell || [0, 0], parts.spell);
       return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second), spell: grade(parts.spell) }), stats } };
     });
+    ["read", "second", "spell"].forEach((k) => logReview(id, k, grade(parts[k])));
     logActivity({ reviews: 1, reviewsRight: correct ? 1 : 0 });
   };
 
@@ -2561,7 +2600,17 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         </div>
       </Card>
 
-      <SentenceDeck mode={mode} font={font} deck={sentSrs} setDeck={setSentSrs} saved={decoderSaved} sandbox={sandbox} logActivity={logActivity} course={course} stageOf={stageOf} />
+      <button onClick={() => setLedgerOpen(true)} className="flex w-full items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4 text-left">
+        <BarChart3 size={18} className="text-amber-300" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-bold uppercase tracking-widest text-amber-300">Ledger</div>
+          <div className="text-xs text-slate-400">Your year, recall by track, hardest items and what's due.</div>
+        </div>
+        <ChevronRight size={16} className="text-slate-400" />
+      </button>
+      <Ledger open={ledgerOpen} onClose={() => setLedgerOpen(false)} log={log} srs={srs} ear={ear} mode={mode} />
+
+      <SentenceDeck mode={mode} font={font} deck={sentSrs} setDeck={setSentSrs} saved={decoderSaved} mined={mined} sandbox={sandbox} logActivity={logActivity} course={course} stageOf={stageOf} />
 
       {COURSE_LEVELS.map((lvl) => {
         const items = course.filter((i) => i.level === lvl.n);
@@ -2775,7 +2824,7 @@ function InfoRow({ icon: Icon, label, text, color }) {
  * fill the gap. Words saved in the Decoder join once you give them a meaning.
  * ========================================================================== */
 const SENTENCE_NEW_PER_DAY = 5;
-function sentenceCards({ mode, saved = [], course = [], stageOf = () => 0 }) {
+function sentenceCards({ mode, saved = [], course = [], stageOf = () => 0, mined = [] }) {
   const script = mode === "lo" ? "lo" : "th";
   const join = (ws) => ws.join(script === "lo" ? " " : "");
   const cards = SENTENCES.filter((s) => s.script === script).map((s) => ({
@@ -2788,6 +2837,14 @@ function sentenceCards({ mode, saved = [], course = [], stageOf = () => 0 }) {
       cards.push({ id: `gx-${i.id}`, script, words: [before, i.th, after].filter(Boolean), gap: i.th, text: i.example.th, tts: i.example.th, en: i.example.en });
     });
   }
+  // Sentences long-pressed in the Lantern Library.
+  mined.forEach((m) => {
+    const [sid, i, sc] = m.split(":");
+    const story = LIBRARY.find((s) => s.id === sid);
+    if (!story || sc !== script) return;
+    const s = storyText(story, script)[Number(i)];
+    if (s) cards.push({ id: `lib-${m}`, script, words: s.tokens.map((tk) => tk.t), text: s.tokens.map((tk) => tk.t).join(""), tts: s.tokens.map((tk) => tk.tts || tk.t).join(" "), en: s.en });
+  });
   saved.filter((x) => x.meaning && (x.script || "th") === script).forEach((x) => cards.push({ id: `dw-${x.th}`, script, text: x.th, tts: script === "lo" ? laoToThai(x.th) : x.th, en: x.meaning, single: true }));
   return cards;
 }
@@ -2803,10 +2860,10 @@ function sentenceSession(cards, deck, now, sandbox) {
   return { due, fresh };
 }
 
-function SentenceDeck({ mode, font, deck = {}, setDeck, saved, sandbox, logActivity, course, stageOf }) {
+function SentenceDeck({ mode, font, deck = {}, setDeck, saved, mined, sandbox, logActivity, course, stageOf }) {
   const [open, setOpen] = useState(false);
   const now = Date.now();
-  const cards = useMemo(() => sentenceCards({ mode, saved, course, stageOf }), [mode, saved, course, stageOf]);
+  const cards = useMemo(() => sentenceCards({ mode, saved, course, stageOf, mined }), [mode, saved, course, stageOf, mined]);
   const { due, fresh } = sentenceSession(cards, deck, now, sandbox);
   const known = cards.filter((c) => deck[c.id]).length;
   return (
@@ -2872,6 +2929,7 @@ function SentenceSession({ open, onClose, cards, queue, deck, setDeck, mode, log
       const day = todayKey();
       const n = d.__new?.day === day ? d.__new.n : 0;
       const next = { ...scheduleItem(cur || { stage: 1, next: 0 }, { read: ok ? 3 : 1 }), reps: (cur?.reps || 0) + 1 };
+      logReview(card.id, "sentence", ok ? 3 : 1);
       return { ...d, [card.id]: next, ...(fresh ? { __new: { day, n: n + 1 } } : {}) };
     });
     logActivity?.({ reviews: 1, reviewsRight: ok ? 1 : 0 });
@@ -2906,6 +2964,151 @@ function SentenceSession({ open, onClose, cards, queue, deck, setDeck, mode, log
           <button onClick={next} className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">{idx === line.length - 1 ? "Finish" : "Next"}</button>
         </div>
       )}
+    </Modal>
+  );
+}
+
+/* ============================================================================
+ * Ledger (N15): a year of study on the phone. Heatmap, reviews per day, real
+ * recall per track against the 90% target, tone confusions, hardest items,
+ * time spent and a 30-day forecast.
+ * ========================================================================== */
+const LEDGER_TRACKS = [["read", "Reading"], ["second", "Tone"], ["spell", "Spelling"], ["write", "Writing"], ["sentence", "Sentences"]];
+const dayActivity = (d) => (d ? (d.reviews || 0) + (d.lessons || 0) + (d.ear || 0) + (d.shadow || 0) + (d.traces || 0) + (d.bridge || 0) + (d.signs || 0) + (d.drills || 0) + (d.reads || 0) : 0);
+const fmtMinutes = (secs) => { const m = Math.round((secs || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
+
+/** Recall per track: share of answers that weren't "Again", from the review log, else from per-item counts. */
+function trackRecall(reviews, srs) {
+  const out = {};
+  if (reviews.length) {
+    reviews.forEach((r) => { if (r.track === "ear") return; const o = (out[r.track] ||= [0, 0]); o[0] += r.g >= 2 ? 1 : 0; o[1] += 1; });
+    return out;
+  }
+  Object.values(srs).forEach((s) => Object.entries(s?.stats || {}).forEach(([k, [r, n]]) => { const o = (out[k] ||= [0, 0]); o[0] += r; o[1] += n; }));
+  return out;
+}
+
+function dueForecast(srs, days = 30, now = Date.now()) {
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  const counts = Array(days).fill(0);
+  Object.values(srs).forEach((s) => {
+    if (!s || !(s.stage >= 1) || s.stage >= 5) return;
+    const k = Math.floor((Math.max(s.next, now) - start.getTime()) / DAY);
+    if (k >= 0 && k < days) counts[k] += 1;
+  });
+  return counts;
+}
+
+function Ledger({ open, onClose, log = {}, srs = {}, ear, mode }) {
+  const [reviews, setReviews] = useState([]);
+  useEffect(() => { if (open) readReviews(Date.now() - 90 * DAY).then(setReviews); }, [open]);
+  const course = useMemo(() => courseItems(mode), [mode]);
+  if (!open) return null;
+  const now = Date.now();
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  // Heatmap: 26 weeks ending this week, Monday rows.
+  const weeks = 26;
+  const end = new Date(today); end.setDate(end.getDate() + (6 - ((end.getDay() + 6) % 7)));
+  const cells = [];
+  for (let w = weeks - 1; w >= 0; w -= 1) for (let d = 6; d >= 0; d -= 1) { const x = new Date(end); x.setDate(end.getDate() - (w * 7 + d)); cells.push(x); }
+  const vals = cells.map((c) => dayActivity(log[todayKey(c.getTime())]));
+  const max = Math.max(1, ...vals);
+  const studyDays = Object.values(log).filter((d) => dayActivity(d) > 0).length;
+  const last30 = Array.from({ length: 30 }, (_, i) => { const x = new Date(today); x.setDate(x.getDate() - (29 - i)); return log[todayKey(x.getTime())] || {}; });
+  const revMax = Math.max(1, ...last30.map((d) => d.reviews || 0));
+  const secs7 = last30.slice(-7).reduce((s, d) => s + (d.secs || 0), 0);
+  const secs30 = last30.reduce((s, d) => s + (d.secs || 0), 0);
+  const secsAll = Object.values(log).reduce((s, d) => s + (d.secs || 0), 0);
+  const recall = trackRecall(reviews, srs);
+  const toneTotals = ear?.tones || {};
+  const confusions = Object.entries(ear?.confusions || {}).map(([k, n]) => { const [a, b] = k.split(">"); const tot = toneTotals[a]?.[1] || n; return { a, b, n, share: n / Math.max(1, tot) }; }).sort((x, y) => y.share - x.share).slice(0, 4);
+  const recentEar = reviews.filter((r) => r.track === "ear");
+  const hardest = course.map((i) => ({ i, s: srs[i.id] })).filter((x) => x.s?.fsrs).map((x) => ({ ...x, lapses: lapsesOf(x.s), D: Math.max(...Object.values(x.s.fsrs).map((tk) => tk.D || 0)) })).filter((x) => x.lapses > 0 || x.D > 7).sort((a, b) => b.lapses - a.lapses || b.D - a.D).slice(0, 10);
+  const forecast = dueForecast(srs, 30, now);
+  const fMax = Math.max(1, ...forecast);
+  const label = "text-[11px] font-bold uppercase tracking-wider text-slate-400";
+  return (
+    <Modal open={open} onClose={onClose} title="Ledger · your statistics" wide>
+      <div className="space-y-5">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-2xl bg-white/[0.04] p-3"><div className="text-2xl font-black text-white">{studyDays}</div><div className="text-[11px] text-slate-400">study days</div></div>
+          <div className="rounded-2xl bg-white/[0.04] p-3"><div className="text-2xl font-black text-white">{last30.reduce((s, d) => s + (d.reviews || 0), 0)}</div><div className="text-[11px] text-slate-400">reviews, 30 days</div></div>
+          <div className="rounded-2xl bg-white/[0.04] p-3"><div className="text-lg font-black text-white">{fmtMinutes(secs7)}</div><div className="text-[11px] text-slate-400">this week</div></div>
+        </div>
+        <section>
+          <div className={label}>Last 26 weeks</div>
+          <div className="mt-2 grid grid-flow-col grid-rows-7 gap-[3px]" style={{ gridTemplateColumns: `repeat(${weeks}, minmax(0, 1fr))` }}>
+            {cells.map((c, k) => {
+              const v = vals[k];
+              const future = c.getTime() > now;
+              return <div key={k} title={`${todayKey(c.getTime())}: ${v}`} className="aspect-square rounded-[3px]" style={{ background: future ? "transparent" : v ? `rgba(245,158,11,${0.25 + 0.75 * (v / max)})` : "rgb(var(--sk-ink) / 0.06)" }} />;
+            })}
+          </div>
+        </section>
+        <section>
+          <div className={label}>Reviews per day · last 30 days</div>
+          <div className="mt-2 flex h-20 items-end gap-[2px]">
+            {last30.map((d, k) => <div key={k} className="flex-1 rounded-t bg-cyan-400/70" style={{ height: `${((d.reviews || 0) / revMax) * 100}%`, minHeight: d.reviews ? 2 : 0 }} title={`${d.reviews || 0}`} />)}
+          </div>
+        </section>
+        <section>
+          <div className={label}>Recall by track · line marks the 90% target</div>
+          <div className="mt-2 space-y-2">
+            {LEDGER_TRACKS.map(([k, name]) => {
+              const [r, n] = recall[k] || [0, 0];
+              const pct = n ? r / n : null;
+              const low = pct != null && pct < TARGET_RETENTION;
+              return (
+                <div key={k} className="flex items-center gap-3 text-sm">
+                  <span className="w-20 shrink-0 text-slate-300">{name}</span>
+                  <div className="relative h-3 flex-1 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full" style={{ width: `${(pct || 0) * 100}%`, background: low ? "#FB7185" : "#34D399" }} />
+                    <div className="absolute inset-y-0 w-0.5 bg-white/70" style={{ left: "90%" }} />
+                  </div>
+                  <span className={`w-16 shrink-0 text-right tabular-nums ${low ? "text-rose-300" : "text-slate-200"}`}>{pct == null ? "–" : `${Math.round(pct * 100)}%`}<span className="text-[10px] text-slate-500"> {n || ""}</span></span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">{reviews.length ? "From your last 90 days of answers." : "From all answers so far; the per-answer log starts with this version."}</p>
+        </section>
+        <section>
+          <div className={label}>Most confused tones</div>
+          {confusions.length ? (
+            <div className="mt-2 space-y-1.5">
+              {confusions.map((c) => (
+                <div key={`${c.a}>${c.b}`} className="flex items-center gap-2 text-sm">
+                  <span style={{ color: TONES[c.a]?.ink }}>{TONES[c.a]?.name}</span><span className="text-slate-400">heard as</span><span style={{ color: TONES[c.b]?.ink }}>{TONES[c.b]?.name}</span>
+                  <span className="ml-auto tabular-nums text-slate-300">{Math.round(c.share * 100)}%</span>
+                </div>
+              ))}
+              {recentEar.length > 0 && <p className="text-[11px] text-slate-500">Last 90 days: {Math.round((recentEar.filter((r) => r.g >= 2).length / recentEar.length) * 100)}% of {recentEar.length} tone answers right.</p>}
+            </div>
+          ) : <p className="mt-1 text-sm text-slate-400">No confusions yet. The Ear Dojo fills this in.</p>}
+        </section>
+        <section>
+          <div className={label}>Ten hardest items</div>
+          {hardest.length ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {hardest.map(({ i, lapses }) => (
+                <div key={i.id} className="flex items-center gap-2 rounded-xl bg-white/[0.04] px-2.5 py-1.5">
+                  <span className="text-xl text-white" style={{ fontFamily: mode === "lo" ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th }}>{mode === "lo" ? i.lo : i.th}</span>
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate-400">{i.meaning}</span>
+                  <span className="text-xs tabular-nums text-rose-300">{lapses}×</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="mt-1 text-sm text-slate-400">Nothing has given you trouble yet.</p>}
+        </section>
+        <section>
+          <div className={label}>Due over the next 30 days</div>
+          <div className="mt-2 flex h-16 items-end gap-[2px]">
+            {forecast.map((n, k) => <div key={k} className="flex-1 rounded-t bg-purple-400/70" style={{ height: `${(n / fMax) * 100}%`, minHeight: n ? 2 : 0 }} title={`${n}`} />)}
+          </div>
+          <div className="mt-1 flex justify-between text-[10px] text-slate-500"><span>today</span><span>+15 d</span><span>+30 d</span></div>
+        </section>
+        <p className="text-xs text-slate-400">Time studied: {fmtMinutes(secs30)} in 30 days, {fmtMinutes(secsAll)} in all. Everything here stays on this phone.</p>
+      </div>
     </Modal>
   );
 }
@@ -3706,6 +3909,7 @@ function EarDojo({ ear, setEar, logActivity }) {
         const hit = picks[i] === t;
         tones[t] = [tones[t][0] + (hit ? 1 : 0), tones[t][1] + 1];
         if (!hit) confusions[`${t}>${picks[i]}`] = (confusions[`${t}>${picks[i]}`] || 0) + 1;
+        logReview(`${t}>${picks[i]}`, "ear", hit ? 3 : 1);
       });
       return { ...prev, tones, confusions };
     });
@@ -3737,6 +3941,7 @@ function EarDojo({ ear, setEar, logActivity }) {
       const tones = { ...prev.tones, [trial.word.tone]: [prev.tones[trial.word.tone][0] + (ok ? 1 : 0), prev.tones[trial.word.tone][1] + 1] };
       const confusions = { ...prev.confusions };
       if (!ok) confusions[`${trial.word.tone}>${tone}`] = (confusions[`${trial.word.tone}>${tone}`] || 0) + 1;
+      logReview(`${trial.word.tone}>${tone}`, "ear", ok ? 3 : 1);
       return { ...prev, tones, confusions };
     });
     if (ok) {
@@ -4172,6 +4377,7 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
     const g = score >= 70 ? 3 : score >= 50 ? 2 : 1;
     if (!cur.write && g < 3) return null;
     const write = fsrsUpdate(cur.write, g);
+    logReview(glyph.id, "write", g);
     setSrs((s) => ({ ...s, [glyph.id]: { ...s[glyph.id], write } }));
     return write;
   };
@@ -5367,6 +5573,157 @@ const STREET_PACKS = [
   ] },
 ];
 
+/* ---------------------------------------------------------------------------
+ * More signs (D24). Written compactly: words separated by spaces; a word the
+ * course or the garden knows needs nothing else, others are word=reading=meaning.
+ * $50 is a price in Thai or Lao digits, #50 a plain number, and "::" starts the
+ * line's English gloss (used by Ride the line).
+ * ------------------------------------------------------------------------- */
+const SIGN_SRC = [
+  { id: "cart", script: "th", title: "Street food cart", place: "Bangkok", style: "worn", src: `
+ข้าวมันไก่=khâaw-man-kài=chicken rice $50 $บาท :: Chicken rice, 50 baht
+ก๋วยเตี๋ยว หมู $60 $บาท :: Pork noodle soup, 60 baht
+พิเศษ=phí-sèet=large (special) $70 $บาท :: Large size, 70 baht
+น้ำเปล่า=náam-plàao=plain water $10 $บาท :: Plain water, 10 baht` },
+  { id: "road", script: "th", title: "Road sign", place: "Bangkok", style: "road", src: `
+ถนน สุขุมวิท=sù-khǔm-wít=Sukhumvit :: Sukhumvit Road
+ซอย=sɔɔi=lane (soi) #11 :: Soi 11
+ไป สนามบิน :: To the airport
+เลี้ยว ซ้าย :: Turn left` },
+  { id: "pharmacy", script: "th", title: "Pharmacy", place: "Chiang Mai", style: "green", src: `
+ร้านขายยา :: Pharmacy
+ยา แก้=kɛ̂ɛ=relieve ปวด :: Painkillers
+ยา แก้ ไอ :: Cough medicine
+เปิด #8 โมง=moong=o'clock เช้า=cháao=morning :: Opens at 8 in the morning` },
+  { id: "hospital", script: "th", title: "Hospital", place: "Bangkok", style: "hospital", src: `
+โรงพยาบาล :: Hospital
+ฉุกเฉิน=chùk-chə̌n=emergency :: Emergency
+ทางเข้า=thaang-khâo=entrance :: Entrance
+แผนก=phà-nɛ̀ɛk=department ฟัน :: Dental department` },
+  { id: "nightmarket", script: "th", title: "Night market", place: "Bangkok", style: "neon", src: `
+ตลาด กลางคืน=klaang-khʉʉn=night :: Night market
+เบียร์ เย็น $90 $บาท :: Cold beer, 90 baht
+เปิด #6 โมง เย็น ถึง=thʉ̌ng=until เที่ยงคืน=thîang-khʉʉn=midnight :: Open 6 p.m. to midnight` },
+  { id: "sale", script: "th", title: "Shop banner", place: "Pattaya", style: "banner", src: `
+ลดราคา=lót-raa-khaa=sale (lower the price) #50% :: Sale, 50% off
+ซื้อ #1 แถม=thɛ̌ɛm=get free #1 :: Buy one, get one free
+วันนี้ เท่านั้น=thâo-nán=only :: Today only` },
+  { id: "busstop", script: "th", title: "Bus stop", place: "Bangkok", style: "transit", src: `
+ป้าย=pâai=sign / stop รถเมล์=rót-mee=bus :: Bus stop
+สาย=sǎai=line / route #29 :: Route 29
+ไป หมอชิต=mɔ̌ɔ-chít=Mo Chit :: To Mo Chit` },
+  { id: "hotel", script: "th", title: "Hotel front desk", place: "Krabi", style: "cafe", src: `
+โรงแรม :: Hotel
+ห้อง ว่าง=wâang=free / vacant :: Rooms available
+เช็คเอาท์=chék-ao=check-out เที่ยง :: Check-out at noon` },
+  { id: "massage", script: "th", title: "Massage shop", place: "Chiang Mai", style: "neon", src: `
+นวด=nûat=massage แผนไทย=phɛ̌ɛn-thai=Thai-style :: Thai massage
+#1 ชั่วโมง=chûa-moong=hour $300 $บาท :: One hour, 300 baht
+นวด เท้า $250 $บาท :: Foot massage, 250 baht` },
+  { id: "pier", script: "th", title: "River pier", place: "Bangkok", style: "river", src: `
+ท่าเรือ=thâa-rʉa=pier ช้าง :: Tha Chang pier
+เรือ ด่วน=dùan=express ธง=thong=flag ส้ม=sôm=orange :: Orange-flag express boat
+ค่า=khâa=fee โดยสาร=dooi-sǎan=passenger $16 $บาท :: Fare 16 baht` },
+  { id: "parking", script: "th", title: "Parking notice", place: "Khon Kaen", style: "road", src: `
+ห้าม จอด รถ :: No parking
+จอด ได้=dâai=can #2 ชั่วโมง :: Parking for two hours
+ที่=thîi=place จอด รถ ชั้น=chán=floor #3 :: Car park on floor 3` },
+  { id: "lo-road", script: "lo", title: "Road sign", place: "Vientiane", style: "road", src: `
+ຖະໜົນ ລ້ານຊ້າງ=laan xang=Lane Xang :: Lane Xang Avenue
+ໄປ ສະໜາມບິນ :: To the airport
+ລ້ຽວ ຂວາ :: Turn right` },
+  { id: "lo-noodle", script: "lo", title: "Noodle shop", place: "Luang Prabang", style: "worn", src: `
+ຮ້ານ ເຝີ :: Noodle shop
+ເຝີ ຊີ້ນ $30000 $ກີບ :: Beef noodle soup, 30,000 kip
+ເຂົ້າປຽກ=khao piak=rice noodle soup $25000 $ກີບ :: Khao piak, 25,000 kip
+ນ້ຳ $5000 $ກີບ :: Water, 5,000 kip` },
+  { id: "lo-pharmacy", script: "lo", title: "Pharmacy", place: "Vientiane", style: "green", src: `
+ຮ້ານຂາຍຢາ :: Pharmacy
+ຢາ ແກ້=kae=relieve ໄຂ້ :: Fever medicine
+ເປີດ=poet=open #8 ໂມງ=mong=o'clock :: Opens at 8` },
+  { id: "lo-bus", script: "lo", title: "Bus station", place: "Vientiane", style: "transit", src: `
+ສະຖານີ ລົດເມ :: Bus station
+ໄປ ຫຼວງພະບາງ=luang phabang=Luang Prabang :: To Luang Prabang
+ອອກ #7 ໂມງ=mong=o'clock ເຊົ້າ=sao=morning :: Leaves at 7 in the morning` },
+];
+
+let itemIndexCache = null;
+function itemIndex() {
+  if (itemIndexCache) return itemIndexCache;
+  const byId = new Map();
+  const byLo = new Map();
+  [...CURRICULUM, ...LAO_ONLY_ITEMS, ...GARDEN_ITEMS].forEach((i) => { byId.set(i.id, i); if (i.tier !== "glyph" && !byLo.has(i.lo)) byLo.set(i.lo, i); });
+  itemIndexCache = { byId, byLo };
+  return itemIndexCache;
+}
+
+/** One sign word: known words from the course or the garden, or word=reading=meaning. */
+const signGlossary = new Map();
+function signToken(raw, script) {
+  if (/^[#$]/.test(raw)) {
+    const price = raw[0] === "$";
+    const body = raw.slice(1);
+    if (!/^\d/.test(body)) return { ...signToken(body, script), price };
+    const n = Number(body.replace(/\D/g, ""));
+    const pct = body.endsWith("%");
+    const words = numberWords(n, script) + (pct ? (script === "lo" ? "ເປີເຊັນ" : "เปอร์เซ็นต์") : "");
+    return { t: price ? toScriptDigits(n, script) + (pct ? "%" : "") : body, r: numberRoman(n, script) + (pct ? " per-sen" : ""), m: body.replace(/\B(?=(\d{3})+(?!\d))/g, ","), tts: script === "lo" ? laoToThai(words) : words, price, num: true };
+  }
+  const [w, r, m] = raw.split("=");
+  if (r) signGlossary.set(w, [r, m]);
+  const g = signGlossary.get(w);
+  if (g && (r || !(script === "lo" ? itemIndex().byLo.get(w) : thaiLexicon().get(w)))) {
+    const [rr, mm] = g;
+    return { t: w, r: rr, m: mm, tone: script === "th" ? rr.split("-").map(toneOfRoman) : undefined, tts: script === "lo" ? laoToThai(w) : w };
+  }
+  if (script === "lo") {
+    const it = itemIndex().byLo.get(w);
+    return it ? { t: w, id: it.id } : { t: w, tts: laoToThai(w) };
+  }
+  const lx = thaiLexicon().get(w);
+  if (lx?.id) return { t: w, id: lx.id };
+  return lx ? { t: w, r: lx.roman, m: lx.meaning, tone: lx.tone } : { t: w };
+}
+/** Space-separated words; a meaning may hold spaces, so words without Thai or Lao letters join the word before them. */
+function tokenizeLine(body, script) {
+  const parts = [];
+  body.trim().split(/\s+/).forEach((x) => { if (parts.length && parts[parts.length - 1].includes("=") && !/[ก-๛຀-໿]/.test(x) && !/^[#$]/.test(x)) parts[parts.length - 1] += ` ${x}`; else parts.push(x); });
+  return parts.map((raw) => signToken(raw, script));
+}
+function parseSign(pack) {
+  const lines = [];
+  const glosses = [];
+  pack.src.trim().split("\n").forEach((line) => {
+    const [body, gloss] = line.split("::");
+    lines.push(tokenizeLine(body, pack.script));
+    glosses.push((gloss || "").trim());
+  });
+  return { ...pack, lines, glosses };
+}
+
+/* A menu that changes every day (and on demand), built from food words you have met. */
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let x = a; x = Math.imul(x ^ (x >>> 15), x | 1); x ^= x + Math.imul(x ^ (x >>> 7), x | 61); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+}
+const MENU_PARTS = { meat: ["หมู", "ไก่", "กุ้ง", "เนื้อ"], how: ["ทอด", "ย่าง", "ผัด=phàt=stir-fried", "ต้ม"], drink: ["ชา เย็น", "กาแฟ", "น้ำ มะพร้าว", "ชา นม"], extra: ["ข้าว", "ข้าวเหนียว", "ไข่"] };
+function dailyMenu(seed) {
+  const rnd = mulberry(seed);
+  const pick = (a) => a[Math.floor(rnd() * a.length)];
+  const used = new Set();
+  const lines = [];
+  while (lines.length < 4) {
+    const dish = `${pick(MENU_PARTS.meat)} ${pick(MENU_PARTS.how)}`;
+    if (used.has(dish)) continue;
+    used.add(dish);
+    lines.push(`${dish} $${5 * Math.round((40 + rnd() * 80) / 5)} $บาท`);
+  }
+  lines.push(`${pick(MENU_PARTS.extra)} $${5 * Math.round((10 + rnd() * 15) / 5)} $บาท`);
+  lines.push(`${pick(MENU_PARTS.drink)} $${5 * Math.round((20 + rnd() * 40) / 5)} $บาท`);
+  return parseSign({ id: "menu-today", script: "th", title: "Today's menu", place: "Your street", style: "cafe", src: lines.join("\n") });
+}
+const SIGN_PACKS = () => SIGN_SRC.map(parseSign);
+
 /** Thai chat packs: your lines use ค่ะ / คะ when you've set a female particle. */
 function politePack(pack, particle) {
   if (!pack?.speakers || pack.script !== "th" || particle !== "female") return pack;
@@ -5385,11 +5742,18 @@ const STREET_STYLES = {
   temple: { card: "linear-gradient(170deg, #5a1414, #2e0909)", ink: "#FFE08A", accent: "#F5C542", border: "#f5c54244" },
   market: { card: "linear-gradient(170deg, #12324a, #0a1c2b)", ink: "#EAF6FF", accent: "#7FD1FF", border: "#7fd1ff44" },
   chat: { card: "linear-gradient(170deg, #3a1630, #1f0b1a)", ink: "#FFE4F1", accent: "#F472B6", border: "#f472b644" },
+  worn: { card: "repeating-linear-gradient(95deg, #e9dcc0 0 9px, #e2d3b4 9px 14px)", ink: "#7a1d12", accent: "#1f5aa6", border: "#7a1d1233", font: '"Sriracha", "Itim", cursive' },
+  road: { card: "linear-gradient(170deg, #0b4ea2, #083a7a)", ink: "#FFFFFF", accent: "#FFE27A", border: "#ffffff55" },
+  green: { card: "linear-gradient(170deg, #0f7a3e, #0a5a2d)", ink: "#FFFFFF", accent: "#C8FFD8", border: "#ffffff44" },
+  hospital: { card: "linear-gradient(170deg, #ffffff, #eef4fb)", ink: "#0b3b75", accent: "#D7263D", border: "#0b3b7522" },
+  neon: { card: "radial-gradient(ellipse at 30% 20%, #2b0a3d, #0b0414)", ink: "#FF7AE6", accent: "#5CF2FF", border: "#ff7ae655", glow: "0 0 6px #ff7ae6, 0 0 14px #ff2fd0" },
+  banner: { card: "linear-gradient(170deg, #ffd400, #ffb800)", ink: "#c3001c", accent: "#111111", border: "#c3001c44", font: '"Mitr", "Kanit", sans-serif' },
+  river: { card: "linear-gradient(170deg, #f2efe6, #ddd6c4)", ink: "#183153", accent: "#E8590C", border: "#18315333" },
 };
 
 function resolveToken(tok, script) {
   if (!tok.id) return tok;
-  const item = CURRICULUM.find((c) => c.id === tok.id);
+  const item = itemIndex().byId.get(tok.id);
   if (!item) return tok;
   const lao = script === "lo";
   return {
@@ -5403,7 +5767,10 @@ function resolveToken(tok, script) {
 }
 
 function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
-  const packs = STREET_PACKS.filter((p) => mode === "dual" || p.script === mode);
+  const [menuSeed, setMenuSeed] = useState(() => Math.floor(Date.now() / DAY));
+  const signPacks = useMemo(() => SIGN_PACKS(), []);
+  const menu = useMemo(() => dailyMenu(menuSeed), [menuSeed]);
+  const packs = [...STREET_PACKS, menu, ...signPacks].filter((p) => mode === "dual" || p.script === mode);
   const [pid, setPid] = useState(packs[0]?.id);
   const prefs = usePrefs();
   const { particle } = prefs;
@@ -5423,7 +5790,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
   const words = tokens.filter((t) => !t.price);
   const known = (t) => t.item && (srs[t.item.id]?.stage || 0) >= 1;
   const knownPct = Math.round((words.filter(known).length / words.length) * 100);
-  const font = pack.script === "lo" ? '"Noto Sans Lao", "Phetsarath OT", sans-serif' : '"Kanit", "Noto Sans Thai", sans-serif';
+  const font = pack.script === "lo" ? '"Noto Sans Lao", "Phetsarath OT", sans-serif' : style.font || '"Kanit", "Noto Sans Thai", sans-serif';
   const selTok = sel != null ? tokens[sel] : null;
   const audio = getAudio();
 
@@ -5444,7 +5811,8 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
   return (
     <div className="space-y-4">
       <SectionTitle icon={BookOpen} title="Street Reader" sub="Real signs and short exchanges in the loopless type you meet on the street. Green words you know; tap the rest." color="#FFB86B" />
-      <div className="flex flex-wrap gap-2">
+      {/* One scrolling row on the phone: 23 signs would otherwise fill the screen. */}
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 [&>*]:shrink-0">
         {packs.map((p) => (
           <Chip key={p.id} active={p.id === pack.id} color="#FFB86B" onClick={() => setPid(p.id)}>
             {p.title} <span className="text-xs opacity-70">{p.place}</span>
@@ -5475,6 +5843,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
                         className={`rounded-md px-0.5 text-3xl leading-[1.6] transition sm:text-4xl ${t.price ? "text-2xl sm:text-3xl" : ""} ${t.price && ri === line.findIndex((x) => x.price) ? "ml-auto" : ""}`}
                         style={{
                           color: t.price ? style.accent : style.ink,
+                          textShadow: style.glow,
                           borderBottom: t.price ? "none" : `3px solid ${isKnown ? "#34D399" : "#22D3EE"}`,
                           background: sel === i ? `${style.accent}33` : "transparent",
                         }}
@@ -5487,6 +5856,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
               ))}
             </div>
           </div>
+          {pack.id === "menu-today" && <button onClick={() => setMenuSeed((s) => s + 1000 + Math.floor(Math.random() * 1000))} className="rounded-xl border border-white/15 px-3 py-1.5 text-xs text-slate-200"><RefreshCw size={12} className="mr-1 inline" />New menu</button>}
           <div className="flex flex-wrap items-center gap-3 text-sm">
             <button onClick={toggleTimer} className={`rounded-xl px-4 py-2 font-bold ${timer.start ? "bg-rose-500 text-white" : "bg-amber-500 text-black"}`}>
               {timer.start ? `Done · ${((Date.now() - timer.start) / 1000).toFixed(1)} s` : "Time my reading"}
@@ -6420,6 +6790,398 @@ function ClassifierCorral({ mode, drills = {}, setDrills, logActivity }) {
   );
 }
 
+/* ============================================================================
+ * Lantern Library (N4): twelve short stories, each in Thai and in Lao, written
+ * from course and garden words. Unspaced like real text, tap any word for its
+ * gloss. Format: @id|title|Thai title|Lao title, then th || lo || English.
+ * ========================================================================== */
+const LIBRARY_SRC = `@morning|A slow morning|เช้าวันอาทิตย์|ເຊົ້າວັນອາທິດ
+ฉัน ตื่น ตอนเช้า || ຂ້ອຍ ຕື່ນ ຕອນເຊົ້າ || I wake up in the morning.
+ฉัน อาบน้ำ แล้ว=lɛ́ɛw=then / already ล้าง หน้า || ຂ້ອຍ ອາບນ້ຳ ແລ້ວ=laeo=then / already ລ້າງ ໜ້າ || I shower, then wash my face.
+ฉัน หิว มาก || ຂ້ອຍ ຫິວ ຫຼາຍ || I am very hungry.
+อาหารเช้า มี ข้าว ไข่ และ กาแฟ || ອາຫານເຊົ້າ ມີ ເຂົ້າ ໄຂ່ ແລະ=lae=and ກາເຟ || Breakfast is rice, eggs and coffee.
+กาแฟ ร้อน และ หวาน || ກາເຟ ຮ້ອນ ແລະ ຫວານ || The coffee is hot and sweet.
+วันนี้ วันอาทิตย์ ฉัน ว่าง || ມື້ນີ້ ວັນອາທິດ ຂ້ອຍ ຫວ່າງ || Today is Sunday, and I am free.
+ฉัน อ่าน หนังสือ=nǎng-sʉ̌ʉ=book และ ฟัง เพลง=phleeng=song || ຂ້ອຍ ອ່ານ ປຶ້ມ=puem=book ແລະ ຟັງ ເພງ=pheng=song || I read a book and listen to songs.
+ฉัน มีความสุข || ຂ້ອຍ ມີຄວາມສຸກ || I am happy.
+@market|At the market|ที่ตลาด|ທີ່ຕະຫຼາດ
+แม่ ไป ตลาด กับ ฉัน || ແມ່ ໄປ ຕະຫຼາດ ກັບ ຂ້ອຍ || Mum goes to the market with me.
+ตลาด ใกล้ บ้าน || ຕະຫຼາດ ໃກ້ ເຮືອນ=huean=house / home || The market is near our home.
+แม่ อยาก ซื้อ ผลไม้ || ແມ່ ຢາກ ຊື້ ໝາກໄມ້ || Mum wants to buy fruit.
+มะม่วง ราคา เท่าไร || ໝາກມ່ວງ ລາຄາ ເທົ່າໃດ || How much are the mangoes?
+ห้าสิบ=hâa-sìp=fifty บาท ค่ะ || ຫ້າສິບພັນ=ha sip phan=fifty thousand ກີບ ເຈົ້າ || Fifty (baht, or thousand kip).
+แพง ไป=pai=too (much) หน่อย=nɔ̀i=a bit || ແພງ ໂພດ=phot=too (much) || That's a bit too expensive.
+แม่ ซื้อ กล้วย แทน=thɛɛn=instead || ແມ່ ຊື້ ໝາກກ້ວຍ ແທນ=thaen=instead || Mum buys bananas instead.
+กล้วย หวาน และ ถูก || ໝາກກ້ວຍ ຫວານ ແລະ ຖືກ || The bananas are sweet and cheap.
+@noodles|The noodle shop|ร้านก๋วยเตี๋ยว|ຮ້ານເຝີ
+เรา หิว เรา ไป ร้านอาหาร || ພວກເຮົາ ຫິວ ພວກເຮົາ ໄປ ຮ້ານອາຫານ || We are hungry, so we go to a restaurant.
+ขอ เมนู ครับ || ຂໍ ເມນູ ແດ່=dae=please (softener) || The menu, please.
+ผม สั่ง ก๋วยเตี๋ยว หมู || ຂ້ອຍ ສັ່ງ ເຝີ ໝູ || I order pork noodle soup.
+เพื่อน สั่ง ข้าว ผัด=phàt=stir-fried กุ้ง || ໝູ່ ສັ່ງ ເຂົ້າ ຜັດ=phat=stir-fried ກຸ້ງ || My friend orders shrimp fried rice.
+ไม่=mâi=not เผ็ด นะ ครับ || ບໍ່=bo=not ເຜັດ ເດີ || Not spicy, okay?
+อร่อย มาก || ແຊບ ຫຼາຍ || Very tasty.
+เรา อิ่ม แล้ว || ພວກເຮົາ ອີ່ມ ແລ້ວ || We are full.
+เช็คบิล ครับ || ໄລ່ເງິນ ແດ່ || The bill, please.
+@temple|The way to the temple|ไปวัด|ໄປວັດ
+ฉัน อยาก ไป วัด || ຂ້ອຍ ຢາກ ໄປ ວັດ || I want to go to the temple.
+ฉัน ไม่ รู้ ทาง || ຂ້ອຍ ບໍ່ ຮູ້ ທາງ || I don't know the way.
+ฉัน ถาม ลุง ที่=thîi=at ร้าน || ຂ້ອຍ ຖາມ ລຸງ ທີ່=thi=at ຮ້ານ || I ask an old man at a shop.
+วัด อยู่ ที่ไหน=thîi-nǎi=where ครับ || ວັດ ຢູ່ ໃສ=sai=where || Where is the temple?
+ตรงไป แล้ว เลี้ยว ขวา || ກົງໄປ ແລ້ວ ລ້ຽວ ຂວາ || Go straight, then turn right.
+ไกล ไหม || ໄກ ບໍ || Is it far?
+ไม่ ไกล เดิน สิบ นาที || ບໍ່ ໄກ ຍ່າງ ສິບ ນາທີ || Not far: ten minutes on foot.
+ขอบคุณ มาก ครับ || ຂອບໃຈ ຫຼາຍໆ=lai lai=very much || Thank you very much.
+@family|My family|ครอบครัวของฉัน|ຄອບຄົວຂອງຂ້ອຍ
+นี่=nîi=this คือ ภาพ ครอบครัว=khrɔ̂ɔp-khrua=family ของ=khɔ̌ɔng=of ฉัน || ນີ້=nii=this ແມ່ນ=maen=is ພາບ ຄອບຄົວ=khop khua=family ຂອງ=khong=of ຂ້ອຍ || This is a picture of my family.
+พ่อ เป็น ครู || ພໍ່ ເປັນ ຄູ || Dad is a teacher.
+แม่ ทำงาน ที่ ธนาคาร || ແມ່ ເຮັດວຽກ ທີ່ ທະນາຄານ || Mum works at a bank.
+ฉัน มี น้อง สอง คน || ຂ້ອຍ ມີ ນ້ອງ ສອງ ຄົນ || I have two younger siblings.
+น้อง ชอบ เล่น กับ หมา || ນ້ອງ ມັກ ຫຼິ້ນ ກັບ ໝາ || They like playing with the dog.
+ยาย อายุ แปดสิบ=pɛ̀ɛt-sìp=eighty ปี || ແມ່ຕູ້ ອາຍຸ ແປດສິບ=paet sip=eighty ປີ || Grandma is eighty years old.
+ยาย ใจดี และ ทำอาหาร อร่อย || ແມ່ຕູ້ ໃຈດີ ແລະ ແຕ່ງກິນ ແຊບ || Grandma is kind and cooks well.
+ฉัน คิดถึง ทุกคน || ຂ້ອຍ ຄິດຮອດ ທຸກຄົນ || I miss everyone.
+@sick|A sick day|วันที่ไม่สบาย|ມື້ທີ່ບໍ່ສະບາຍ
+วันนี้ ฉัน ไม่ สบาย || ມື້ນີ້ ຂ້ອຍ ບໍ່ສະບາຍ || I'm not well today.
+ฉัน ปวด หัว และ มี ไข้ || ຂ້ອຍ ເຈັບ ຫົວ ແລະ ເປັນ ໄຂ້ || I have a headache and a fever.
+ฉัน ไอ ด้วย=dûai=too || ຂ້ອຍ ໄອ ນຳ=nam=too || I'm coughing too.
+เพื่อน ช่วย ไป ร้านขายยา || ໝູ່ ຊ່ວຍ ໄປ ຮ້ານຂາຍຢາ || A friend helps by going to the pharmacy.
+หมอ บอก ว่า=wâa=that ต้อง=tɔ̂ng=must นอน และ ดื่ม น้ำ || ໝໍ ບອກ ວ່າ=wa=that ຕ້ອງ=tong=must ນອນ ແລະ ດື່ມ ນ້ຳ || The doctor says I must sleep and drink water.
+ฉัน กิน ยา แล้ว นอน || ຂ້ອຍ ກິນ ຢາ ແລ້ວ ນອນ || I take the medicine and sleep.
+พรุ่งนี้ ฉัน จะ=jà=will สบาย ดี || ມື້ອື່ນ ຂ້ອຍ ຈະ=cha=will ສະບາຍ ດີ || Tomorrow I will be well.
+@train|The night train|รถไฟกลางคืน|ລົດໄຟກາງຄືນ
+เรา จะ ไป เชียงใหม่=chiang-mài=Chiang Mai || ພວກເຮົາ ຈະ ໄປ ວັງວຽງ=wang wiang=Vang Vieng || We are going to Chiang Mai (Vang Vieng in Lao).
+เรา ซื้อ ตั๋ว รถไฟ ที่ สถานี || ພວກເຮົາ ຊື້ ປີ້ ລົດໄຟ ທີ່ ສະຖານີ || We buy train tickets at the station.
+ตั๋ว ราคา หก ร้อย บาท || ປີ້ ລາຄາ ສອງ ແສນ ກີບ || The tickets cost 600 baht (200,000 kip).
+รถไฟ ออก หก โมง=moong=o'clock เย็น=yen=evening || ລົດໄຟ ອອກ ຕອນແລງ || The train leaves in the evening.
+ข้างนอก=khâang-nɔ̂ɔk=outside มี ภูเขา และ แม่น้ำ || ຂ້າງນອກ=khang nok=outside ມີ ພູເຂົາ ແລະ ແມ່ນ້ຳ || Outside there are mountains and rivers.
+กลางคืน เรา นอน บน=bon=on รถไฟ || ກາງຄືນ ພວກເຮົາ ນອນ ເທິງ=thoeng=on ລົດໄຟ || At night we sleep on the train.
+ตอนเช้า เรา ถึง แล้ว || ຕອນເຊົ້າ ພວກເຮົາ ຮອດ=hot=arrive ແລ້ວ || In the morning we arrive.
+เมือง นี้=níi=this สวย มาก || ເມືອງ ນີ້ ງາມ ຫຼາຍ || This town is very beautiful.
+@river|A hot day by the river|ริมแม่น้ำ|ແຄມແມ່ນ້ຳ
+วันนี้ ร้อน มาก || ມື້ນີ້ ຮ້ອນ ຫຼາຍ || It's very hot today.
+เรา ไป นั่ง ริม=rim=edge / side แม่น้ำ || ພວກເຮົາ ໄປ ນັ່ງ ແຄມ=khaem=edge / side ແມ່ນ້ຳ || We go and sit by the river.
+น้อง สั่ง น้ำ มะพร้าว เย็น || ນ້ອງ ສັ່ງ ນ້ຳ ໝາກພ້າວ ເຢັນ || My little sister orders a cold coconut water.
+ฉัน ดื่ม ชา ใส่=sài=put in น้ำแข็ง || ຂ້ອຍ ດື່ມ ຊາ ໃສ່=sai=put in ນ້ຳກ້ອນ || I drink tea with ice.
+เรา เห็น เรือ ใหญ่ || ພວກເຮົາ ເຫັນ ເຮືອ ໃຫຍ່ || We see a big boat.
+เด็ก เล่น น้ำ และ หัวเราะ=hǔa-rɔ́=laugh || ເດັກ ຫຼິ້ນ ນ້ຳ ແລະ ຫົວ=hua=laugh || Children play in the water and laugh.
+ตอนเย็น ลม=lom=wind เย็น สบาย || ຕອນແລງ ລົມ=lom=wind ເຢັນ ສະບາຍ || In the evening the wind is cool and pleasant.
+@dog|My dog|หมาของฉัน|ໝາຂອງຂ້ອຍ
+ฉัน มี หมา หนึ่ง ตัว=tua=(classifier for animals) || ຂ້ອຍ ມີ ໝາ ໜຶ່ງ ໂຕ=to=(classifier for animals) || I have one dog.
+หมา ชื่อ โชค || ໝາ ຊື່ ໂຊກ || The dog is called Chok, "Luck".
+โชค ตัว เล็ก แต่=tɛ̀ɛ=but ดุ || ໂຊກ ໂຕ=to=body ນ້ອຍ ແຕ່=tae=but ດຸ || Chok is small but fierce.
+ทุก=thúk=every เช้า=cháao=morning เรา เดิน ไป สนาม || ທຸກ=thuk=every ເຊົ້າ=sao=morning ພວກເຮົາ ຍ່າງ ໄປ ສະໜາມ || Every morning we walk to the field.
+โชค ชอบ วิ่ง และ เล่น ลูก || ໂຊກ ມັກ ແລ່ນ ແລະ ຫຼິ້ນ ໝາກບານ=mak ban=ball || Chok likes running and playing with a ball.
+โชค กลัว เสือ ใน=nai=in ภาพ || ໂຊກ ຢ້ານ ເສືອ ໃນ=nai=in ພາບ || Chok is afraid of the tiger in the picture.
+ฉัน รัก โชค มาก || ຂ້ອຍ ຮັກ ໂຊກ ຫຼາຍ || I love Chok very much.
+@study|Learning the language|เรียนภาษาไทย|ຮຽນພາສາລາວ
+ฉัน เรียน ภาษา=phaa-sǎa=language ไทย=thai=Thai ทุก วัน || ຂ້ອຍ ຮຽນ ພາສາ=pha sa=language ລາວ=lao=Lao ທຸກ ມື້ || I study Thai (Lao) every day.
+ฉัน อ่าน ป้าย=pâai=sign บน ถนน || ຂ້ອຍ ອ່ານ ປ້າຍ=pai=sign ເທິງ ຖະໜົນ || I read the signs on the street.
+บาง=baang=some คำ=kham=word ยาก บาง คำ ง่าย || ບາງ=bang=some ຄຳ=kham=word ຍາກ ບາງ ຄຳ ງ່າຍ || Some words are hard, some are easy.
+ครู สอน เสียง=sǐang=sound / tone ห้า เสียง || ຄູ ສອນ ສຽງ=siang=sound / tone ຫົກ ສຽງ || The teacher teaches the five tones (six in Lao).
+ฉัน ฟัง และ พูด ตาม=taam=after / following || ຂ້ອຍ ຟັງ ແລະ ເວົ້າ ຕາມ=tam=after / following || I listen and repeat.
+บางที=baang-thii=sometimes ฉัน ลืม แต่ ไม่เป็นไร || ບາງເທື່ອ=bang thua=sometimes ຂ້ອຍ ລືມ ແຕ່ ບໍ່ເປັນຫຍັງ || Sometimes I forget, but never mind.
+ตอนนี้ ฉัน เข้าใจ มาก ขึ้น=khʉ̂n=more (rising) || ດຽວນີ້ ຂ້ອຍ ເຂົ້າໃຈ ຫຼາຍ ຂຶ້ນ=khuen=more (rising) || Now I understand more.
+@nightmarket|The night market|ตลาดกลางคืน|ຕະຫຼາດກາງຄືນ
+ตอนเย็น เรา ไป ตลาด กลางคืน || ຕອນແລງ ພວກເຮົາ ໄປ ຕະຫຼາດ ກາງຄືນ || In the evening we go to the night market.
+คน เยอะ=yə́=many มาก || ຄົນ ຫຼາຍ ແທ້ || There are lots of people.
+เรา กิน หมู ย่าง และ ข้าวเหนียว || ພວກເຮົາ ກິນ ໝູ ປີ້ງ ແລະ ເຂົ້າໜຽວ || We eat grilled pork and sticky rice.
+พี่ ซื้อ เสื้อ=sʉ̂a=shirt ใหม่ || ອ້າຍ ຊື້ ເສື້ອ=suea=shirt ໃໝ່ || My older brother buys a new shirt.
+ราคา ถูก แต่ สวย || ລາຄາ ຖືກ ແຕ່ ງາມ || It's cheap but nice.
+มี คน ร้องเพลง และ เต้น || ມີ ຄົນ ຮ້ອງເພງ ແລະ ເຕັ້ນ || Someone is singing and dancing.
+เรา กลับ บ้าน ดึก=dʉ̀k=late at night || ພວກເຮົາ ກັບ=kap=go back ເຮືອນ ດຶກ=duek=late at night || We go home late at night.
+@post|At the post office|ที่ไปรษณีย์|ທີ່ໄປສະນີ
+ฉัน อยาก ส่ง ของ=khɔ̌ɔng=thing / parcel ไป ประเทศ อังกฤษ=ang-krìt=England || ຂ້ອຍ ຢາກ ສົ່ງ ເຄື່ອງ=khueang=thing / parcel ໄປ ປະເທດ ອັງກິດ=ang kit=England || I want to send a parcel to England.
+ไปรษณีย์ เปิด เก้า โมง || ໄປສະນີ ເປີດ ເກົ້າ ໂມງ=mong=o'clock || The post office opens at nine.
+ฉัน รอ ห้า นาที || ຂ້ອຍ ຖ້າ ຫ້າ ນາທີ || I wait five minutes.
+พนักงาน=phá-nák-ngaan=clerk ถาม ว่า ข้างใน=khâang-nai=inside มี อะไร=à-rai=what || ພະນັກງານ=pha nak ngan=clerk ຖາມ ວ່າ ຂ້າງໃນ=khang nai=inside ມີ ຫຍັງ=nyang=what || The clerk asks what is inside.
+ฉัน ตอบ ว่า ขนม และ ภาพ || ຂ້ອຍ ຕອບ ວ່າ ເຂົ້າໜົມ ແລະ ພາບ || I answer: snacks and pictures.
+ค่า=khâa=fee ส่ง ห้า ร้อย บาท || ຄ່າ=kha=fee ສົ່ງ ໜຶ່ງ ແສນ ກີບ || Postage is 500 baht (100,000 kip).
+ฉัน จ่าย เงิน แล้ว กลับ บ้าน || ຂ້ອຍ ຈ່າຍ ເງິນ ແລ້ວ ກັບ=kap=go back ເຮືອນ || I pay and go home.`;
+const LIBRARY = (() => {
+  const out = [];
+  LIBRARY_SRC.split("\n").forEach((line) => {
+    if (line.startsWith("@")) { const [id, title, th, lo] = line.slice(1).split("|"); out.push({ id, title, th, lo, raw: [] }); return; }
+    const [th, lo, en] = line.split("||").map((x) => x.trim());
+    if (en) out[out.length - 1].raw.push({ th, lo, en });
+  });
+  return out;
+})();
+const storyCache = {};
+/** A story's sentences as tokens for one script (parsed on first use). */
+function storyText(story, script) {
+  const key = `${story.id}:${script}`;
+  if (!storyCache[key]) storyCache[key] = story.raw.map((s) => ({ en: s.en, tokens: tokenizeLine(s[script], script).map((tk) => resolveToken(tk, script)) }));
+  return storyCache[key];
+}
+function storyKnown(story, script, srs) {
+  const toks = storyText(story, script).flatMap((s) => s.tokens).filter((tk) => tk.item);
+  if (!toks.length) return 1;
+  return toks.filter((tk) => (srs[tk.item.id]?.stage || 0) >= 1).length / toks.length;
+}
+const LIBRARY_OPEN_AT = 0.9;
+
+function LanternLibrary({ mode, srs, sandbox, library = {}, setLibrary, logActivity }) {
+  const script = mode === "lo" ? "lo" : "th";
+  const prefs = usePrefs();
+  const [openId, setOpenId] = useState(null);
+  const story = LIBRARY.find((s) => s.id === openId);
+  if (story) return <StoryReader story={story} script={script} srs={srs} prefs={prefs} library={library} setLibrary={setLibrary} logActivity={logActivity} onBack={() => setOpenId(null)} />;
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Library} title="Lantern Library" sub="Short stories written from words in the course and the Word Garden. A story opens when you know 90% of its words." color="#FFD166" />
+      <div className="grid gap-3 sm:grid-cols-2">
+        {LIBRARY.map((s, i) => {
+          const pct = storyKnown(s, script, srs);
+          const open = sandbox || pct >= LIBRARY_OPEN_AT;
+          const reads = library.reads?.[`${s.id}:${script}`] || [];
+          return (
+            <button key={s.id} onClick={() => setOpenId(s.id)} className={`rounded-3xl border p-4 text-left transition ${open ? "border-amber-300/30 bg-amber-300/[0.06]" : "border-white/10 bg-white/[0.03]"}`}>
+              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-amber-300/80">{open ? <BookOpen size={12} /> : <Lock size={12} />} Story {i + 1}</div>
+              <div className="mt-1 text-2xl text-white" lang={script} style={{ fontFamily: FONT_STACKS.loop[script] }}>{script === "lo" ? s.lo : s.th}</div>
+              <div className="text-sm text-slate-300">{s.title}</div>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${pct * 100}%` }} /></div>
+                <span className="text-[11px] tabular-nums text-slate-400">{Math.round(pct * 100)}% known</span>
+              </div>
+              {reads.length > 0 && <div className="mt-1 text-[11px] text-slate-400">Read {reads.length}× · best {Math.max(...reads.map((r) => r.cpm))} letters/min</div>}
+            </button>
+          );
+        })}
+      </div>
+      {script === "lo" && <p className="text-xs text-slate-400">The Lao versions are a first draft and still need a check by a native speaker.</p>}
+    </div>
+  );
+}
+
+function StoryReader({ story, script, srs, prefs, library, setLibrary, logActivity, onBack }) {
+  const sentences = storyText(story, script);
+  const fontFam = FONT_STACKS.loop[script];
+  const [sel, setSel] = useState(null); // [si, ti]
+  const [shownEn, setShownEn] = useState({});
+  const [playing, setPlaying] = useState(-1);
+  const [timer, setTimer] = useState(null);
+  const [, tick] = useState(0);
+  const [toast, setToast] = useState("");
+  const playRef = useRef({ on: false });
+  const key = `${story.id}:${script}`;
+  const reads = library.reads?.[key] || [];
+  const mined = library.mined || [];
+  const letters = sentences.reduce((n, s) => n + s.tokens.reduce((m, tk) => m + [...tk.t].filter((c) => /[ก-๛຀-໿]/.test(c)).length, 0), 0);
+  const known = Math.round(storyKnown(story, script, srs) * 100);
+  useEffect(() => () => { playRef.current.on = false; getAudio().cancelSpeech(); }, []);
+  useEffect(() => { if (!timer) return undefined; const id = setInterval(() => tick((n) => n + 1), 250); return () => clearInterval(id); }, [timer]);
+  const speakSentence = (s) => { const a = getAudio(); const tts = s.tokens.map((tk) => tk.tts || tk.t).join(" "); if (script === "lo") a.speakHumanVoice(tts, s.tokens.map((tk) => tk.t).join("")); else a.speakHumanVoice(tts); };
+  // Read aloud, sentence by sentence, highlighting the one being read.
+  const readAloud = async () => {
+    if (playRef.current.on) { playRef.current.on = false; getAudio().cancelSpeech(); setPlaying(-1); return; }
+    playRef.current.on = true;
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+    for (let i = 0; i < sentences.length && playRef.current.on; i += 1) {
+      setPlaying(i);
+      speakSentence(sentences[i]);
+      const t0 = Date.now();
+      const minMs = 600 + sentences[i].tokens.length * 250;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((res) => { const id = setInterval(() => { const el = Date.now() - t0; if (!playRef.current.on || (el > minMs && !(synth?.speaking || synth?.pending)) || el > 20000) { clearInterval(id); res(); } }, 150); });
+    }
+    playRef.current.on = false;
+    setPlaying(-1);
+  };
+  const toggleTimer = () => {
+    if (!timer) { setTimer(Date.now()); return; }
+    const secs = (Date.now() - timer) / 1000;
+    setTimer(null);
+    const cpm = Math.round(letters / (secs / 60));
+    setLibrary?.((l) => ({ ...l, reads: { ...(l.reads || {}), [key]: [...(l.reads?.[key] || []), { at: Date.now(), secs: Math.round(secs * 10) / 10, cpm }].slice(-20) } }));
+    logActivity?.({ reads: 1 });
+  };
+  const mine = (i) => {
+    const id = `${story.id}:${i}:${script}`;
+    if (!mined.includes(id)) setLibrary?.((l) => ({ ...l, mined: [...(l.mined || []), id] }));
+    haptic("ok");
+    setToast("Added to the Sentence deck");
+    setTimeout(() => setToast(""), 1600);
+  };
+  const press = useRef(null);
+  const selTok = sel ? sentences[sel[0]].tokens[sel[1]] : null;
+  return (
+    <div className="space-y-4 pb-40">
+      <button onClick={onBack} className="inline-flex items-center gap-1 text-sm text-slate-300"><ChevronLeft size={16} /> Library</button>
+      <div>
+        <div className="text-3xl text-white" lang={script} style={{ fontFamily: fontFam }}>{script === "lo" ? story.lo : story.th}</div>
+        <div className="text-sm text-slate-400">{story.title} · you know {known}% of the words</div>
+      </div>
+      <div className="flex flex-wrap gap-2 text-sm">
+        <button onClick={readAloud} className={`rounded-xl px-3 py-2 font-semibold ${playing >= 0 ? "bg-rose-500 text-white" : "bg-white/10 text-white"}`}><Volume2 size={14} className="mr-1 inline" />{playing >= 0 ? "Stop" : "Read aloud"}</button>
+        <button onClick={toggleTimer} className={`rounded-xl px-3 py-2 font-bold ${timer ? "bg-rose-500 text-white" : "bg-amber-500 text-black"}`}>{timer ? `Done · ${((Date.now() - timer) / 1000).toFixed(0)} s` : "Time my reading"}</button>
+      </div>
+      <Card className="p-5">
+        <div className="space-y-1 text-[1.9rem] leading-[1.9]" lang={script} style={{ fontFamily: fontFam }}>
+          {sentences.map((s, si) => (
+            <div key={si} className={`rounded-xl px-1 transition ${playing === si ? "bg-amber-400/15" : ""}`}
+              onContextMenu={(e) => { e.preventDefault(); mine(si); }}
+              onPointerDown={() => { clearTimeout(press.current); press.current = setTimeout(() => mine(si), 600); }}
+              onPointerUp={() => clearTimeout(press.current)} onPointerLeave={() => clearTimeout(press.current)} onPointerMove={() => clearTimeout(press.current)}>
+              <span className="select-none">
+                {s.tokens.map((tk, ti) => (
+                  <button key={ti} onClick={() => { setSel([si, ti]); getAudio().speakHumanVoice(tk.tts || tk.t, script === "lo" ? tk.t : undefined); }} className={`rounded ${sel && sel[0] === si && sel[1] === ti ? "bg-amber-400/30" : ""}`} style={{ color: "rgb(var(--sk-ink))" }}>
+                    <TintedWord text={tk.t} tones={script === "th" ? tk.tone : null} level={tk.item ? tintLevel(srs[tk.item.id]) : 0} enabled={prefs.tint && !tk.num} />
+                  </button>
+                ))}
+              </span>
+              <button onClick={() => setShownEn((m) => ({ ...m, [si]: !m[si] }))} className="ml-2 align-middle text-[11px] font-semibold text-slate-500" style={{ fontFamily: UI_FONT }}>EN</button>
+              {shownEn[si] && <div className="pb-1 text-sm leading-snug text-slate-400" style={{ fontFamily: UI_FONT }}>{s.en} <button onClick={() => mine(si)} className="ml-1 text-amber-300 underline">+ card</button></div>}
+            </div>
+          ))}
+        </div>
+      </Card>
+      <p className="text-xs text-slate-400">Tap a word for its meaning. Press and hold a sentence, or tap EN then + card, to add it to the Sentence deck.</p>
+      {reads.length > 0 && (
+        <Card className="p-4">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Your reading speed</div>
+          <div className="mt-2 flex h-16 items-end gap-1">
+            {reads.map((r, k) => <div key={k} className="flex-1 rounded-t bg-amber-400/70" style={{ height: `${(r.cpm / Math.max(...reads.map((x) => x.cpm))) * 100}%` }} title={`${r.cpm}/min`} />)}
+          </div>
+          <div className="mt-1 text-xs text-slate-300">First {reads[0].cpm} letters a minute{reads.length > 1 ? `, latest ${reads[reads.length - 1].cpm}` : ""}.</div>
+        </Card>
+      )}
+      {toast && <div className="fixed inset-x-0 bottom-28 z-40 mx-auto w-max rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-black">{toast}</div>}
+      {selTok && (
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 mx-auto max-w-xl px-3 sm:bottom-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-sk-panel/95 p-3 shadow-2xl backdrop-blur">
+            <div className="text-3xl text-white" lang={script} style={{ fontFamily: fontFam }}>{selTok.t}</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm text-white">{script === "th" ? R(selTok.r) : selTok.r}</div>
+              <div className="truncate text-xs text-slate-300">{selTok.m}</div>
+              {selTok.tone && <div className="mt-1 flex flex-wrap gap-1">{selTok.tone.map((tn, i) => <ToneBadge key={i} tone={tn} small />)}</div>}
+            </div>
+            <button onClick={() => getAudio().speakHumanVoice(selTok.tts || selTok.t, script === "lo" ? selTok.t : undefined)} className="rounded-xl border border-white/10 p-2 text-slate-200" aria-label="Speak"><Volume2 size={16} /></button>
+            <button onClick={() => setSel(null)} className="p-1 text-slate-400" aria-label="Close"><X size={16} /></button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Ride the line (D25): a timed run of signs in the order you meet them. Read
+ * each one before the train moves on.
+ * ========================================================================== */
+const RIDE_ROUTES = {
+  th: { name: "Bangkok, stop to stop", stops: ["busstop", "road", "pier", "hospital", "pharmacy", "parking", "massage", "sale", "nightmarket", "cart"] },
+  lo: { name: "Vientiane to Luang Prabang", stops: ["lo-bus", "lo-road", "lo-pharmacy", "lo-noodle"] },
+};
+function rideRun(script) {
+  const packs = SIGN_PACKS().filter((p) => p.script === script);
+  const route = RIDE_ROUTES[script];
+  const allGloss = packs.flatMap((p) => p.glosses.filter(Boolean));
+  return route.stops.map((id) => {
+    const pack = packs.find((p) => p.id === id);
+    const k = Math.floor(Math.random() * pack.lines.length);
+    const gloss = pack.glosses[k];
+    return { pack, line: pack.lines[k].map((tk) => resolveToken(tk, script)), answer: gloss, opts: shuffle([gloss, ...shuffle(allGloss.filter((g) => g !== gloss)).slice(0, 3)]) };
+  });
+}
+
+function RideTheLine({ mode, drills = {}, setDrills, logActivity }) {
+  const script = mode === "lo" ? "lo" : "th";
+  const route = RIDE_ROUTES[script];
+  const [run, setRun] = useState(null); // { stops, i, picks: [], start, stopStart, done }
+  const [, tick] = useState(0);
+  const limit = (i) => Math.max(6, 14 - i) * 1000;
+  useEffect(() => {
+    if (!run || run.done || run.picks[run.i] !== undefined) return undefined;
+    const id = setInterval(() => {
+      tick((n) => n + 1);
+      if (Date.now() - run.stopStart > limit(run.i)) setRun((r) => (r && r.picks[r.i] === undefined ? { ...r, picks: [...r.picks, null] } : r));
+    }, 100);
+    return () => clearInterval(id);
+  }, [run]);
+  const best = drills.ride?.[script];
+  const start = () => setRun({ stops: rideRun(script), i: 0, picks: [], start: Date.now(), stopStart: Date.now(), done: false });
+  const choose = (o) => {
+    if (!run || run.picks[run.i] !== undefined) return;
+    const ok = o === run.stops[run.i].answer;
+    haptic(ok ? "ok" : "miss");
+    setRun({ ...run, picks: [...run.picks, o] });
+  };
+  const next = () => {
+    if (run.i + 1 >= run.stops.length) {
+      const right = run.picks.filter((p, k) => p === run.stops[k].answer).length;
+      const secs = (Date.now() - run.start) / 1000;
+      setRun({ ...run, done: true, right, secs });
+      logActivity?.({ signs: run.stops.length });
+      setDrills?.((d) => { const cur = d.ride?.[script]; const better = !cur || right > cur.right || (right === cur.right && secs < cur.secs); return better ? { ...d, ride: { ...(d.ride || {}), [script]: { right, secs, of: run.stops.length } } } : d; });
+      return;
+    }
+    setRun({ ...run, i: run.i + 1, stopStart: Date.now() });
+  };
+  const fontFor = (style) => (script === "lo" ? '"Noto Sans Lao", "Phetsarath OT", sans-serif' : style.font || '"Kanit", "Noto Sans Thai", sans-serif');
+  if (!run) {
+    return (
+      <div className="space-y-4">
+        <SectionTitle icon={Train} title="Ride the line" sub={`${route.name}: ${route.stops.length} signs in the order you meet them. Each stop gives you a few seconds less.`} color="#7CF0B0" />
+        <Card className="p-5 text-center">
+          <div className="flex items-center justify-center gap-1.5">{route.stops.map((s) => <span key={s} className="h-2.5 w-2.5 rounded-full bg-emerald-400/40" />)}</div>
+          {best && <p className="mt-3 text-sm text-slate-300">Best: {best.right}/{best.of} in {best.secs.toFixed(1)} s</p>}
+          <button onClick={start} className="mt-4 w-full rounded-2xl bg-emerald-500 py-3 font-bold text-black">Board the train</button>
+        </Card>
+      </div>
+    );
+  }
+  if (run.done) {
+    return (
+      <div className="space-y-4">
+        <SectionTitle icon={Train} title="End of the line" sub={route.name} color="#7CF0B0" />
+        <Card className="p-5 text-center">
+          <div className="text-4xl font-black text-white">{run.right}/{run.stops.length}</div>
+          <div className="text-sm text-slate-300">signs read in {run.secs.toFixed(1)} s</div>
+          <div className="mt-4 space-y-1.5 text-left text-sm">
+            {run.stops.map((s, k) => (
+              <div key={k} className="flex items-center gap-2"><span className={run.picks[k] === s.answer ? "text-emerald-300" : "text-rose-300"}>{run.picks[k] === s.answer ? <Check size={14} /> : <X size={14} />}</span><span className="text-slate-200">{s.answer}</span></div>
+            ))}
+          </div>
+          <button onClick={start} className="mt-4 w-full rounded-2xl bg-emerald-500 py-3 font-bold text-black">Ride again</button>
+        </Card>
+      </div>
+    );
+  }
+  const stop = run.stops[run.i];
+  const style = STREET_STYLES[stop.pack.style];
+  const picked = run.picks[run.i];
+  const answered = picked !== undefined;
+  const left = Math.max(0, limit(run.i) - (Date.now() - run.stopStart));
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-1.5">
+        {run.stops.map((s, k) => <span key={k} className={`h-2 flex-1 rounded-full ${k < run.i ? (run.picks[k] === s.answer ? "bg-emerald-400" : "bg-rose-400") : k === run.i ? "bg-amber-400" : "bg-white/15"}`} />)}
+      </div>
+      <div className="flex items-center justify-between text-xs text-slate-400"><span>Stop {run.i + 1} · {stop.pack.title}</span><span className="tabular-nums">{answered ? "" : `${(left / 1000).toFixed(1)} s`}</span></div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400" style={{ width: `${answered ? 0 : (left / limit(run.i)) * 100}%` }} /></div>
+      <div className="rounded-3xl p-5 text-center shadow-2xl" style={{ background: style.card, border: `1px solid ${style.border}` }}>
+        <div className="flex flex-wrap items-baseline justify-center gap-x-2">
+          {stop.line.map((tk, k) => <span key={k} className="text-4xl leading-[1.6]" lang={script} style={{ color: tk.price ? style.accent : style.ink, fontFamily: fontFor(style), textShadow: style.glow }}>{tk.t}</span>)}
+        </div>
+        {answered && <div className="mt-1 text-sm" style={{ color: style.accent }}>{stop.line.map((tk) => (script === "th" ? R(tk.r) : tk.r)).filter(Boolean).join(" · ")}</div>}
+      </div>
+      <div className="grid gap-2">
+        {stop.opts.map((o) => {
+          const right = answered && o === stop.answer;
+          const wrong = answered && picked === o && o !== stop.answer;
+          return <button key={o} onClick={() => choose(o)} className={`rounded-2xl border px-4 py-3 text-left text-sm ${right ? "border-emerald-400 bg-emerald-500/20 text-white" : wrong ? "border-rose-400 bg-rose-500/20 text-white" : "border-white/10 bg-white/[0.04] text-slate-100"}`}>{o}</button>;
+        })}
+      </div>
+      {answered && (
+        <div className="flex gap-2">
+          <button onClick={() => getAudio().speakHumanVoice(stop.line.map((tk) => tk.tts || tk.t).join(" "), script === "lo" ? stop.line.map((tk) => tk.t).join(" ") : undefined)} className="rounded-2xl border border-white/15 px-4 py-3 text-slate-200" aria-label="Play"><Volume2 size={16} /></button>
+          <button onClick={next} className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">{picked === null ? "The train left · next stop" : run.i + 1 >= run.stops.length ? "Finish" : "Next stop"}</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SubTabs({ tabs, active, onChange }) {
   return (
     <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
@@ -6927,10 +7689,12 @@ const EAR_TABS = [
   { id: "shadow", label: "Shadow Mirror", icon: Mic },
 ];
 const READ_TABS = [
+  { id: "library", label: "Library", icon: Library },
   { id: "decoder", label: "Decoder", icon: Search },
   { id: "slicer", label: "Script Slicer", icon: Scissors },
   { id: "street", label: "Street Reader", icon: BookOpen },
   { id: "fonts", label: "Font Gauntlet", icon: Type },
+  { id: "ride", label: "Ride the line", icon: Train },
 ];
 // Older saved tabs map onto the new hubs.
 const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"] };
@@ -6981,6 +7745,7 @@ export default function SuvarnaKani() {
     return fixed;
   });
   const [drills, setDrills] = useState(() => initial.drills || {});
+  const [library, setLibrary] = useState(() => initial.library || {});
   // Home-screen shortcuts (?go=reviews|ear|decoder) and text shared from other apps (?text=).
   const launch = useMemo(() => {
     try {
@@ -7010,11 +7775,21 @@ export default function SuvarnaKani() {
       const day = { ...(prev[key] || {}) };
       Object.entries(delta).forEach(([k, v]) => { day[k] = (day[k] || 0) + v; });
       const next = { ...prev, [key]: day };
-      // Keep 60 days of history.
-      Object.keys(next).sort().slice(0, -60).forEach((k) => delete next[k]);
+      // Keep a year of daily history (F4).
+      Object.keys(next).sort().slice(0, -REVIEW_KEEP_DAYS).forEach((k) => delete next[k]);
       return next;
     });
   }, []);
+  // Study time: 30-second ticks while the app is visible and was touched in the last 90 seconds.
+  useEffect(() => {
+    let lastTouch = Date.now();
+    const touch = () => { lastTouch = Date.now(); };
+    window.addEventListener("pointerdown", touch, { passive: true });
+    window.addEventListener("keydown", touch);
+    const id = setInterval(() => { if (document.visibilityState === "visible" && Date.now() - lastTouch < 90000) logActivity({ secs: 30 }); }, 30000);
+    pruneReviews();
+    return () => { clearInterval(id); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); };
+  }, [logActivity]);
   const finishOnboarding = (a) => {
     if (a.mode) setMode(a.mode);
     if (a.level === "reads") setSandbox(true);
@@ -7053,11 +7828,11 @@ export default function SuvarnaKani() {
   }, []);
 
   const stateRef = useRef(null);
-  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills };
+  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library };
   useEffect(() => {
     if (restoringState) return;
     saveState(stateRef.current);
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills]);
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library]);
   // A snapshot of the state as the app opens each day, before today's work changes it.
   useEffect(() => { if (stateRef.current.onboarded) snapshotToday(stateRef.current); }, []);
 
@@ -7080,6 +7855,7 @@ export default function SuvarnaKani() {
     setGarden([]);
     setSentSrs({});
     setDrills({});
+    setLibrary({});
     setConfirmReset(false);
   };
 
@@ -7117,7 +7893,7 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} />}
         {tab === "ear" && (
           <>
             <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
@@ -7141,6 +7917,8 @@ export default function SuvarnaKani() {
             <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
             {readTab === "slicer" && <Slicer mode={mode} font={font} />}
             {readTab === "decoder" && <Decoder srs={srs} initialText={sharedText} onInspect={setInspect} saved={decoderSaved} setSaved={setDecoderSaved} />}
+            {readTab === "ride" && <RideTheLine mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
+            {readTab === "library" && <LanternLibrary mode={mode} font={font} srs={srs} sandbox={sandbox} library={library} setLibrary={setLibrary} logActivity={logActivity} />}
             {readTab === "fonts" && <FontGauntlet mode={mode} srs={srs} stats={gauntlet} setStats={setGauntlet} />}
             {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} />}
           </>
@@ -7183,4 +7961,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };

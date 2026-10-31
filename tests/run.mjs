@@ -156,5 +156,34 @@ eq(T.interleave([1, 2, 3, 4], ["a", "b", "c"], 3, 2), [1, 2, 3, "a", "b", 4, "c"
 const cards = T.sentenceCards({ mode: "th", saved: [{ th: "ซอย", meaning: "lane", script: "th" }, { th: "ถนน", script: "th" }] });
 check(cards.some((c) => c.id === "dw-ซอย") && !cards.some((c) => c.id === "dw-ถนน"), "saved words become sentence cards only with a meaning");
 
+// 11. Signs, the daily menu, Ride the line and the Lantern Library: every word has a reading and a meaning,
+// and readings written by hand agree with the engine's tones where it is sure.
+const handTone = (tk, where) => {
+  if (!tk.tone || tk.num) return;
+  const rd = T.readThai(tk.t);
+  if (rd.some((x) => x.guess || x.raw) || rd.length !== tk.tone.length) return;
+  eq(rd.map((x) => x.tone), tk.tone, `${where} ${tk.t} (${tk.r})`);
+};
+const signPacks = T.SIGN_PACKS();
+check(signPacks.length >= 15, `at least 15 new signs (got ${signPacks.length})`);
+for (const p of [...signPacks, T.dailyMenu(1), T.dailyMenu(99)]) {
+  p.lines.forEach((l, k) => l.forEach((tk) => {
+    check(!!tk.id || (tk.r && tk.m), `sign ${p.id} line ${k}: ${tk.t} has a reading and meaning`);
+    if (p.script === "th" && !tk.id) handTone(tk, `sign ${p.id}`);
+  }));
+  if (!p.id.startsWith("menu")) check(p.glosses.every(Boolean), `sign ${p.id} has a gloss on every line`);
+}
+for (const sc of ["th", "lo"]) {
+  const run = T.rideRun(sc);
+  check(run.length >= 4 && run.every((s) => s.opts.length === 4 && s.opts.includes(s.answer)), `ride ${sc}: stops with four options`);
+}
+check(T.LIBRARY.length === 12 && T.LIBRARY.every((s) => s.raw.length >= 6 && s.raw.length <= 10), "twelve stories of six to ten sentences");
+for (const s of T.LIBRARY) for (const sc of ["th", "lo"]) T.storyText(s, sc).forEach((se, i) => se.tokens.forEach((tk) => {
+  check(tk.r && tk.m, `story ${s.id} ${sc} ${i}: ${tk.t} has a reading and meaning`);
+  if (sc === "th" && !tk.item) handTone(tk, `story ${s.id}`);
+}));
+const mined = T.sentenceCards({ mode: "th", mined: ["morning:0:th", "morning:1:lo"] });
+check(mined.some((c) => c.id === "lib-morning:0:th") && !mined.some((c) => c.id === "lib-morning:1:lo"), "library sentences join the Thai deck by script");
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
