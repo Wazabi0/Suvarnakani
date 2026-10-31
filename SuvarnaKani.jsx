@@ -293,6 +293,33 @@ const CURRICULUM = [
     mnemonic: "High-class ส leads น: นาม rises as if written หนาม.", trap: "The second syllable takes the leader's class.", bridge: "Lao writes it out: ສະ + ໜາມ." },
   { id: "v-khanom", level: 6, tier: "vocab", th: "ขนม", lo: "ເຂົ້າໜົມ", thRoman: "khà-nǒm", loRoman: "khao nom", meaning: "snack / dessert", accept: ["khanom", "kanom", "khaonom", "snack", "dessert", "sweets"], ttsTh: "ขนม", ttsLo: "เข้าหนม", tone: ["low", "rising"],
     mnemonic: "ข leads นม: the sweet rises (khà-nǒm).", trap: "Not ขน + ม: it's khà-nǒm.", bridge: "Lao says ເຂົ້າໜົມ and writes the ໜ explicitly." },
+  // ---------------- Level 7: Street Signs and Numbers ----------------
+  { id: "n-1", level: 7, tier: "glyph", th: "๑", lo: "໑", thRoman: "nʉ̀ng · 1", loRoman: "neung · 1", meaning: "1 (one)", accept: ["1", "one", "nueng", "neung", "nung"], ttsTh: "หนึ่ง", ttsLo: "หนึ่ง", tone: ["low"],
+    mnemonic: "A single curl with a tail: one.", trap: "๑ (1) vs ๗ (7): 7 has a tall stem.", street: "Prices on old shops and temple signs often use Thai digits." },
+  { id: "n-2", level: 7, tier: "glyph", th: "๒", lo: "໒", thRoman: "sɔ̌ɔng · 2", loRoman: "song · 2", meaning: "2 (two)", accept: ["2", "two", "song", "sorng"], ttsTh: "สอง", ttsLo: "สอง", tone: ["rising"],
+    mnemonic: "๑ with a second hook on top: two.", trap: "๒ (2) vs ๙ (9): 9 has a long tail up.", bridge: "Lao ໒ is a simpler curl." },
+  { id: "n-3", level: 7, tier: "glyph", th: "๓", lo: "໓", thRoman: "sǎam · 3", loRoman: "sam · 3", meaning: "3 (three)", accept: ["3", "three", "saam", "sam"], ttsTh: "สาม", ttsLo: "สาม", tone: ["rising"],
+    mnemonic: "Three bumps in a row.", trap: "๓ (3) vs ๗ (7)." },
+  { id: "n-4", level: 7, tier: "glyph", th: "๔", lo: "໔", thRoman: "sìi · 4", loRoman: "si · 4", meaning: "4 (four)", accept: ["4", "four", "sii", "si", "see"], ttsTh: "สี่", ttsLo: "สี่", tone: ["low"],
+    mnemonic: "A loop with a flick, like a 4 tipped onto its side.", trap: "๔ (4) vs ๕ (5): 5 has an extra tail." },
+  { id: "n-5", level: 7, tier: "glyph", th: "๕", lo: "໕", thRoman: "hâa · 5", loRoman: "ha · 5", meaning: "5 (five)", accept: ["5", "five", "haa", "ha"], ttsTh: "ห้า", ttsLo: "ห้า", tone: ["falling"],
+    mnemonic: "๔ plus a tail: one more.", trap: "555 in Thai chat means 'hahaha' because 5 is hâa." },
+  { id: "n-0", level: 7, tier: "glyph", th: "๐", lo: "໐", thRoman: "sǔun · 0", loRoman: "sun · 0", meaning: "0 (zero)", accept: ["0", "zero", "suun", "sun", "soon"], ttsTh: "ศูนย์", ttsLo: "สูน", tone: ["rising"],
+    mnemonic: "A plain circle, like ours.", trap: "Spelled ศูนย์ with a silent ย์.", bridge: "Lao ສູນ: no silent letter." },
+  { id: "v-baht", level: 7, tier: "vocab", th: "บาท", lo: "ກີບ", thRoman: "bàat", loRoman: "kip", meaning: "baht / kip (currency)", accept: ["baat", "baht", "bat", "kip", "currency", "money"], ttsTh: "บาท", ttsLo: "กีบ", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "Middle + dead = Low: prices end on a low note.", trap: "Written after the number: ๘๐ บาท = 80 baht.", bridge: "Different currencies: Thai baht, Lao kip (ກີບ)." },
+  { id: "v-exit", level: 7, tier: "vocab", th: "ทางออก", lo: "ທາງອອກ", thRoman: "thaang-ɔ̀ɔk", loRoman: "thang ok", meaning: "exit", accept: ["thaangok", "thangok", "taangok", "thaangawk", "exit", "wayout"], ttsTh: "ทางออก", ttsLo: "ทางออก", tone: ["mid", "low"],
+    mnemonic: "ทาง (way) + ออก (out).", trap: "ทางเข้า is the entrance.", bridge: "Same words in Lao: ທາງອອກ." },
+  { id: "v-toilet", level: 7, tier: "vocab", th: "ห้องน้ำ", lo: "ຫ້ອງນ້ຳ", thRoman: "hɔ̂ng-náam", loRoman: "hong nam", meaning: "toilet / bathroom", accept: ["hongnaam", "hongnam", "toilet", "bathroom", "restroom"], ttsTh: "ห้องน้ำ", ttsLo: "ห้องน้ำ", tone: ["falling", "high"],
+    mnemonic: "ห้อง (room) + น้ำ (water).", trap: "Look for ชาย (men) and หญิง (women) next to it.", bridge: "Identical in Lao: ຫ້ອງນ້ຳ." },
+  { id: "v-price", level: 7, tier: "vocab", th: "ราคา", lo: "ລາຄາ", thRoman: "raa-khaa", loRoman: "lakha", meaning: "price", accept: ["raakhaa", "rakha", "raka", "lakha", "price", "cost"], ttsTh: "ราคา", ttsLo: "ลาคา", tone: ["mid", "mid"],
+    mnemonic: "Two calm Mid syllables, like a price tag that doesn't move.", trap: "ราคาเท่าไหร่ = how much?", bridge: "Thai ร ↔ Lao ລ in this loanword." },
+  { id: "v-open", level: 7, tier: "vocab", th: "เปิด", lo: "ເປີດ", thRoman: "pə̀ət", loRoman: "poet", meaning: "open", accept: ["poet", "perd", "poed", "pert", "open"], ttsTh: "เปิด", ttsLo: "เปีด", tone: ["low"], parts: { cls: "mid", live: false, long: true, mark: "none" },
+    mnemonic: "เปิด vs ปิด: the extra เ opens the door.", trap: "เปิด (open) vs ปิด (closed) differ only by the vowel." },
+  { id: "v-closed", level: 7, tier: "vocab", th: "ปิด", lo: "ປິດ", thRoman: "pìt", loRoman: "pit", meaning: "closed / shut", accept: ["pit", "pid", "closed", "close", "shut"], ttsTh: "ปิด", ttsLo: "ปิด", tone: ["low"], parts: { cls: "mid", live: false, long: false, mark: "none" },
+    mnemonic: "Short and shut: pìt.", trap: "เปิด (open) vs ปิด (closed)." },
+  { id: "v-forbid", level: 7, tier: "vocab", th: "ห้าม", lo: "ຫ້າມ", thRoman: "hâam", loRoman: "ham", meaning: "forbidden / do not", accept: ["haam", "ham", "forbidden", "donot", "no", "prohibited"], ttsTh: "ห้าม", ttsLo: "ห้าม", tone: ["falling"], parts: { cls: "high", live: true, long: true, mark: "tho" },
+    mnemonic: "High + Mai Tho falls like a barrier: ห้าม!", trap: "ห้าม + verb = no ...ing: ห้ามสูบบุหรี่, no smoking.", bridge: "Same in Lao: ຫ້າມ." },
 ];
 
 // Each course has its own colour world (see the roadmap's course designs).
@@ -303,6 +330,7 @@ const LEVELS = [
   { n: 4, title: "Dead Endings", sub: "Final consonants · dead syllables", accent: "#FF8A6E", bg: "linear-gradient(160deg, #2a0f12, transparent 70%)" },
   { n: 5, title: "Vowel Universe", sub: "Short, long and wrap-around vowels", accent: "#FFD166", bg: "radial-gradient(circle at 80% 30%, #FFD16618, transparent 55%), linear-gradient(160deg, #141a2e, transparent 70%)" },
   { n: 6, title: "Clusters and Leaders", sub: "True and false clusters · leading consonants", accent: "#5EEAD4", bg: "linear-gradient(160deg, #10222a, transparent 70%)" },
+  { n: 7, title: "Street Signs and Numbers", sub: "Digits, prices and the words on every sign", accent: "#FFB86B", bg: "linear-gradient(160deg, #22222a, transparent 70%)" },
 ];
 
 /* ---------------------------------------------------------------------------
@@ -2848,6 +2876,178 @@ function MekongPredictor({ mode, font, bridge, setBridge }) {
 }
 
 /* ============================================================================
+ * Module: Street Reader (real-world signs in street type)
+ * Tokens: { t, r, m, tone?, id?, tts? }. `id` links to a curriculum item.
+ * ========================================================================== */
+const STREET_PACKS = [
+  { id: "cafe", script: "th", title: "Café menu", place: "Bangkok", style: "cafe", lines: [
+    [{ t: "ข้าว", id: "v-khaaw" }, { t: "ผัด", r: "phàt", m: "stir-fried", tone: ["low"] }, { t: "กุ้ง", r: "kûng", m: "shrimp", tone: ["falling"] }, { price: true, t: "๘๐", r: "pɛ̀ɛt-sìp", m: "80", tts: "แปดสิบ" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "น้ำ", id: "v-naam" }, { t: "มะนาว", r: "má-naaw", m: "lime", tone: ["high", "mid"] }, { price: true, t: "๓๕", r: "sǎam-sìp-hâa", m: "35", tts: "สามสิบห้า" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "ส้มตำ", r: "sôm-tam", m: "papaya salad", tone: ["falling", "mid"] }, { t: "แซ่บ", id: "v-saep" }, { price: true, t: "๖๐", r: "hòk-sìp", m: "60", tts: "หกสิบ" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "กาแฟ", r: "kaa-fɛɛ", m: "coffee", tone: ["mid", "mid"] }, { t: "เย็น", r: "yen", m: "cold / iced", tone: ["mid"] }, { price: true, t: "๕๕", r: "hâa-sìp-hâa", m: "55", tts: "ห้าสิบห้า" }, { price: true, t: "บาท", id: "v-baht" }],
+  ] },
+  { id: "bts", script: "th", title: "Skytrain station", place: "Bangkok", style: "transit", lines: [
+    [{ t: "สถานี", r: "sà-thǎa-nii", m: "station", tone: ["low", "rising", "mid"] }, { t: "สยาม", r: "sà-yǎam", m: "Siam", tone: ["low", "rising"] }],
+    [{ t: "ทางออก", id: "v-exit" }, { t: "๓", id: "n-3" }],
+    [{ t: "ห้องน้ำ", id: "v-toilet" }, { t: "ชาย", r: "chaai", m: "men", tone: ["mid"] }, { t: "หญิง", r: "yǐng", m: "women", tone: ["rising"] }],
+  ] },
+  { id: "shop", script: "th", title: "Convenience store", place: "Bangkok", style: "shop", lines: [
+    [{ t: "น้ำ", id: "v-naam" }, { t: "ดื่ม", r: "dʉ̀ʉm", m: "drinking", tone: ["low"] }, { price: true, t: "๑๐", r: "sìp", m: "10", tts: "สิบ" }, { price: true, t: "บาท", id: "v-baht" }],
+    [{ t: "ขนม", id: "v-khanom" }, { t: "ลด", r: "lót", m: "discount (reduce)", tone: ["high"] }, { price: true, t: "๒๐%", r: "yîi-sìp pəə-sen", m: "20%", tts: "ยี่สิบเปอร์เซ็นต์" }],
+    [{ t: "เปิด", id: "v-open" }, { price: true, t: "๒๔", r: "yîi-sìp-sìi", m: "24", tts: "ยี่สิบสี่" }, { t: "ชั่วโมง", r: "chûa-moong", m: "hours", tone: ["falling", "mid"] }],
+  ] },
+  { id: "temple", script: "th", title: "Temple notice", place: "Chiang Mai", style: "temple", lines: [
+    [{ t: "กรุณา", r: "kà-rú-naa", m: "please", tone: ["low", "high", "mid"] }, { t: "ถอด", r: "thɔ̀ɔt", m: "take off", tone: ["low"] }, { t: "รองเท้า", r: "rɔɔng-tháaw", m: "shoes", tone: ["mid", "high"] }],
+    [{ t: "ห้าม", id: "v-forbid" }, { t: "ถ่าย", r: "thàai", m: "take (a photo)", tone: ["low"] }, { t: "รูป", r: "rûup", m: "picture", tone: ["falling"] }],
+  ] },
+  { id: "market", script: "lo", title: "Morning market", place: "Vientiane", style: "market", lines: [
+    [{ t: "ຕະຫຼາດ", id: "v-talaat" }, { t: "ເຊົ້າ", r: "sao", m: "morning", tts: "เซ้า" }],
+    [{ t: "ໝາກໄມ້", r: "mak mai", m: "fruit", tts: "หมากไม้" }, { t: "ລາຄາ", id: "v-price" }, { price: true, t: "໒໐໐໐໐", r: "sao phan", m: "20,000", tts: "ซาวพัน" }, { price: true, t: "ກີບ", id: "v-baht" }],
+    [{ t: "ເຂົ້າໜຽວ", r: "khao niao", m: "sticky rice", tts: "เข้าเหนียว" }, { price: true, t: "໑໐໐໐໐", r: "sip phan", m: "10,000", tts: "สิบพัน" }, { price: true, t: "ກີບ", id: "v-baht" }],
+  ] },
+];
+
+const STREET_STYLES = {
+  cafe: { card: "linear-gradient(170deg, #3a1f0e, #1d1009)", ink: "#FFE7C2", accent: "#FFB86B", border: "#ffb86b44" },
+  transit: { card: "linear-gradient(170deg, #0e3b2a, #08241a)", ink: "#F2FFF8", accent: "#7CF0B0", border: "#7cf0b044" },
+  shop: { card: "linear-gradient(170deg, #f5f5f0, #e7e5df)", ink: "#1a1a1a", accent: "#E4002B", border: "#00000022" },
+  temple: { card: "linear-gradient(170deg, #5a1414, #2e0909)", ink: "#FFE08A", accent: "#F5C542", border: "#f5c54244" },
+  market: { card: "linear-gradient(170deg, #12324a, #0a1c2b)", ink: "#EAF6FF", accent: "#7FD1FF", border: "#7fd1ff44" },
+};
+
+function resolveToken(tok, script) {
+  if (!tok.id) return tok;
+  const item = CURRICULUM.find((c) => c.id === tok.id);
+  if (!item) return tok;
+  const lao = script === "lo";
+  return {
+    ...tok,
+    r: tok.r || (lao ? item.loRoman : item.thRoman.split(" ·")[0]),
+    m: tok.m || item.meaning,
+    tone: tok.tone || (lao ? undefined : item.tone),
+    tts: tok.tts || (lao ? item.ttsLo : item.ttsTh),
+    item,
+  };
+}
+
+function StreetReader({ mode, srs, setSrs, best, setBest }) {
+  const packs = STREET_PACKS.filter((p) => mode === "dual" || p.script === mode);
+  const [pid, setPid] = useState(packs[0]?.id);
+  const pack = packs.find((p) => p.id === pid) || packs[0];
+  const [sel, setSel] = useState(null);
+  const [timer, setTimer] = useState({ start: null, last: null });
+  const [, tick] = useState(0);
+  useEffect(() => { setSel(null); setTimer({ start: null, last: null }); }, [pid]);
+  useEffect(() => {
+    if (!timer.start) return undefined;
+    const id = setInterval(() => tick((n) => n + 1), 200);
+    return () => clearInterval(id);
+  }, [timer.start]);
+  if (!pack) return null;
+  const style = STREET_STYLES[pack.style];
+  const tokens = pack.lines.flat().map((t) => resolveToken(t, pack.script));
+  const words = tokens.filter((t) => !t.price);
+  const known = (t) => t.item && (srs[t.item.id]?.stage || 0) >= 1;
+  const knownPct = Math.round((words.filter(known).length / words.length) * 100);
+  const font = pack.script === "lo" ? '"Noto Sans Lao", "Phetsarath OT", sans-serif' : '"Kanit", "Noto Sans Thai", sans-serif';
+  const selTok = sel != null ? tokens[sel] : null;
+  const audio = getAudio();
+
+  const toggleTimer = () => {
+    if (!timer.start) return setTimer({ start: Date.now(), last: null });
+    const secs = (Date.now() - timer.start) / 1000;
+    setTimer({ start: null, last: secs });
+    if (!best[pack.id] || secs < best[pack.id]) {
+      setBest({ ...best, [pack.id]: secs });
+    }
+    return undefined;
+  };
+
+  const addToSrs = (item) => setSrs((prev) => (prev[item.id]?.stage ? prev : { ...prev, [item.id]: { stage: 1, next: Date.now() } }));
+  let flat = -1;
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={BookOpen} title="Street Reader" sub="Real signs in the loopless type you meet on the street. Green words you know; tap the rest." color="#FFB86B" />
+      <div className="flex flex-wrap gap-2">
+        {packs.map((p) => (
+          <Chip key={p.id} active={p.id === pack.id} color="#FFB86B" onClick={() => setPid(p.id)}>
+            {p.title} <span className="text-xs opacity-70">{p.place}</span>
+          </Chip>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${knownPct}%` }} /></div>
+            <span className="text-sm text-slate-300">You can read <b className="text-white">{knownPct}%</b> of this</span>
+          </div>
+          <div className="rounded-3xl p-5 shadow-2xl sm:p-7" style={{ background: style.card, border: `1px solid ${style.border}`, fontFamily: font }}>
+            <div className="mb-3 text-xs uppercase tracking-[0.2em]" style={{ color: style.accent, fontFamily: UI_FONT }}>{pack.place}</div>
+            <div className="space-y-2">
+              {pack.lines.map((line, li) => (
+                <div key={li} className="flex flex-wrap items-baseline gap-x-1 gap-y-1 border-b border-dashed pb-2 last:border-0" style={{ borderColor: style.border }}>
+                  {line.map((raw, ri) => {
+                    flat += 1;
+                    const i = flat;
+                    const t = tokens[i];
+                    const isKnown = known(t);
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => { setSel(i); audio.speakHumanVoice(t.tts || t.t, pack.script === "lo" ? t.t : undefined); }}
+                        className={`rounded-md px-0.5 text-3xl leading-[1.6] transition sm:text-4xl ${t.price ? "text-2xl sm:text-3xl" : ""} ${t.price && ri === line.findIndex((x) => x.price) ? "ml-auto" : ""}`}
+                        style={{
+                          color: t.price ? style.accent : style.ink,
+                          borderBottom: t.price ? "none" : `3px solid ${isKnown ? "#34D399" : "#22D3EE"}`,
+                          background: sel === i ? `${style.accent}33` : "transparent",
+                        }}
+                      >
+                        {raw.t}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <button onClick={toggleTimer} className={`rounded-xl px-4 py-2 font-bold ${timer.start ? "bg-rose-500 text-white" : "bg-amber-500 text-black"}`}>
+              {timer.start ? `Done · ${((Date.now() - timer.start) / 1000).toFixed(1)} s` : "Time my reading"}
+            </button>
+            {timer.last != null && <span className="text-slate-200">{timer.last.toFixed(1)} s</span>}
+            {best[pack.id] && <span className="text-slate-400">Best {best[pack.id].toFixed(1)} s</span>}
+            <span className="text-xs text-slate-400">Read the whole sign aloud, then stop the timer.</span>
+          </div>
+        </div>
+        <Card className="p-4">
+          {selTok ? (
+            <div className="space-y-2">
+              <div className="text-5xl leading-[1.5] text-white" style={{ fontFamily: font }}>{selTok.t}</div>
+              <div className="text-slate-200">{selTok.r} · {selTok.m}</div>
+              {selTok.tone && <div className="flex flex-wrap gap-1">{selTok.tone.map((tn, i) => <ToneBadge key={i} tone={tn} small />)}</div>}
+              {selTok.item?.parts && <div className="text-xs text-slate-300">{computeTone(selTok.item.parts).formula}</div>}
+              <div className="text-xs text-slate-400">Head-loop form: <span className="text-2xl text-slate-200" style={{ fontFamily: FONT_STACKS.loop[pack.script] }}>{selTok.t}</span></div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button onClick={() => audio.speakHumanVoice(selTok.tts || selTok.t, pack.script === "lo" ? selTok.t : undefined)} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-slate-200"><Volume2 size={13} className="mr-1 inline" />Speak</button>
+                {selTok.item && (known(selTok) ? (
+                  <span className="rounded-xl bg-emerald-500/15 px-3 py-2 text-xs text-emerald-300"><Check size={13} className="mr-1 inline" />In your SRS</span>
+                ) : (
+                  <button onClick={() => addToSrs(selTok.item)} className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-black">+ Add to SRS</button>
+                ))}
+              </div>
+              {!selTok.item && !selTok.price && <p className="text-xs text-slate-400">Not in the course yet; listen and read it here.</p>}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">Tap any word on the sign for its reading, meaning and tone. Words from the course can go straight into your SRS.</p>
+          )}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
  * Hub tabs: Lab (Reactor, Orbit, Bridge) and Read (Slicer, Street Reader)
  * ========================================================================== */
 function SubTabs({ tabs, active, onChange }) {
@@ -2912,6 +3112,7 @@ const LAB_TABS = [
 ];
 const READ_TABS = [
   { id: "slicer", label: "Script Slicer", icon: Scissors },
+  { id: "street", label: "Street Reader", icon: BookOpen },
 ];
 // Older saved tabs map onto the new hubs.
 const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"] };
@@ -2930,6 +3131,7 @@ export default function SuvarnaKani() {
   const [labTab, setLabTab] = useState(LEGACY_TAB[initial.tab]?.[1] === "reactor" || LEGACY_TAB[initial.tab]?.[1] === "orbit" ? LEGACY_TAB[initial.tab][1] : initial.labTab || "reactor");
   const [readTab, setReadTab] = useState(initial.readTab || "slicer");
   const [bridge, setBridge] = useState(() => ({ ...emptyBridge(), ...(initial.bridge || {}) }));
+  const [streetBest, setStreetBest] = useState(() => initial.streetBest || {});
   const [mode, setMode] = useState(initial.mode || "dual");
   const [font, setFont] = useState(initial.font || "loop");
   const [sandbox, setSandbox] = useState(!!initial.sandbox);
@@ -2988,8 +3190,8 @@ export default function SuvarnaKani() {
   }, []);
 
   useEffect(() => {
-    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge });
-  }, [tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge]);
+    saveState({ tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest });
+  }, [tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, streetBest]);
 
   // Two taps instead of window.confirm, which embedded viewers block.
   const [confirmReset, setConfirmReset] = useState(false);
@@ -3003,6 +3205,7 @@ export default function SuvarnaKani() {
     setEar(emptyEar());
     setLog({});
     setBridge(emptyBridge());
+    setStreetBest({});
     setConfirmReset(false);
   };
 
@@ -3057,6 +3260,7 @@ export default function SuvarnaKani() {
           <>
             <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
             {readTab === "slicer" && <Slicer mode={mode} font={font} />}
+            {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} />}
           </>
         )}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
