@@ -83,5 +83,36 @@ let threw = false; try { T.readBackup("{\"x\":1}"); } catch { threw = true; }
 check(threw, "a non-backup file is refused");
 check(T.verCmp("0.20.0", "0.9.0") > 0, "version compare is numeric");
 
+// 7. Thai reading engine: syllable splits, romanisation and tones from spelling alone.
+const READS = {
+  "กิน": "kin:mid", "บ้าน": "bâan:falling", "ช้าง": "cháang:high", "สวัสดี": "sà:low wàt:low dii:mid", "ขอบคุณ": "khɔ̀ɔp:low khun:mid",
+  "รัก": "rák:high", "รถ": "rót:high", "ประเทศ": "prà:low thêet:falling", "เด็ก": "dèk:low", "กลับ": "klàp:low", "ขวา": "khwǎa:rising",
+  "ความ": "khwaam:mid", "ทราย": "saai:mid", "สร้าง": "sâang:falling", "จริง": "jing:mid", "อยาก": "yàak:low", "อยู่": "yùu:low",
+  "ตลาด": "tà:low làat:low", "สนาม": "sà:low nǎam:rising", "ขนม": "khà:low nǒm:rising", "ห้องน้ำ": "hɔ̂ɔng:falling náam:high",
+  "เปิด": "pə̀ət:low", "ครับ": "khráp:high", "ค่ะ": "khâ:falling", "ไหม": "mǎi:rising", "หนังสือ": "nǎng:rising sʉ̌ʉ:rising",
+  "ข้าวผัดกุ้ง": "khâaw:falling phàt:low kûng:falling", "เรียน": "rian:mid", "เมือง": "mʉang:mid", "ไทย": "thai:mid", "เขา": "khǎo:rising",
+  "ภาษา": "phaa:mid sǎa:rising", "จันทร์": "jan:mid", "สมุด": "sà:low mùt:low", "ผู้หญิง": "phûu:falling yǐng:rising", "สบาย": "sà:low baai:mid",
+  "ขอโทษ": "khɔ̌ɔ:rising thôot:falling", "ผลไม้": "phǒn:rising mái:high", "ก็": "kɔ̂:falling", "เก้า": "kâao:falling",
+};
+for (const [w, want] of Object.entries(READS)) eq(T.readThai(w).map((x) => `${x.roman}:${x.tone}`).join(" "), want, `read ${w}`);
+const seg = T.segmentThai("ฉันอยากกินข้าวผัดกุ้ง");
+check(seg.map((w) => w.text).join("") === "ฉันอยากกินข้าวผัดกุ้ง", "segmentation keeps every letter");
+check(seg.find((w) => w.text === "กิน")?.known, "กิน is recognised as a course word");
+eq(T.romanize("khâaw-phàt", "rtgs"), "khao-phat", "RTGS drops tones and length");
+eq(T.romanize("khɔ̀ɔp-khun", "rtgs"), "khop-khun", "RTGS ɔ → o");
+eq(T.romanize("jai", "rtgs"), "chai", "RTGS j → ch");
+eq(T.romanize("náam", "ipa"), "naːm˦˥", "IPA with Chao letters");
+
+// 8. Slicer sentences: every Thai word's tones agree with the reading engine where it is sure.
+for (const sen of T.SENTENCES.filter((x) => x.script === "th")) {
+  for (const w of sen.words) {
+    const rd = T.readThai(w.w);
+    if (rd.some((x) => x.guess || x.raw) || rd.length !== w.tone.length) continue;
+    eq(rd.map((x) => x.tone), w.tone, `slicer ${sen.id} ${w.w}`);
+  }
+}
+const senIds = new Set(T.SENTENCES.map((x) => x.id));
+check(senIds.size >= 15 && T.SENTENCES.length >= 30, `30 slicer lines (got ${T.SENTENCES.length})`);
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

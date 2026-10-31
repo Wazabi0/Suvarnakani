@@ -29,6 +29,15 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.21.0**: Take it outside (Roadmap III, wave B).
+  - **Thai reading engine.** `readThai` splits Thai into syllables by trying every vowel pattern and picking the cheapest split (dynamic programming). It handles clusters, ห นำ and อ นำ, silent ◌์ letters, and the leading-letter rule (ขนม, ตลาด). Hidden vowels are inferred and flagged as guesses. Each syllable's class, live or dead, length and mark go through `computeTone`. `segmentThai` splits unspaced text into words, preferring words the course already knows (course items, slicer words, sign tokens) and their course readings. The tests check 42 words and every slicer word against it.
+  - **Decoder** (Read → Decoder). Paste or type Thai or Lao. Each word shows its tone-tinted syllables, a card per syllable (tone, class, live or dead, mark, the rule, any notes) and Listen. Course words open in the Inspector; other words can be saved. Lao uses the Vientiane reader from 0.18.
+  - **Share target and shortcuts.** The manifest registers SuvarṇaKani as a share target, so text shared from Google Lens, LINE or Chrome opens in the Decoder. Long-pressing the icon offers Reviews, Ear Dojo and Decoder. A monochrome icon supports Android's themed icons.
+  - **Tone tint.** Syllables are coloured by tone in the Decoder, Street Reader and the Slicer's word cards. A word is fully coloured until its item reaches stage 3, underlined in its tone colour at stages 3–4, and plain once burned. It can be turned off in Settings.
+  - **Font Gauntlet** (Read → Font Gauntlet). A word in eight faces (Noto Serif Thai, Sarabun, Kanit, Prompt, Mitr, Chakra Petch, Sriracha, Itim; three Lao faces), and a letter drill in loopless and handwritten faces with accuracy per face. The installed app bundles only the Thai and Lao subsets of the new faces (about 110 KB).
+  - **Romanisation.** Settings → Romanisation switches Thai readings between the learner spelling, RTGS and IPA (with Chao tone letters).
+  - **Random fonts in reviews.** An option shows stage 3+ items in a different face each day.
+  - **Slicer.** 26 new lines (13 topics in Thai and Lao), 30 in all, from toilets and prices to a trip to Chiang Mai or Luang Prabang. The Lao lines need a native check.
 - **0.20.0**: Safe ground (Roadmap III, wave A).
   - **Backups.** Settings → Backup shares a backup file through the Android share sheet (or downloads it), and Restore a file brings it back on any phone or browser. The app also keeps one snapshot a day for the last seven days in IndexedDB, taken as the app opens, so you can roll back to the start of any of those days. A restore saves the current state as a snapshot first.
   - **Back gesture.** Every sheet (reviews, lessons, the Inspector, Settings) adds a history entry, so Android's back gesture closes the sheet instead of leaving the app. Back from any other tab returns to the Shrine.

@@ -4,7 +4,7 @@ import {
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
   Cloud, Sun, Waves, Ear, Target, Flame, Mic,
-  Settings, Download, Upload, History, RefreshCw,
+  Settings, Download, Upload, History, RefreshCw, Search,
 } from "lucide-react";
 
 /* ============================================================================
@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.20.0";
+const APP_VERSION = "0.21.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -56,6 +56,42 @@ const THEME_CSS = `:root{
 --sk-script-leading:1.7;
 }
 .sk-script{line-height:var(--sk-script-leading)}`;
+
+/* Extra faces for the Font Gauntlet: loopless display, square, and handwriting. */
+const GAUNTLET_FONTS_HREF =
+  "https://fonts.googleapis.com/css2?family=Prompt:wght@500&family=Mitr:wght@400&family=Chakra+Petch:wght@500&family=Sriracha&family=Itim&family=Noto+Sans+Lao+Looped:wght@400&display=swap";
+const GAUNTLET_FACES = [
+  { id: "loop", name: "Noto Serif Thai", note: "Looped serif: textbooks", looped: true },
+  { id: "sarabun", name: "Sarabun", note: "Looped sans: official forms", looped: true, th: '"Sarabun", sans-serif', lo: '"Noto Sans Lao Looped", "Noto Sans Lao", sans-serif' },
+  { id: "street", name: "Kanit", note: "Loopless: signs and ads" },
+  { id: "prompt", name: "Prompt", note: "Loopless: malls and apps", th: '"Prompt", "Kanit", sans-serif' },
+  { id: "mitr", name: "Mitr", note: "Rounded loopless: menus", th: '"Mitr", "Kanit", sans-serif' },
+  { id: "chakra", name: "Chakra Petch", note: "Square: tech brands", th: '"Chakra Petch", "Kanit", sans-serif' },
+  { id: "sriracha", name: "Sriracha", note: "Handwriting: menu boards", th: '"Sriracha", "Kanit", cursive' },
+  { id: "itim", name: "Itim", note: "Rounded handwriting: notes", th: '"Itim", "Kanit", cursive' },
+];
+// Lao has fewer free faces: serif, sans and looped sans.
+const GAUNTLET_LAO = ["loop", "street", "sarabun"];
+GAUNTLET_FACES.forEach((f) => { if (!FONT_STACKS[f.id]) FONT_STACKS[f.id] = { th: f.th, lo: f.lo || FONT_STACKS.street.lo }; });
+let gauntletFontsLoaded = false;
+function loadGauntletFonts() {
+  if (gauntletFontsLoaded || typeof document === "undefined") return;
+  gauntletFontsLoaded = true;
+  if (document.querySelector("[data-suvarnakani-gauntlet]")) return; // the installed app bundles them
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = GAUNTLET_FONTS_HREF;
+  link.setAttribute("data-suvarnakani-gauntlet", "");
+  document.head.appendChild(link);
+}
+/** Stage 3+ items appear in a different face each day when random fonts are on. */
+function reviewFontFor(item, srsEntry, base, prefs) {
+  if (!prefs?.randomFonts || (srsEntry?.stage || 0) < 3) return base;
+  const pool = item.toneSet === "lo" ? GAUNTLET_LAO : GAUNTLET_FACES.map((f) => f.id);
+  let h = 0;
+  for (const ch of item.id + todayKey()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return pool[h % pool.length];
+}
 
 const GOOGLE_FONTS_HREF =
   "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;600&family=Noto+Serif+Lao:wght@400;600&family=Sarabun:wght@400;600&family=Kanit:wght@300;500&family=Noto+Sans+Thai:wght@400;600&family=Noto+Sans+Lao:wght@400;600&display=swap";
@@ -148,6 +184,294 @@ function computeTone({ cls, live, long, mark = "none", hn = false }) {
   }
   const formula = `${CLASSES[eff].name} + ${live ? "Live" : `Dead ${long ? "Long" : "Short"}`} + ${MARKS[mark].plain} = ${TONES[tone].name} (${TONES[tone].chao})`;
   return { tone, eff, steps, warning, formula };
+}
+
+/* ============================================================================
+ * Thai reading engine: split Thai text into syllables and read each one's
+ * class, live/dead, vowel length, mark and tone from its spelling. Used by the
+ * Decoder, tone tinting and romanisation. Spelling can't always decide hidden
+ * vowels (ขนม, สบาย), so syllables with an inferred vowel are flagged as guesses,
+ * and words the course already knows use the course's reading.
+ * ========================================================================== */
+const TH_MID = "กจดตบปอฎฏ";
+const TH_HIGH = "ขฃฉฐถผฝศษสห";
+const TH_SONORANT = "งญนมยรลวฬณ";
+const TH_TONE_MARKS = { "่": "ek", "้": "tho", "๊": "tri", "๋": "jat" };
+const TH_DEPENDENT = "ะัาำิีึืุู็่้๊๋์";
+const isThaiCons = (c) => !!c && c >= "ก" && c <= "ฮ" && c !== "ฤ" && c !== "ฦ";
+const thaiClassOf = (c) => (TH_MID.includes(c) ? "mid" : TH_HIGH.includes(c) ? "high" : "low");
+const TH_INITIAL = {
+  ก: "k", ข: "kh", ฃ: "kh", ค: "kh", ฅ: "kh", ฆ: "kh", ง: "ng", จ: "j", ฉ: "ch", ช: "ch", ซ: "s", ฌ: "ch", ญ: "y", ฎ: "d", ฏ: "t", ฐ: "th", ฑ: "th", ฒ: "th", ณ: "n",
+  ด: "d", ต: "t", ถ: "th", ท: "th", ธ: "th", น: "n", บ: "b", ป: "p", ผ: "ph", ฝ: "f", พ: "ph", ฟ: "f", ภ: "ph", ม: "m", ย: "y", ร: "r", ล: "l", ว: "w", ศ: "s", ษ: "s", ส: "s", ห: "h", ฬ: "l", อ: "", ฮ: "h",
+};
+const TH_FINAL = (c) => {
+  if ("กขคฆ".includes(c)) return "k";
+  if ("บปพฟภ".includes(c)) return "p";
+  if (c === "ง") return "ng";
+  if (c === "ม") return "m";
+  if (c === "ย") return "i";
+  if (c === "ว") return "w";
+  if ("ญณนรลฬ".includes(c)) return "n";
+  if ("จชซฌฎฏฐฑฒดตถทธศษส".includes(c)) return "t";
+  return null; // อ ห ฮ never close a syllable
+};
+const TH_CLUSTERS = { กร: "kr", กล: "kl", กว: "kw", ขร: "khr", ขล: "khl", ขว: "khw", คร: "khr", คล: "khl", คว: "khw", ปร: "pr", ปล: "pl", พร: "phr", พล: "phl", ตร: "tr", ดร: "dr", บร: "br", บล: "bl", ฟร: "fr", ฟล: "fl", ทร: "s", จร: "j", ซร: "s", สร: "s", ศร: "s" };
+
+/* Vowel templates. O = onset, T = optional tone mark, F = optional final, ! = final required. */
+const TH_TEMPLATES = [
+  ["เOTาะ", "ɔ", false], ["เOีTยะ", "ia", false], ["เOีTยF", "ia", true], ["เOืTอF", "ʉa", true], ["เOิTF!", "əə", true], ["เOTอะ", "ə", false],
+  ["เOTอ", "əə", true], ["เOTา", "ao", false], ["เO็TF!", "e", false], ["เOTะ", "e", false], ["เOTF", "ee", true],
+  ["แO็TF!", "ɛ", false], ["แOTะ", "ɛ", false], ["แOTF", "ɛɛ", true], ["โOTะ", "o", false], ["โOTF", "oo", true],
+  ["ใOT", "ai", false], ["ไOTF", "ai", false],
+  ["OัTวะ", "ua", false], ["OัTวF", "ua", true], ["OัTF!", "a", false], ["OTะ", "a", false], ["OTำ", "am", false], ["OTาF", "aa", true],
+  ["OิTF", "i", false], ["OีTF", "ii", true], ["OึTF", "ʉ", false], ["OืTอF", "ʉʉ", true], ["OืTF!", "ʉʉ", true], ["OุTF", "u", false], ["OูTF", "uu", true],
+  ["O็TอF!", "ɔ", false], ["OTอF", "ɔɔ", true], ["OTวF!", "ua", true],
+  ["OTF!", "o", false, 1.5], ["OT", "a", false, 2.5],
+];
+/* Words read against their spelling. */
+const TH_EXCEPTIONS = { ก็: { roman: "kɔ̂", tone: "falling" }, น้ำ: { roman: "náam" }, เก้า: { roman: "kâao" }, เช้า: { roman: "cháao" }, เท้า: { roman: "tháao" } };
+
+function thaiOnsets(s, i) {
+  const c = s[i];
+  if (!isThaiCons(c)) return [];
+  const out = [{ end: i + 1, letters: c, cls: thaiClassOf(c), sound: TH_INITIAL[c] }];
+  const pair = c + (s[i + 1] || "");
+  if (c === "ห" && "งญนมยรลวฬ".includes(s[i + 1] || "")) out.push({ end: i + 2, letters: pair, cls: "high", sound: TH_INITIAL[s[i + 1]], lead: "ห นำ" });
+  if (c === "อ" && s[i + 1] === "ย") out.push({ end: i + 2, letters: pair, cls: "mid", sound: "y", lead: "อ นำ" });
+  if (TH_CLUSTERS[pair]) out.push({ end: i + 2, letters: pair, cls: thaiClassOf(c), sound: TH_CLUSTERS[pair], cluster: true });
+  return out;
+}
+
+/** Every syllable that can start at position i, with its cost (lower is likelier). */
+function thaiCandidates(s, i, wordStart) {
+  const found = [];
+  const tryTemplate = ([tpl, vowel, long, extra = 0]) => {
+    let k = i;
+    const pre = tpl[0] === "O" ? null : tpl[0];
+    if (pre) { if (s[k] !== pre) return; k += 1; }
+    const body = pre ? tpl.slice(1) : tpl;
+    const run = (onsetOpt) => {
+      let p = onsetOpt.end;
+      let fin = null;
+      let mk = "none";
+      for (let t = 1; t < body.length; t += 1) {
+        const ch = body[t];
+        if (ch === "T") { if (TH_TONE_MARKS[s[p]]) { mk = TH_TONE_MARKS[s[p]]; p += 1; } continue; }
+        if (ch === "F") {
+          const req = body[t + 1] === "!";
+          if (req) t += 1;
+          const f = s[p];
+          // a letter followed by its own vowel or mark starts the next syllable instead
+          if (isThaiCons(f) && TH_FINAL(f) && !(s[p + 1] && TH_DEPENDENT.includes(s[p + 1]))) { fin = f; p += 1; } else if (req) return;
+          continue;
+        }
+        if (s[p] !== ch) return;
+        p += 1;
+      }
+      // silent letters under ◌์ (จันทร์, ศาสตร์)
+      let q = p;
+      while (q < s.length && isThaiCons(s[q]) && q - p < 3) q += 1;
+      if (q < s.length && (s[q] === "ิ" || s[q] === "ุ") && s[q + 1] === "์") q += 1;
+      let silent = "";
+      if (s[q] === "์" && q > p) { silent = s.slice(p, q).join(""); p = q + 1; }
+      else if (s[p] === "์" && fin) { p += 1; silent = fin; fin = null; }
+      if ((vowel === "ai" || vowel === "ao") && fin) { if (fin === "ย" && pre === "ไ") fin = null; else return; } // ไทย
+      found.push({ start: i, end: p, onset: onsetOpt, vowel, long, mark: mk, final: fin, silent, hidden: extra > 0, cost: 1 + (extra === 2.5 && i === wordStart ? 2.3 : extra) + (onsetOpt.lead || onsetOpt.cluster ? -0.05 : 0) });
+    };
+    thaiOnsets(s, k).forEach(run);
+  };
+  TH_TEMPLATES.forEach(tryTemplate);
+  // ก็ and the like: a consonant with only ◌็ reads a short ɔ
+  if (isThaiCons(s[i]) && s[i + 1] === "\u0E47" && !isThaiCons(s[i + 2]) && !TH_TONE_MARKS[s[i + 2]]) found.push({ start: i, end: i + 2, onset: { letters: s[i], cls: thaiClassOf(s[i]), sound: TH_INITIAL[s[i]] }, vowel: "ɔ", long: false, mark: "none", final: null, silent: "", hidden: false, cost: 1 });
+  if (s[i] === "ฤ") found.push({ start: i, end: i + 1, onset: { letters: "ฤ", cls: "low", sound: "r" }, vowel: "ʉ", long: false, mark: "none", final: null, silent: "", hidden: true, cost: 2 });
+  return found;
+}
+
+/** Best split of one run of Thai letters into syllables (dynamic programming over costs). */
+function thaiSplit(word) {
+  const s = [...word.normalize("NFC")];
+  const best = Array(s.length + 1).fill(null);
+  best[0] = { cost: 0, list: [] };
+  for (let i = 0; i < s.length; i += 1) {
+    if (!best[i]) continue;
+    const cands = thaiCandidates(s, i, 0);
+    if (!cands.length) {
+      // unreadable character (digit, ๆ, stray mark): keep it as its own piece
+      const c = best[i].cost + 5;
+      if (!best[i + 1] || best[i + 1].cost > c) best[i + 1] = { cost: c, list: [...best[i].list, { start: i, end: i + 1, raw: true }] };
+      continue;
+    }
+    cands.forEach((cd) => {
+      const c = best[i].cost + cd.cost;
+      if (!best[cd.end] || best[cd.end].cost > c) best[cd.end] = { cost: c, list: [...best[i].list, cd] };
+    });
+  }
+  const list = best[s.length]?.list || [];
+  return list.map((cd) => ({ ...cd, text: s.slice(cd.start, cd.end).join("") }));
+}
+
+const TONE_DIACRITIC = { mid: "", low: "̀", falling: "̂", high: "́", rising: "̌" };
+function addToneMark(roman, tone) {
+  const m = TONE_DIACRITIC[tone] || "";
+  const at = roman.search(/[aeiouɛɔʉə]/);
+  return at < 0 || !m ? roman : (roman.slice(0, at + 1) + m + roman.slice(at + 1)).normalize("NFC");
+}
+
+/** Read the syllables of a Thai word: class, live/dead, length, mark, tone, romanisation. */
+function readThai(word) {
+  const sylls = thaiSplit(word);
+  const out = [];
+  sylls.forEach((sy, n) => {
+    if (sy.raw) { out.push({ text: sy.text, raw: true }); return; }
+    let cls = sy.onset.cls;
+    const notes = [];
+    if (sy.onset.lead) notes.push(`${sy.onset.lead}: the silent ${sy.onset.letters[0]} makes this syllable ${CLASSES[cls].name} class.`);
+    const prev = out[n - 1];
+    // Leading-consonant rule: after a hidden-a syllable on a High or Middle letter, a lone sonorant follows that letter's class (ขนม, ตลาด).
+    if (prev && !prev.raw && prev.hiddenA && prev.cls !== "low" && sy.onset.letters.length === 1 && TH_SONORANT.includes(sy.onset.letters) && cls === "low") {
+      cls = prev.cls;
+      notes.push(`Leading letter: ${sy.onset.letters} follows the ${CLASSES[cls].name}-class ${prev.text[0]} before it.`);
+    }
+    const finalSound = sy.final ? TH_FINAL(sy.final) : null;
+    const inherentLive = ["ai", "ao", "am"].includes(sy.vowel);
+    const live = finalSound ? !["k", "t", "p"].includes(finalSound) : inherentLive || sy.long;
+    const parts = { cls, live, long: sy.long, mark: sy.mark };
+    const ex = TH_EXCEPTIONS[sy.text];
+    const tone = ex?.tone || computeTone(parts).tone;
+    let roman = sy.onset.sound + sy.vowel + (finalSound || "");
+    roman = roman.replace(/^(.*?)(ia|ʉa|ua)i$/, "$1$2i").replace("aaw", "aaw");
+    roman = ex?.roman || addToneMark(roman, tone);
+    if (sy.vowel === "a" && sy.hidden) notes.push("Hidden a: no vowel is written, so a short a is read.");
+    if (sy.vowel === "o" && sy.hidden) notes.push("Hidden o: a consonant with only a final reads a short o.");
+    if (sy.silent) notes.push(`${sy.silent}์ is silent.`);
+    if (ex) notes.push("Read against its spelling.");
+    out.push({ text: sy.text, cls, live, long: sy.long, mark: sy.mark, tone, roman, guess: sy.hidden, hiddenA: sy.hidden && sy.vowel === "a", onset: sy.onset.letters, final: sy.final, notes, parts });
+  });
+  return out;
+}
+
+/* Words the app already knows, with the course's own reading. */
+let thaiLexiconCache = null;
+function thaiLexicon() {
+  if (thaiLexiconCache) return thaiLexiconCache;
+  const lex = new Map();
+  const add = (th, e) => {
+    if (!th || !/^[ก-๎]+$/.test(th) || lex.has(th)) return;
+    lex.set(th, e);
+  };
+  [...CURRICULUM, ...EXTRA_LEXICON_SOURCES()].forEach((it) => {
+    if (it.tier === "glyph") return;
+    add(it.th, { roman: (it.thRoman || "").split(" ·")[0], meaning: it.meaning, tone: it.tone, id: it.id });
+  });
+  thaiLexiconCache = lex;
+  return lex;
+}
+const extraLexicon = [];
+/* Words from the slicer sentences and street signs also count as known readings. */
+function EXTRA_LEXICON_SOURCES() {
+  const out = [...extraLexicon];
+  SENTENCES.filter((x) => x.script === "th").forEach((x) => x.words.forEach((w) => out.push({ th: w.w, thRoman: w.r, meaning: w.m, tone: w.tone })));
+  STREET_PACKS.filter((p) => p.script === "th").forEach((p) => p.lines.flat().forEach((t) => { if (t.r && t.m && !t.price) out.push({ th: t.t, thRoman: t.r, meaning: t.m, tone: t.tone }); }));
+  return out;
+}
+function registerThaiWords(list) { list.forEach((w) => extraLexicon.push(w)); thaiLexiconCache = null; }
+
+/**
+ * Split unspaced Thai into words. Known words win; the rest is read syllable by
+ * syllable. Returns [{ text, known, meaning, id, syllables: [...] }].
+ */
+function segmentThai(text) {
+  const lex = thaiLexicon();
+  const maxLen = Math.max(...[...lex.keys()].map((k) => [...k].length), 1);
+  const words = [];
+  (text || "").split(/(\s+)/).forEach((chunk) => {
+    if (!chunk.trim()) return;
+    const s = [...chunk.normalize("NFC")];
+    const best = Array(s.length + 1).fill(null);
+    best[0] = { cost: 0, list: [] };
+    for (let i = 0; i < s.length; i += 1) {
+      if (!best[i]) continue;
+      if (!/[ก-๎]/.test(s[i])) {
+        let j = i; while (j < s.length && !/[ก-๎]/.test(s[j])) j += 1;
+        const c = best[i].cost + 0.5;
+        if (!best[j] || best[j].cost > c) best[j] = { cost: c, list: [...best[i].list, { kind: "other", start: i, end: j }] };
+        continue;
+      }
+      for (let L = Math.min(maxLen, s.length - i); L >= 1; L -= 1) {
+        const w = s.slice(i, i + L).join("");
+        if (lex.has(w)) {
+          const c = best[i].cost + 0.8;
+          if (!best[i + L] || best[i + L].cost > c) best[i + L] = { cost: c, list: [...best[i].list, { kind: "word", start: i, end: i + L }] };
+        }
+      }
+      thaiCandidates(s, i, i).forEach((cd) => {
+        // a syllable may not end in the middle of a mark cluster
+        const c = best[i].cost + cd.cost + 0.4;
+        if (!best[cd.end] || best[cd.end].cost > c) best[cd.end] = { cost: c, list: [...best[i].list, { kind: "syl", start: i, end: cd.end }] };
+      });
+      const c = best[i].cost + 6;
+      if (!best[i + 1] || best[i + 1].cost > c) best[i + 1] = { cost: c, list: [...best[i].list, { kind: "syl", start: i, end: i + 1 }] };
+    }
+    const list = best[s.length]?.list || [];
+    let pending = null;
+    const flush = () => { if (pending) { words.push(pending); pending = null; } };
+    list.forEach((p) => {
+      const t = s.slice(p.start, p.end).join("");
+      if (p.kind === "other") { flush(); words.push({ text: t, other: true, syllables: [] }); return; }
+      if (p.kind === "word") {
+        flush();
+        const e = lex.get(t);
+        const syl = readThai(t);
+        const romans = e.roman ? e.roman.split(/[-\s]+/).filter(Boolean) : [];
+        const sylls = syl.map((x, k) => (x.raw ? x : {
+          ...x,
+          tone: e.tone?.length === syl.length ? e.tone[k] : x.tone,
+          roman: romans.length === syl.length ? romans[k] : x.roman,
+          guess: false,
+        }));
+        words.push({ text: t, known: true, meaning: e.meaning, id: e.id, roman: e.roman, syllables: sylls });
+        return;
+      }
+      const sy = readThai(t);
+      if (!pending) pending = { text: "", known: false, syllables: [] };
+      pending.text += t;
+      pending.syllables.push(...sy);
+    });
+    flush();
+  });
+  return words;
+}
+
+/* Romanisation systems. The course writes a learner spelling with tone accents;
+ * RTGS (road signs) drops tones and vowel length; IPA adds Chao tone letters. */
+const ROMAN_SYSTEMS = { learner: "Learner (tones marked)", rtgs: "RTGS (road signs)", ipa: "IPA" };
+const CHAO_LETTER = { mid: "˧", low: "˨˩", falling: "˥˩", high: "˦˥", rising: "˩˦" };
+function toneOfRoman(syl) {
+  const d = syl.normalize("NFD");
+  if (d.includes("̀")) return "low";
+  if (d.includes("̂")) return "falling";
+  if (d.includes("́")) return "high";
+  if (d.includes("̌")) return "rising";
+  return "mid";
+}
+function romanize(learner, system = "learner") {
+  if (!learner || system === "learner") return learner;
+  return learner.split(/(\s*·\s*|\s*\/\s*|[\s,]+|-)/).map((part) => {
+    if (!/[a-zɛɔʉə]/i.test(part)) return part;
+    const tone = toneOfRoman(part);
+    let p = part.normalize("NFD").replace(/[̀-ͯ]/g, "");
+    if (system === "rtgs") {
+      p = p.replace(/ʉa/g, "uea").replace(/ʉ+/g, "ue").replace(/ɛ+/g, "ae").replace(/ɔ+/g, "o").replace(/ə+/g, "oe")
+        .replace(/aa/g, "a").replace(/ii/g, "i").replace(/uu/g, "u").replace(/ee/g, "e").replace(/oo/g, "o")
+        .replace(/^j/, "ch").replace(/^g/, "k").replace(/^bp/, "p").replace(/^dt/, "t").replace(/w$/, "o").replace(/([aeiou])i$/, "$1i");
+      return p;
+    }
+    p = p.replace(/^kh/, "kʰ").replace(/^ph/, "pʰ").replace(/^th/, "tʰ").replace(/^ch/, "tɕʰ").replace(/^j/, "tɕ").replace(/^g/, "k").replace(/ng/g, "ŋ").replace(/^y/, "j")
+      .replace(/aa/g, "aː").replace(/ii/g, "iː").replace(/uu/g, "uː").replace(/ee/g, "eː").replace(/oo/g, "oː").replace(/ɛɛ/g, "ɛː").replace(/ɔɔ/g, "ɔː").replace(/ʉʉ/g, "ɯː").replace(/əə/g, "ɤː")
+      .replace(/ʉ/g, "ɯ").replace(/ə/g, "ɤ").replace(/([kpt])$/, "$1̚");
+    if (/^[aeiouɛɔɯɤ]/.test(p)) p = "ʔ" + p;
+    return p + CHAO_LETTER[tone];
+  }).join("");
 }
 
 /* ---------------------------------------------------------------------------
@@ -933,10 +1257,12 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true };
+const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 const usePrefs = () => React.useContext(PrefsContext);
-const runtimePrefs = { haptics: true };
+const runtimePrefs = { haptics: true, roman: "learner" };
+/** Thai romanisation in the system chosen in Settings. */
+const R = (learner) => romanize(learner, runtimePrefs.roman);
 
 const QUESTION_WORDS = ["ไหม", "อะไร", "เท่าไร", "เท่าไหร่", "ที่ไหน", "ไหน", "ใคร", "เมื่อไร", "เมื่อไหร่", "ยังไง", "อย่างไร", "หรือ", "กี่", "มั้ย"];
 /**
@@ -965,6 +1291,15 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.21.0", title: "Take it outside", points: [
+    "Decoder (Read → Decoder): paste any Thai or Lao and see every syllable's class, live or dead, length, mark and tone. Words from your course are recognised.",
+    "Share text from Google Lens or any app to SuvarṇaKani and it opens in the Decoder.",
+    "Long-press the app icon for Reviews, Ear Dojo and Decoder. The icon also works with Android's themed icons.",
+    "Tone colours: syllables are tinted by tone in the Decoder, Street Reader and Slicer, fading as you learn each word.",
+    "Font Gauntlet: read words in eight faces, from looped serif to handwriting, and drill letters in loopless type.",
+    "Romanisation can be learner spelling, RTGS or IPA (Settings), and reviews can show older items in random fonts.",
+    "The Slicer has 30 lines across 15 topics.",
+  ] },
   { v: "0.20.0", title: "Safe ground", points: [
     "Back up your progress to a file and restore it on any phone (Settings → Backup).",
     "The phone keeps seven daily snapshots, so you can roll back to yesterday.",
@@ -1596,7 +1931,7 @@ function LeechDrill({ open, leeches, mode, font, onClose, onFinish }) {
       ) : round && (
         <div>
           <p className="text-center text-sm text-slate-300">Which one is</p>
-          <p className="text-center text-xl font-bold text-white">{mode === "lo" ? round.item.loRoman : round.item.thRoman}</p>
+          <p className="text-center text-xl font-bold text-white">{mode === "lo" ? round.item.loRoman : R(round.item.thRoman)}</p>
           <p className="text-center text-sm text-slate-400">{round.item.meaning}</p>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {round.options.map((o) => {
@@ -1604,7 +1939,7 @@ function LeechDrill({ open, leeches, mode, font, onClose, onFinish }) {
               return (
                 <button key={o.id} onClick={() => choose(o)} className={`rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-center transition active:scale-95 ${state}`}>
                   <Glyph text={scriptText(o)} script={mode === "lo" ? "lo" : "th"} font={font} className="text-5xl leading-[1.4] text-white" />
-                  {pick && <div className="text-xs text-slate-300">{mode === "lo" ? o.loRoman.split(" ·")[0] : o.thRoman.split(" ·")[0]} · {o.meaning.split(" ·")[0]}</div>}
+                  {pick && <div className="text-xs text-slate-300">{mode === "lo" ? o.loRoman.split(" ·")[0] : R(o.thRoman.split(" ·")[0])} · {o.meaning.split(" ·")[0]}</div>}
                 </button>
               );
             })}
@@ -1678,7 +2013,8 @@ function Onboarding({ onDone }) {
 /* ============================================================================
  * Module 1: SRS Shrine
  * ========================================================================== */
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice }) {
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone }) {
+  const prefs = usePrefs();
   const course = useMemo(() => courseItems(mode), [mode]);
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
@@ -1712,6 +2048,12 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     [srs, now, sandbox, course]
   );
   const reviewDirections = useMemo(() => Object.fromEntries(reviewQueue.map((i) => [i.id, reviewDirection(srs[i.id])])), [reviewQueue]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Opened from the home-screen "Reviews" shortcut.
+  useEffect(() => {
+    if (!autoReview) return;
+    if (reviewQueue.length) setReviewOpen(true);
+    onAutoReviewDone?.();
+  }, [autoReview]); // eslint-disable-line react-hooks/exhaustive-deps
   const nextReview = useMemo(() => {
     const times = course.map((i) => srs[i.id]).filter((s) => s && s.stage >= 1 && s.stage < 5 && s.next > now).map((s) => s.next);
     return times.length ? Math.min(...times) : null;
@@ -1895,7 +2237,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       })}
 
       <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
-      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} onClose={() => setReviewOpen(false)} onAnswer={answer} />
+      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} />
       <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
     </div>
   );
@@ -1910,7 +2252,7 @@ function ItemHero({ item, mode, font }) {
         <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35]" />
       </div>
       <div className="text-sm text-slate-200">
-        {mode !== "lo" && <span>{item.thRoman}</span>}
+        {mode !== "lo" && <span>{R(item.thRoman)}</span>}
         {mode === "dual" && <span className="text-slate-400"> · </span>}
         {mode !== "th" && <span className="text-purple-200">{item.loRoman}</span>}
       </div>
@@ -1990,7 +2332,7 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
           {quiz.result && (
             <div className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-sm">
               <div className={`font-bold ${quiz.result === "ok" ? "text-emerald-300" : "text-rose-300"}`}>{quiz.result === "ok" ? "Got it" : "Not yet: it comes back at the end of this quiz"}</div>
-              <div className="mt-1 text-slate-200"><span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{qItem.loRoman}</span> : <>{qItem.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{qItem.loRoman}</span></>}</>} · <span className="text-slate-400">Meaning:</span> {qItem.meaning}</div>
+              <div className="mt-1 text-slate-200"><span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{qItem.loRoman}</span> : <>{R(qItem.thRoman)}{mode !== "th" && <> · <span className="text-purple-200">{qItem.loRoman}</span></>}</>} · <span className="text-slate-400">Meaning:</span> {qItem.meaning}</div>
               {quiz.result === "miss" && <p className="mt-1 text-slate-400">{qItem.mnemonic}</p>}
             </div>
           )}
@@ -2196,7 +2538,7 @@ function ClassChoice({ onPick, picked, correct, disabled }) {
   );
 }
 
-function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer }) {
+function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer, fontFor }) {
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
@@ -2360,7 +2702,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
           <div className="mt-3 flex items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
             <button type="button" onClick={speak} aria-label="Play again" className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-amber-500 text-black active:scale-95"><Volume2 size={28} /></button>
             <div>
-              <div className="text-2xl font-bold text-white">{mode === "lo" ? item.loRoman : item.thRoman.split(" ·")[0]}</div>
+              <div className="text-2xl font-bold text-white">{mode === "lo" ? item.loRoman : R(item.thRoman.split(" ·")[0])}</div>
               {/* Thai in brackets (e.g. "child (เด็ก)") would give the spelling away. */}
               <div className="text-slate-300">{item.meaning.replace(/\s*\([^)]*[\u0E00-\u0EFF][^)]*\)/g, "")}</div>
             </div>
@@ -2403,7 +2745,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
       ) : (
         <form onSubmit={submit}>
           <div className="rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
-            <DualText th={item.th} lo={item.lo} mode={mode} font={font} className={`${item.th.length + item.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
+            <DualText th={item.th} lo={item.lo} mode={mode} font={fontFor ? fontFor(item) : font} className={`${item.th.length + item.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
           </div>
           <label htmlFor="review-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">1 · Type the reading or the meaning</label>
           <input
@@ -2454,7 +2796,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
               {readingNote && <p className="text-rose-200">{readingNote}</p>}
               {secondNote && <p className="text-rose-200">{secondNote}</p>}
               <div className="text-slate-200">
-                <span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{item.loRoman}</span> : <>{item.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}</>}
+                <span className="text-slate-400">Reading:</span> {mode === "lo" ? <span className="text-purple-200">{item.loRoman}</span> : <>{R(item.thRoman)}{mode !== "th" && <> · <span className="text-purple-200">{item.loRoman}</span></>}</>}
                 <br /><span className="text-slate-400">Meaning:</span> {item.meaning}
               </div>
               <div className="flex flex-wrap gap-1.5">{item.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}{item.cls && <ClassBadge cls={item.cls} small />}</div>
@@ -3786,9 +4128,241 @@ const SENTENCES = [
       { w: "ຮູ້ຈັກ", r: "hu chak", m: "know (someone)", tts: "ฮู้จัก" },
     ],
   },
+  {
+    id: "toilet", script: "th", gloss: "Where is the toilet?",
+    words: [
+      { w: "ห้องน้ำ", r: "hɔ̂ng-náam", m: "toilet", tts: "ห้องน้ำ", tone: ["falling", "high"] },
+      { w: "อยู่", r: "yùu", m: "is at", tts: "อยู่", tone: ["low"] },
+      { w: "ที่ไหน", r: "thîi-nǎi", m: "where", tts: "ที่ไหน", tone: ["falling", "rising"] },
+    ],
+  },
+  {
+    id: "toilet", script: "lo", gloss: "Where is the toilet?",
+    words: [
+      { w: "ຫ້ອງນ້ຳ", r: "hong nam", m: "toilet", tts: "ห้องน้ำ" },
+      { w: "ຢູ່", r: "yu", m: "is at", tts: "อยู่" },
+      { w: "ໃສ", r: "sai", m: "where", tts: "ใส" },
+    ],
+  },
+  {
+    id: "price", script: "th", gloss: "How much is this one?",
+    words: [
+      { w: "อันนี้", r: "an-níi", m: "this one", tts: "อันนี้", tone: ["mid", "high"] },
+      { w: "ราคา", r: "raa-khaa", m: "price", tts: "ราคา", tone: ["mid", "mid"] },
+      { w: "เท่าไร", r: "thâo-rai", m: "how much", tts: "เท่าไร", tone: ["falling", "mid"] },
+    ],
+  },
+  {
+    id: "price", script: "lo", gloss: "How much is this one?",
+    words: [
+      { w: "ອັນນີ້", r: "an nii", m: "this one", tts: "อันนี้" },
+      { w: "ລາຄາ", r: "la kha", m: "price", tts: "ลาคา" },
+      { w: "ເທົ່າໃດ", r: "thao dai", m: "how much", tts: "เท่าใด" },
+    ],
+  },
+  {
+    id: "coffee", script: "th", gloss: "One iced coffee, please.",
+    words: [
+      { w: "ขอ", r: "khɔ̌ɔ", m: "may I have", tts: "ขอ", tone: ["rising"] },
+      { w: "กาแฟ", r: "kaa-fɛɛ", m: "coffee", tts: "กาแฟ", tone: ["mid", "mid"] },
+      { w: "เย็น", r: "yen", m: "iced", tts: "เย็น", tone: ["mid"] },
+      { w: "หนึ่ง", r: "nʉ̀ng", m: "one", tts: "หนึ่ง", tone: ["low"] },
+      { w: "แก้ว", r: "kɛ̂ɛw", m: "glass (classifier)", tts: "แก้ว", tone: ["falling"] },
+    ],
+  },
+  {
+    id: "coffee", script: "lo", gloss: "One iced coffee, please.",
+    words: [
+      { w: "ຂໍ", r: "kho", m: "may I have", tts: "ขอ" },
+      { w: "ກາເຟ", r: "ka fe", m: "coffee", tts: "กาเฟ" },
+      { w: "ເຢັນ", r: "yen", m: "iced", tts: "เย็น" },
+      { w: "ໜຶ່ງ", r: "neung", m: "one", tts: "หนึ่ง" },
+      { w: "ຈອກ", r: "chok", m: "cup (classifier)", tts: "จอก" },
+    ],
+  },
+  {
+    id: "speak", script: "th", gloss: "I can speak a little Thai.",
+    words: [
+      { w: "ฉัน", r: "chǎn", m: "I", tts: "ฉัน", tone: ["rising"] },
+      { w: "พูด", r: "phûut", m: "speak", tts: "พูด", tone: ["falling"] },
+      { w: "ภาษา", r: "phaa-sǎa", m: "language", tts: "ภาษา", tone: ["mid", "rising"] },
+      { w: "ไทย", r: "thai", m: "Thai", tts: "ไทย", tone: ["mid"] },
+      { w: "ได้", r: "dâi", m: "can", tts: "ได้", tone: ["falling"] },
+      { w: "นิดหน่อย", r: "nít-nɔ̀i", m: "a little", tts: "นิดหน่อย", tone: ["high", "low"] },
+    ],
+  },
+  {
+    id: "speak", script: "lo", gloss: "I can speak a little Lao.",
+    words: [
+      { w: "ຂ້ອຍ", r: "khoi", m: "I", tts: "ข้อย" },
+      { w: "ເວົ້າ", r: "vao", m: "speak", tts: "เว้า" },
+      { w: "ພາສາ", r: "pha sa", m: "language", tts: "พาสา" },
+      { w: "ລາວ", r: "lao", m: "Lao", tts: "ลาว" },
+      { w: "ໄດ້", r: "dai", m: "can", tts: "ได้" },
+      { w: "ໜ້ອຍໜຶ່ງ", r: "noi neung", m: "a little", tts: "น้อยหนึ่ง" },
+    ],
+  },
+  {
+    id: "understand", script: "th", gloss: "I don't understand.",
+    words: [
+      { w: "ฉัน", r: "chǎn", m: "I", tts: "ฉัน", tone: ["rising"] },
+      { w: "ไม่", r: "mâi", m: "not", tts: "ไม่", tone: ["falling"] },
+      { w: "เข้าใจ", r: "khâo-jai", m: "understand", tts: "เข้าใจ", tone: ["falling", "mid"] },
+    ],
+  },
+  {
+    id: "understand", script: "lo", gloss: "I don't understand.",
+    words: [
+      { w: "ຂ້ອຍ", r: "khoi", m: "I", tts: "ข้อย" },
+      { w: "ບໍ່", r: "bo", m: "not", tts: "บ่" },
+      { w: "ເຂົ້າໃຈ", r: "khao chai", m: "understand", tts: "เข้าใจ" },
+    ],
+  },
+  {
+    id: "spicy", script: "th", gloss: "Can you make it not spicy?",
+    words: [
+      { w: "ไม่", r: "mâi", m: "not", tts: "ไม่", tone: ["falling"] },
+      { w: "เผ็ด", r: "phèt", m: "spicy", tts: "เผ็ด", tone: ["low"] },
+      { w: "ได้", r: "dâi", m: "can", tts: "ได้", tone: ["falling"] },
+      { w: "ไหม", r: "mǎi", m: "(question)", tts: "ไหม", tone: ["rising"] },
+    ],
+  },
+  {
+    id: "spicy", script: "lo", gloss: "Can you make it not spicy?",
+    words: [
+      { w: "ບໍ່", r: "bo", m: "not", tts: "บ่" },
+      { w: "ເຜັດ", r: "phet", m: "spicy", tts: "เผ็ด" },
+      { w: "ໄດ້", r: "dai", m: "can", tts: "ได้" },
+      { w: "ບໍ", r: "bo", m: "(question)", tts: "บอ" },
+    ],
+  },
+  {
+    id: "hungry", script: "th", gloss: "I'm hungry now.",
+    words: [
+      { w: "หิว", r: "hǐw", m: "hungry", tts: "หิว", tone: ["rising"] },
+      { w: "ข้าว", r: "khâaw", m: "rice / food", tts: "ข้าว", tone: ["falling"] },
+      { w: "แล้ว", r: "lɛ́ɛw", m: "already, now", tts: "แล้ว", tone: ["high"] },
+    ],
+  },
+  {
+    id: "hungry", script: "lo", gloss: "I'm hungry now.",
+    words: [
+      { w: "ຫິວ", r: "hiu", m: "hungry", tts: "หิว" },
+      { w: "ເຂົ້າ", r: "khao", m: "rice / food", tts: "เข้า" },
+      { w: "ແລ້ວ", r: "laeo", m: "already, now", tts: "แล้ว" },
+    ],
+  },
+  {
+    id: "name", script: "th", gloss: "What's your name?",
+    words: [
+      { w: "คุณ", r: "khun", m: "you", tts: "คุณ", tone: ["mid"] },
+      { w: "ชื่อ", r: "chʉ̂ʉ", m: "be named", tts: "ชื่อ", tone: ["falling"] },
+      { w: "อะไร", r: "à-rai", m: "what", tts: "อะไร", tone: ["low", "mid"] },
+    ],
+  },
+  {
+    id: "name", script: "lo", gloss: "What's your name?",
+    words: [
+      { w: "ເຈົ້າ", r: "chao", m: "you", tts: "เจ้า" },
+      { w: "ຊື່", r: "xue", m: "be named", tts: "ซื่อ" },
+      { w: "ຫຍັງ", r: "nyang", m: "what", tts: "หยัง" },
+    ],
+  },
+  {
+    id: "market", script: "th", gloss: "What time does the market open?",
+    words: [
+      { w: "ตลาด", r: "tà-làat", m: "market", tts: "ตลาด", tone: ["low", "low"] },
+      { w: "เปิด", r: "pə̀ət", m: "open", tts: "เปิด", tone: ["low"] },
+      { w: "กี่โมง", r: "kìi-moong", m: "what time", tts: "กี่โมง", tone: ["low", "mid"] },
+    ],
+  },
+  {
+    id: "market", script: "lo", gloss: "What time does the market open?",
+    words: [
+      { w: "ຕະຫຼາດ", r: "ta lat", m: "market", tts: "ตะหลาด" },
+      { w: "ເປີດ", r: "poet", m: "open", tts: "เปิด" },
+      { w: "ຈັກ", r: "chak", m: "how many", tts: "จัก" },
+      { w: "ໂມງ", r: "mong", m: "o'clock", tts: "โมง" },
+    ],
+  },
+  {
+    id: "weather", script: "th", gloss: "It's very hot today.",
+    words: [
+      { w: "วันนี้", r: "wan-níi", m: "today", tts: "วันนี้", tone: ["mid", "high"] },
+      { w: "อากาศ", r: "aa-kàat", m: "weather", tts: "อากาศ", tone: ["mid", "low"] },
+      { w: "ร้อน", r: "rɔ́ɔn", m: "hot", tts: "ร้อน", tone: ["high"] },
+      { w: "มาก", r: "mâak", m: "very", tts: "มาก", tone: ["falling"] },
+    ],
+  },
+  {
+    id: "weather", script: "lo", gloss: "It's very hot today.",
+    words: [
+      { w: "ມື້ນີ້", r: "mue nii", m: "today", tts: "มื้อนี้" },
+      { w: "ອາກາດ", r: "a kat", m: "weather", tts: "อากาด" },
+      { w: "ຮ້ອນ", r: "hon", m: "hot", tts: "ฮ้อน" },
+      { w: "ຫຼາຍ", r: "lai", m: "very", tts: "หลาย" },
+    ],
+  },
+  {
+    id: "taxi", script: "th", gloss: "How much to the airport?",
+    words: [
+      { w: "ไป", r: "pai", m: "go", tts: "ไป", tone: ["mid"] },
+      { w: "สนามบิน", r: "sà-nǎam-bin", m: "airport", tts: "สนามบิน", tone: ["low", "rising", "mid"] },
+      { w: "เท่าไร", r: "thâo-rai", m: "how much", tts: "เท่าไร", tone: ["falling", "mid"] },
+    ],
+  },
+  {
+    id: "taxi", script: "lo", gloss: "How much to the airport?",
+    words: [
+      { w: "ໄປ", r: "pai", m: "go", tts: "ไป" },
+      { w: "ສະໜາມບິນ", r: "sanam bin", m: "airport", tts: "สะหนามบิน" },
+      { w: "ເທົ່າໃດ", r: "thao dai", m: "how much", tts: "เท่าใด" },
+    ],
+  },
+  {
+    id: "trip", script: "th", gloss: "Tomorrow I'll go to Chiang Mai.",
+    words: [
+      { w: "พรุ่งนี้", r: "phrûng-níi", m: "tomorrow", tts: "พรุ่งนี้", tone: ["falling", "high"] },
+      { w: "ฉัน", r: "chǎn", m: "I", tts: "ฉัน", tone: ["rising"] },
+      { w: "จะ", r: "jà", m: "will", tts: "จะ", tone: ["low"] },
+      { w: "ไป", r: "pai", m: "go", tts: "ไป", tone: ["mid"] },
+      { w: "เชียงใหม่", r: "chiang-mài", m: "Chiang Mai", tts: "เชียงใหม่", tone: ["mid", "low"] },
+    ],
+  },
+  {
+    id: "trip", script: "lo", gloss: "Tomorrow I'll go to Luang Prabang.",
+    words: [
+      { w: "ມື້ອື່ນ", r: "mue uen", m: "tomorrow", tts: "มื้ออื่น" },
+      { w: "ຂ້ອຍ", r: "khoi", m: "I", tts: "ข้อย" },
+      { w: "ຈະ", r: "cha", m: "will", tts: "จะ" },
+      { w: "ໄປ", r: "pai", m: "go", tts: "ไป" },
+      { w: "ຫຼວງພະບາງ", r: "luang pha bang", m: "Luang Prabang", tts: "หลวงพะบาง" },
+    ],
+  },
+  {
+    id: "family", script: "th", gloss: "My mother is a teacher.",
+    words: [
+      { w: "แม่", r: "mɛ̂ɛ", m: "mother", tts: "แม่", tone: ["falling"] },
+      { w: "ของ", r: "khɔ̌ɔng", m: "of", tts: "ของ", tone: ["rising"] },
+      { w: "ฉัน", r: "chǎn", m: "me", tts: "ฉัน", tone: ["rising"] },
+      { w: "เป็น", r: "pen", m: "is", tts: "เป็น", tone: ["mid"] },
+      { w: "ครู", r: "khruu", m: "teacher", tts: "ครู", tone: ["mid"] },
+    ],
+  },
+  {
+    id: "family", script: "lo", gloss: "My mother is a teacher.",
+    words: [
+      { w: "ແມ່", r: "mae", m: "mother", tts: "แม่" },
+      { w: "ຂອງ", r: "khong", m: "of", tts: "ของ" },
+      { w: "ຂ້ອຍ", r: "khoi", m: "me", tts: "ข้อย" },
+      { w: "ເປັນ", r: "pen", m: "is", tts: "เป็น" },
+      { w: "ຄູ", r: "khu", m: "teacher", tts: "คู" },
+    ],
+  },
 ];
 
 function SliceSentence({ sentence, font, mode }) {
+  const prefsS = usePrefs();
   const text = sentence.words.map((w) => w.w).join("");
   const cl = useMemo(() => clusters(text), [text]);
   const truth = useMemo(() => {
@@ -3864,7 +4438,7 @@ function SliceSentence({ sentence, font, mode }) {
         <div className="mt-3 flex flex-wrap gap-2">
           {sentence.words.map((w, i) => (
             <button key={i} onClick={() => setOpen(open === i ? null : i)} className={`rounded-xl border px-3 py-1.5 text-left transition ${open === i ? "border-amber-400 bg-amber-400/10" : "border-white/10 hover:bg-white/5"}`}>
-              <span className="text-xl text-white" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}>{w.w}</span>
+              <span className="text-xl text-white" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}><TintedWord text={w.w} tones={w.tone} enabled={prefsS.tint} /></span>
               <span className="ml-2 text-xs text-slate-400">{w.m}</span>
             </button>
           ))}
@@ -3876,9 +4450,9 @@ function SliceSentence({ sentence, font, mode }) {
             const w = sentence.words[open];
             return (
               <div className="flex flex-wrap items-center gap-4">
-                <span className="text-5xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}>{w.w}</span>
+                <span className="text-5xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS[font][sentence.script] }}><TintedWord text={w.w} tones={w.tone} enabled={prefsS.tint} /></span>
                 <div className="space-y-1 text-sm">
-                  <div className="text-white">{w.r} · {w.m}</div>
+                  <div className="text-white">{sentence.script === "th" ? R(w.r) : w.r} · {w.m}</div>
                   {w.tone ? <div className="flex gap-1">{w.tone.map((t, i) => <ToneBadge key={i} tone={t} small />)}</div> : <div className="text-xs text-slate-400">Vientiane tones differ from Thai; listen and compare.</div>}
                   <AudioButtons ttsTh={w.tts} ttsLo={w.tts} loRaw={isLo ? w.w : undefined} tones={w.tone} mode={isLo ? "lo" : "th"} compact />
                 </div>
@@ -3891,17 +4465,22 @@ function SliceSentence({ sentence, font, mode }) {
   );
 }
 
+const SLICE_TOPICS = [
+  ["eat", "Eating"], ["meet", "Greeting"], ["toilet", "Toilet"], ["price", "Price"], ["coffee", "Coffee"], ["name", "Names"], ["hungry", "Hungry"],
+  ["understand", "Not understanding"], ["spicy", "Not spicy"], ["market", "Market hours"], ["weather", "Weather"], ["taxi", "Taxi"], ["family", "Family"], ["speak", "Speaking"], ["trip", "A trip"],
+];
 function Slicer({ mode, font }) {
   const [sid, setSid] = useState("eat");
   const list = SENTENCES.filter((s) => s.id === sid && (mode === "dual" || s.script === mode));
+  const idx = SLICE_TOPICS.findIndex(([k]) => k === sid);
   return (
     <div className="space-y-4">
-      <SectionTitle icon={Scissors} title="Zero-Space Script Slicer" sub="Thai and Lao write words with no spaces. Find the word boundaries with golden laser cuts." color={COLORS.gold} />
-      <div className="flex gap-2">
-        <Chip active={sid === "eat"} onClick={() => setSid("eat")}>Eating</Chip>
-        <Chip active={sid === "meet"} onClick={() => setSid("meet")}>Greeting</Chip>
+      <SectionTitle icon={Scissors} title="Zero-Space Script Slicer" sub="Thai and Lao write words with no spaces. Find the word boundaries with golden laser cuts. Lines get longer as you go." color={COLORS.gold} />
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+        {SLICE_TOPICS.map(([k, l], i) => <Chip key={k} active={sid === k} onClick={() => setSid(k)}>{i + 1} · {l}</Chip>)}
       </div>
       {list.map((s) => <SliceSentence key={`${s.id}-${s.script}`} sentence={s} font={font} mode={mode} />)}
+      {idx < SLICE_TOPICS.length - 1 && <button onClick={() => setSid(SLICE_TOPICS[idx + 1][0])} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white">Next line <ChevronRight size={14} className="inline" /></button>}
     </div>
   );
 }
@@ -4210,7 +4789,8 @@ function resolveToken(tok, script) {
 function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
   const packs = STREET_PACKS.filter((p) => mode === "dual" || p.script === mode);
   const [pid, setPid] = useState(packs[0]?.id);
-  const { particle } = usePrefs();
+  const prefs = usePrefs();
+  const { particle } = prefs;
   const pack = politePack(packs.find((p) => p.id === pid) || packs[0], particle);
   const [sel, setSel] = useState(null);
   const [timer, setTimer] = useState({ start: null, last: null });
@@ -4283,7 +4863,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
                           background: sel === i ? `${style.accent}33` : "transparent",
                         }}
                       >
-                        {raw.t}
+                        <TintedWord text={raw.t} tones={pack.script === "th" ? t.tone : null} level={t.item ? tintLevel(srs[t.item.id]) : 0} enabled={prefs.tint && !t.price} />
                       </button>
                     );
                   })}
@@ -4304,7 +4884,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
           {selTok ? (
             <div className="space-y-2">
               <div className="text-5xl leading-[1.5] text-white" style={{ fontFamily: font }}>{selTok.t}</div>
-              <div className="text-slate-200">{selTok.r} · {selTok.m}</div>
+              <div className="text-slate-200">{pack.script === "th" ? R(selTok.r) : selTok.r} · {selTok.m}</div>
               {selTok.tone && <div className="flex flex-wrap gap-1">{selTok.tone.map((tn, i) => <ToneBadge key={i} tone={tn} small />)}</div>}
               {selTok.item?.parts && <div className="text-xs text-slate-300">{computeTone(selTok.item.parts).formula}</div>}
               <div className="text-xs text-slate-400">Head-loop form: <span className="text-2xl text-slate-200" style={{ fontFamily: FONT_STACKS.loop[pack.script] }}>{selTok.t}</span></div>
@@ -4745,7 +5325,7 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
         </ol>
         <div className="mt-4 rounded-2xl bg-white/[0.04] p-3">
           <div className="text-2xl leading-[1.6] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{shown(li).th}</div>
-          <div className="text-sm text-slate-200">{shown(li).r}</div>
+          <div className="text-sm text-slate-200">{R(shown(li).r)}</div>
           <div className="text-xs text-slate-400">{line.m}</div>
           <PhrasePlot line={line} result={result} live={phase === "recording" ? live : null} />
         </div>
@@ -4946,6 +5526,280 @@ function SubTabs({ tabs, active, onChange }) {
   );
 }
 
+
+/* ============================================================================
+ * Tone tint: colour each syllable by its tone, fading as you learn the word.
+ * ========================================================================== */
+/** 0 = full colour, 1 = underline only, 2 = plain, from the word's tone memory. */
+function tintLevel(srsEntry) {
+  const st = srsEntry?.stage || 0;
+  return st >= 5 ? 2 : st >= 3 ? 1 : 0;
+}
+function TintedSyllables({ syllables, level = 0, enabled = true, className = "", style = {}, script = "th" }) {
+  return (
+    <span lang={script} className={className} style={style}>
+      {syllables.map((sy, k) => {
+        const t = TONES[sy.tone];
+        if (!enabled || !t || sy.raw || level >= 2) return <span key={k}>{sy.text}</span>;
+        if (level === 1) return <span key={k} style={{ textDecoration: "underline", textDecorationColor: t.color, textUnderlineOffset: "0.28em", textDecorationThickness: "2px" }}>{sy.text}</span>;
+        return <span key={k} style={{ color: t.ink }}>{sy.text}</span>;
+      })}
+    </span>
+  );
+}
+/** Tint a known string whose tones are listed (street tokens, slicer words). */
+function TintedWord({ text, tones, level = 0, enabled = true, className = "", style = {} }) {
+  const syl = useMemo(() => (/[ก-๎]/.test(text) ? readThai(text) : []), [text]);
+  if (!enabled || !tones?.length || syl.length !== tones.length) return <span className={className} style={style}>{text}</span>;
+  return <TintedSyllables syllables={syl.map((x, k) => ({ ...x, tone: tones[k] }))} level={level} className={className} style={style} />;
+}
+
+/* ============================================================================
+ * Decoder: paste any Thai or Lao and see how every syllable is read.
+ * ========================================================================== */
+const DECODER_EXAMPLES = ["ข้าวผัดกุ้ง", "ห้องน้ำอยู่ที่ไหน", "ร้านกาแฟเปิดกี่โมง", "ขนมไทยอร่อยมาก", "ສະບາຍດີ", "ຕະຫຼາດເຊົ້າ"];
+
+function decodeLao(text) {
+  return text.split(/\s+/).filter(Boolean).map((w) => {
+    const sylls = laoSyllables(w).map((sy) => {
+      const p = laoSyllable(sy);
+      return p ? { text: sy, ...p, roman: "", notes: [], parts: p, lao: true } : { text: sy, raw: true };
+    });
+    const known = courseItems("lo").find((it) => it.lo === w && it.tier !== "glyph");
+    return { text: w, known: !!known, meaning: known?.meaning, id: known?.id, roman: known?.loRoman?.split(" ·")[0], syllables: sylls, lao: true };
+  });
+}
+
+function SyllableCard({ sy, roman }) {
+  if (sy.raw) return <div className="rounded-xl bg-white/[0.03] px-3 py-2 text-sm text-slate-400"><span className="mr-2 text-2xl text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{sy.text}</span>not a syllable (digit, repeat mark or symbol)</div>;
+  const t = TONES[sy.tone];
+  const kind = sy.live ? "live" : `dead, ${sy.long ? "long" : "short"}`;
+  const formula = sy.lao ? explainLaoTone(sy) : computeTone(sy.parts).formula;
+  return (
+    <div className="grid grid-cols-[64px_1fr] items-center gap-3 rounded-xl bg-white/[0.03] px-3 py-2">
+      <div className="text-center text-3xl leading-[1.6]" lang={sy.lao ? "lo" : "th"} style={{ fontFamily: sy.lao ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th, color: t?.ink }}>{sy.text}</div>
+      <div className="min-w-0 space-y-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {t && <ToneBadge tone={sy.tone} small />}
+          {roman && <span className="text-sm font-semibold text-white">{roman}</span>}
+          {sy.guess && <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] font-semibold text-amber-200" title="The vowel isn't written, so this reading is inferred.">guess</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-300">
+          <ClassBadge cls={sy.cls} small /> <span>{kind}</span> <span className="text-slate-400">· {MARKS[sy.mark]?.plain || "no mark"}</span>
+        </div>
+        <div className="text-xs text-slate-400">{formula}</div>
+        {sy.notes?.map((n) => <div key={n} className="text-xs text-amber-200/90">{n}</div>)}
+      </div>
+    </div>
+  );
+}
+
+function Decoder({ srs, initialText, onInspect, saved = [], setSaved }) {
+  const prefs = usePrefs();
+  const audio = getAudio();
+  const [text, setText] = useState(initialText || DECODER_EXAMPLES[0]);
+  useEffect(() => { if (initialText) setText(initialText); }, [initialText]);
+  const isLao = /[຀-໿]/.test(text) && !/[ก-๛]/.test(text);
+  const words = useMemo(() => {
+    const clean = text.slice(0, 400);
+    return isLao ? decodeLao(clean) : segmentThai(clean);
+  }, [text, isLao]);
+  const [open, setOpen] = useState(0);
+  useEffect(() => setOpen(0), [text]);
+  const romanOf = (w, sy) => romanize(sy.roman || "", prefs.roman);
+  const course = courseItems(isLao ? "lo" : "th");
+  const levelOf = (w) => (w.id ? tintLevel(srs[w.id]) : 0);
+  const isSaved = (w) => saved.some((x) => x.th === w.text);
+  const save = (w) => setSaved?.((list) => (list.some((x) => x.th === w.text) ? list : [...list, { th: w.text, roman: w.syllables.map((x) => x.roman).filter(Boolean).join("-"), tone: w.syllables.map((x) => x.tone).filter(Boolean), script: isLao ? "lo" : "th", at: Date.now() }]));
+  const readable = words.filter((w) => !w.other);
+  const knownCount = readable.filter((w) => w.known).length;
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Search} title="Decoder" sub="Type or paste any Thai or Lao: a menu, a sign, a message. Every syllable is read from its spelling." color={COLORS.gold} />
+      <Card className="space-y-3 p-4">
+        <label htmlFor="decoder-input" className="sr-only">Thai or Lao text</label>
+        <textarea
+          id="decoder-input"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={2}
+          spellCheck={false}
+          autoCorrect="off"
+          className="w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-2xl leading-[1.7] text-white outline-none focus:border-amber-400"
+          style={{ fontFamily: isLao ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th }}
+          placeholder="วางข้อความที่นี่ · paste here"
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          {DECODER_EXAMPLES.map((ex) => <Chip key={ex} active={text === ex} onClick={() => setText(ex)}><span style={{ fontFamily: /[຀-໿]/.test(ex) ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th }}>{ex}</span></Chip>)}
+          <button onClick={() => navigator.clipboard?.readText?.().then((t) => t && setText(t)).catch(() => {})} className="rounded-xl border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-200">Paste</button>
+        </div>
+      </Card>
+
+      {readable.length > 0 && (
+        <Card className="p-4">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+            <span>{readable.length} {readable.length === 1 ? "word" : "words"} · {knownCount} from your course</span>
+            <button onClick={() => (isLao ? audio.speakHumanVoice("", text) : audio.speakHumanVoice(text))} className="flex items-center gap-1 rounded-lg border border-white/10 px-2 py-1 font-semibold text-slate-200"><Volume2 size={13} /> Read it all</button>
+          </div>
+          <div className="flex flex-wrap items-baseline gap-x-1 gap-y-1">
+            {words.map((w, i) => (w.other ? <span key={i} className="text-2xl text-slate-400">{w.text}</span> : (
+              <button key={i} onClick={() => setOpen(i)} className={`rounded-lg px-1 text-3xl leading-[1.7] transition ${open === i ? "bg-white/10" : "hover:bg-white/5"} ${w.known ? "" : "border-b border-dashed border-white/20"}`} style={{ fontFamily: isLao ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th }}>
+                <TintedSyllables syllables={w.syllables} level={levelOf(w)} enabled={prefs.tint} script={isLao ? "lo" : "th"} />
+              </button>
+            )))}
+          </div>
+          <p className="mt-2 text-[11px] text-slate-400">Colours show each syllable's tone and fade as you learn the word. Dashed words aren't in your course yet.</p>
+        </Card>
+      )}
+
+      {words.map((w, i) => (i !== open || w.other ? null : (
+        <Card key={i} className="space-y-3 p-4" glow>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <div className="text-4xl leading-[1.6] text-white" style={{ fontFamily: isLao ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th }}>{w.text}</div>
+              <div className="text-sm text-slate-200">{w.roman ? romanize(w.roman, prefs.roman) : w.syllables.map((sy) => romanOf(w, sy)).filter(Boolean).join("-")}</div>
+              <div className="text-sm text-slate-400">{w.known ? w.meaning : "Not in your course yet. Readings with a guess tag are inferred from spelling."}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => (isLao ? audio.speakHumanVoice("", w.text) : audio.speakHumanVoice(w.text))} className="flex items-center gap-1 rounded-xl border border-cyan-400/40 bg-cyan-400/10 px-3 py-1.5 text-sm font-semibold text-cyan-200"><Volume2 size={14} /> Listen</button>
+              {w.known && course.find((c) => c.id === w.id) && <button onClick={() => onInspect?.(course.find((c) => c.id === w.id))} className="flex items-center gap-1 rounded-xl border border-white/15 px-3 py-1.5 text-sm font-semibold text-slate-100"><Eye size={14} /> Inspect</button>}
+              {!w.known && setSaved && <button onClick={() => save(w)} disabled={isSaved(w)} className="flex items-center gap-1 rounded-xl bg-amber-500 px-3 py-1.5 text-sm font-bold text-black disabled:opacity-50"><Sparkles size={14} /> {isSaved(w) ? "Saved" : "Save word"}</button>}
+            </div>
+          </div>
+          <div className="space-y-2">{w.syllables.map((sy, k) => <SyllableCard key={k} sy={sy} roman={sy.lao ? "" : romanOf(w, sy)} />)}</div>
+        </Card>
+      )))}
+
+      {saved.length > 0 && (
+        <Card className="p-4">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Saved words</div>
+          <div className="flex flex-wrap gap-2">
+            {saved.map((x) => (
+              <span key={x.th} className="inline-flex items-center gap-2 rounded-xl bg-white/[0.04] px-3 py-1.5">
+                <button onClick={() => setText(x.th)} className="text-xl text-white" style={{ fontFamily: x.script === "lo" ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th }}>{x.th}</button>
+                <span className="text-xs text-slate-400">{romanize(x.roman, prefs.roman)}</span>
+                <button aria-label={`Remove ${x.th}`} onClick={() => setSaved((l) => l.filter((y) => y.th !== x.th))} className="text-slate-400 hover:text-white"><X size={12} /></button>
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-slate-400">Saved words become review cards with their meaning once you add one.</p>
+        </Card>
+      )}
+      <p className="text-xs text-slate-400">Tip: point Google Lens at a sign, select the text, tap Share and choose SuvarṇaKani. It opens here.</p>
+    </div>
+  );
+}
+
+
+/* ============================================================================
+ * Font Gauntlet: the same letters in the faces real streets use.
+ * ========================================================================== */
+function FontGauntlet({ mode, srs, stats = {}, setStats }) {
+  useEffect(() => { loadGauntletFonts(); }, []);
+  const script = mode === "lo" ? "lo" : "th";
+  const faces = script === "lo" ? GAUNTLET_FACES.filter((f) => GAUNTLET_LAO.includes(f.id)) : GAUNTLET_FACES;
+  const course = courseItems(script);
+  const words = useMemo(() => {
+    const vocab = course.filter((it) => it.tier !== "glyph" && it[script] && !it[script].includes("◌"));
+    const known = vocab.filter((it) => (srs[it.id]?.stage || 0) >= 1);
+    return (known.length >= 6 ? known : vocab).slice(0, 40);
+  }, [course, script, srs]);
+  const [wi, setWi] = useState(0);
+  const word = words[wi % Math.max(1, words.length)];
+  const letters = useMemo(() => course.filter((it) => it.tier === "glyph" && [...(it[script] || "")].length === 1 && /[ก-ฮກ-ຮ]/.test(it[script])), [course, script]);
+  const makeQ = () => {
+    const target = letters[Math.floor(Math.random() * letters.length)];
+    const pool = confusables(target, script).filter((o) => o.tier === "glyph" && [...(o[script] || "")].length === 1).slice(0, 3);
+    while (pool.length < 3) {
+      const o = letters[Math.floor(Math.random() * letters.length)];
+      if (o.id !== target.id && !pool.some((p) => p.id === o.id)) pool.push(o);
+    }
+    const hard = faces.filter((f) => !f.looped);
+    const face = (hard.length ? hard : faces)[Math.floor(Math.random() * (hard.length || faces.length))];
+    return { target, face, options: shuffle([target, ...pool]), pick: null };
+  };
+  const [q, setQ] = useState(null);
+  const [round, setRound] = useState({ n: 0, right: 0 });
+  useEffect(() => { if (letters.length > 4) setQ(makeQ()); }, [script]); // eslint-disable-line react-hooks/exhaustive-deps
+  const answer = (o) => {
+    if (q.pick) return;
+    const ok = o.id === q.target.id;
+    haptic(ok ? "ok" : "bad");
+    setQ({ ...q, pick: o.id });
+    setRound((r) => ({ n: r.n + 1, right: r.right + (ok ? 1 : 0) }));
+    setStats?.((st) => {
+      const cur = st[q.face.id] || { right: 0, total: 0 };
+      return { ...st, [q.face.id]: { right: cur.right + (ok ? 1 : 0), total: cur.total + 1 } };
+    });
+  };
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Type} title="Font Gauntlet" sub="Textbooks loop; streets don't. Read the same word in the faces you'll meet on signs, menus and handwritten boards." color={COLORS.gold} />
+      {word && (
+        <Card className="p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="text-sm text-slate-300">{word.meaning} · <span className="text-slate-400">{script === "lo" ? word.loRoman : R(word.thRoman.split(" ·")[0])}</span></div>
+            <div className="flex gap-1">
+              <button aria-label="Previous word" onClick={() => setWi((i) => (i - 1 + words.length) % words.length)} className="rounded-lg border border-white/10 p-1.5 text-slate-200"><ChevronLeft size={16} /></button>
+              <button aria-label="Next word" onClick={() => setWi((i) => (i + 1) % words.length)} className="rounded-lg border border-white/10 p-1.5 text-slate-200"><ChevronRight size={16} /></button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {faces.map((f) => (
+              <div key={f.id} className="rounded-xl bg-white/[0.03] p-3 text-center">
+                <div className="text-4xl leading-[1.6] text-white" lang={script} style={{ fontFamily: FONT_STACKS[f.id][script] }}>{word[script]}</div>
+                <div className="mt-1 text-xs font-semibold text-slate-200">{script === "lo" && f.id === "sarabun" ? "Noto Sans Lao Looped" : script === "lo" && f.id === "street" ? "Noto Sans Lao" : script === "lo" && f.id === "loop" ? "Noto Serif Lao" : f.name}</div>
+                <div className="text-[11px] text-slate-400">{f.note}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {q && (
+        <Card className="p-4" glow>
+          <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+            <span>Which letter is this?</span>
+            <span className="tabular-nums">{round.right} / {round.n} this session</span>
+          </div>
+          <div className="my-2 text-center text-8xl leading-[1.4] text-white" lang={script} style={{ fontFamily: FONT_STACKS[q.face.id][script] }}>{q.target[script]}</div>
+          <div className="mb-3 text-center text-xs text-slate-400">{q.pick ? `${q.face.name} · ${q.face.note}` : "Pick the same letter in head-loop type"}</div>
+          <div className="grid grid-cols-4 gap-2">
+            {q.options.map((o) => {
+              const state = !q.pick ? "" : o.id === q.target.id ? "border-emerald-400 bg-emerald-500/15" : o.id === q.pick ? "border-rose-400 bg-rose-500/15" : "opacity-50";
+              return (
+                <button key={o.id} onClick={() => answer(o)} className={`rounded-xl border border-white/10 py-2 text-4xl leading-[1.5] text-white ${state}`} lang={script} style={{ fontFamily: FONT_STACKS.loop[script] }}>{o[script]}</button>
+              );
+            })}
+          </div>
+          {q.pick && (
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-sm text-slate-300">{q.target.meaning}</span>
+              <button onClick={() => setQ(makeQ())} className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+            </div>
+          )}
+        </Card>
+      )}
+      {Object.keys(stats).length > 0 && (
+        <Card className="p-4">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Your accuracy by face</div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {GAUNTLET_FACES.filter((f) => stats[f.id]).map((f) => {
+              const st = stats[f.id];
+              const pct = Math.round((st.right / st.total) * 100);
+              return (
+                <div key={f.id} className="rounded-xl bg-white/[0.03] px-3 py-2 text-sm">
+                  <div className="text-slate-200">{f.name}</div>
+                  <div className={`tabular-nums ${pct >= 80 ? "text-emerald-300" : pct >= 60 ? "text-amber-200" : "text-rose-300"}`}>{pct}% <span className="text-xs text-slate-400">of {st.total}</span></div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================================
  * Settings sheet: everything that used to live in the header and footer, plus
  * backups, your polite particle, text size and haptics.
@@ -5069,6 +5923,18 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
           <Chip active={s.font === "street"} onClick={() => s.setFont("street")}>Street</Chip>
         </div>
       </SettingRow>
+      <SettingRow label="Romanisation" hint="Learner spelling marks tones; RTGS is what road signs use; IPA is the phonetic alphabet.">
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(ROMAN_SYSTEMS).map(([k, l]) => <Chip key={k} active={s.prefs.roman === k} onClick={() => s.setPref("roman", k)}>{l}</Chip>)}
+        </div>
+        <p className="mt-2 text-sm text-slate-200">{romanize("khɔ̀ɔp-khun mâak khráp", s.prefs.roman)}</p>
+      </SettingRow>
+      <SettingRow label="Reading help" hint="Tone colours fade as you learn each word. Random fonts show stage 3+ review items in a different typeface each time.">
+        <div className="flex flex-wrap gap-2">
+          <Chip active={s.prefs.tint} onClick={() => s.setPref("tint", !s.prefs.tint)}>{s.prefs.tint ? "Tone colours on" : "Tone colours off"}</Chip>
+          <Chip active={s.prefs.randomFonts} onClick={() => s.setPref("randomFonts", !s.prefs.randomFonts)}>{s.prefs.randomFonts ? "Random fonts in reviews" : "Same font in reviews"}</Chip>
+        </div>
+      </SettingRow>
       <SettingRow label="Daily goal">
         <div className="flex flex-wrap gap-2">
           {[5, 12, 20].map((m) => <Chip key={m} active={s.dailyMinutes === m} onClick={() => s.setDailyMinutes(m)}>{m} min</Chip>)}
@@ -5146,8 +6012,10 @@ const EAR_TABS = [
   { id: "shadow", label: "Shadow Mirror", icon: Mic },
 ];
 const READ_TABS = [
+  { id: "decoder", label: "Decoder", icon: Search },
   { id: "slicer", label: "Script Slicer", icon: Scissors },
   { id: "street", label: "Street Reader", icon: BookOpen },
+  { id: "fonts", label: "Font Gauntlet", icon: Type },
 ];
 // Older saved tabs map onto the new hubs.
 const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"] };
@@ -5162,9 +6030,10 @@ const TABS = [
 
 export default function SuvarnaKani() {
   const initial = useMemo(() => loadState() || {}, []);
-  const [tab, setTab] = useState(LEGACY_TAB[initial.tab]?.[0] || initial.tab || "shrine");
+  const launchGo = typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("text") ? "decoder" : new URLSearchParams(window.location.search).get("go")) : null;
+  const [tab, setTab] = useState(launchGo === "decoder" ? "read" : launchGo === "ear" ? "ear" : launchGo === "reviews" ? "shrine" : LEGACY_TAB[initial.tab]?.[0] || initial.tab || "shrine");
   const [labTab, setLabTab] = useState(LEGACY_TAB[initial.tab]?.[1] === "reactor" || LEGACY_TAB[initial.tab]?.[1] === "orbit" ? LEGACY_TAB[initial.tab][1] : initial.labTab || "reactor");
-  const [readTab, setReadTab] = useState(initial.readTab || "slicer");
+  const [readTab, setReadTab] = useState(launchGo === "decoder" ? "decoder" : initial.readTab || "decoder");
   const [earTab, setEarTab] = useState(initial.earTab || "dojo");
   const [shadow, setShadow] = useState(() => ({ ...emptyShadow(), ...(initial.shadow || {}) }));
   const [bridge, setBridge] = useState(() => ({ ...emptyBridge(), ...(initial.bridge || {}) }));
@@ -5188,10 +6057,26 @@ export default function SuvarnaKani() {
   const [prefs, setPrefs] = useState(() => ({ ...DEFAULT_PREFS, ...(initial.prefs || {}) }));
   const setPref = (k, v) => setPrefs((p) => ({ ...p, [k]: v }));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [decoderSaved, setDecoderSaved] = useState(() => initial.decoderSaved || []);
+  const [gauntlet, setGauntlet] = useState(() => initial.gauntlet || {});
+  // Home-screen shortcuts (?go=reviews|ear|decoder) and text shared from other apps (?text=).
+  const launch = useMemo(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const shared = [q.get("text"), q.get("title"), q.get("url")].filter(Boolean).join(" ").trim();
+      if (q.toString()) window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+      return { go: shared ? "decoder" : q.get("go"), text: shared };
+    } catch {
+      return {};
+    }
+  }, []);
+  const [sharedText] = useState(launch.text || "");
+  const [autoReview, setAutoReview] = useState(launch.go === "reviews");
   // Existing users see What's new once after an update; new users start at the current version.
   const [seenVersion, setSeenVersion] = useState(initial.seenVersion || (initial.srs ? "0.19.0" : APP_VERSION));
   const updateReady = useUpdateReady();
   runtimePrefs.haptics = prefs.haptics;
+  runtimePrefs.roman = prefs.roman;
   useEffect(() => {
     document.documentElement.style.fontSize = prefs.textSize === 100 ? "" : `${prefs.textSize}%`;
   }, [prefs.textSize]);
@@ -5246,11 +6131,11 @@ export default function SuvarnaKani() {
   }, []);
 
   const stateRef = useRef(null);
-  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion };
+  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet };
   useEffect(() => {
     if (restoringState) return;
     saveState(stateRef.current);
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion]);
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet]);
   // A snapshot of the state as the app opens each day, before today's work changes it.
   useEffect(() => { if (stateRef.current.onboarded) snapshotToday(stateRef.current); }, []);
 
@@ -5269,6 +6154,7 @@ export default function SuvarnaKani() {
     setBridgeSched({});
     setStreetBest({});
     setShadow(emptyShadow());
+    setGauntlet({});
     setConfirmReset(false);
   };
 
@@ -5306,7 +6192,7 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} />}
         {tab === "ear" && (
           <>
             <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
@@ -5327,6 +6213,8 @@ export default function SuvarnaKani() {
           <>
             <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
             {readTab === "slicer" && <Slicer mode={mode} font={font} />}
+            {readTab === "decoder" && <Decoder srs={srs} initialText={sharedText} onInspect={setInspect} saved={decoderSaved} setSaved={setDecoderSaved} />}
+            {readTab === "fonts" && <FontGauntlet mode={mode} srs={srs} stats={gauntlet} setStats={setGauntlet} />}
             {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} />}
           </>
         )}
@@ -5368,4 +6256,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
