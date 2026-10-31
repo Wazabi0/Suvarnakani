@@ -24,6 +24,7 @@ The app then opens full screen and works offline after the first load.
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.11.0**: Tone checks on every syllable. Words now ask for the tone of each syllable in turn: the romanised syllable is shown with its tone marks stripped, and keys 1–5 work. Feedback names each syllable you missed. When a known item gets a tone track for the first time, a correct answer starts it from the reading track's memory, so long-learned words aren't sent back to stage 1. Long words shrink on the review card so they fit a phone screen.
 - **0.10.0**: The whole alphabet. 39 new items, each added to the level where it belongs:
   - **Level 2**: high/low partner letters ถ ท ฝ ฟ ซ ฮ.
   - **Level 3**: the sonorants ง ย ว ญ, with their Lao counterparts.
