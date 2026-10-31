@@ -24,6 +24,15 @@ The app then opens full screen and works offline after the first load.
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.10.0**: The whole alphabet. 39 new items, each added to the level where it belongs:
+  - **Level 2**: high/low partner letters ถ ท ฝ ฟ ซ ฮ.
+  - **Level 3**: the sonorants ง ย ว ญ, with their Lao counterparts.
+  - **Level 4**: Sanskrit letters ศ ษ ธ ฉ ภ ณ.
+  - **Level 5**: missing vowel patterns ◌ุ ◌ึ เ◌ีย เ◌า -อ and long เ แ โ.
+  - **Level 7**: digits ๖–๙.
+  - **Level 9 (new), Royal and Rare Letters**: ฆ ฐ ฑ ฒ ฎ ฏ ฌ ฬ, ๆ, ฯ and ฤ.
+
+  Every Thai consonant except the obsolete ฃ and ฅ is now taught on its own. A level you have started stays open when new items join the level before it, and lessons come in level order.
 - **0.9.0**: Galaxy S25 Ultra and Android tuning. `dist/` is an installable app with a manifest, icons including a maskable one, and an offline service worker. Layout runs edge to edge and clears the status bar and gesture bar. The keyboard resizes the page instead of covering the review input. Samsung Internet's forced dark mode is opted out. Samsung Keyboard autocorrect is off in reviews. Right and wrong answers trigger short haptics. The Tracer supports the S Pen: pressure-sensitive strokes, 240 Hz coalesced samples and palm rejection, and the page no longer scrolls while tracing. Galaxy-specific steps appear when no Thai voice is installed.
 - **0.8.0**: Level 8 course, Particles and Politeness (12 items: ครับ, ค่ะ, คะ, นะ, ไหม, ใช่, ไม่ใช่, ขอโทษ, ไม่เป็นไร, เท่าไร, ได้, คุณ, each paired with its Lao counterpart such as ເຈົ້າ, ເດີ, ບໍ, ແມ່ນ and ບໍ່ເປັນຫຍັງ). Street Reader gains two short dialogues with speaker labels: a Bangkok coffee counter in Thai and a Luang Prabang market in Lao.
 - **0.7.0**: Shadow Mirror under Ear. Hear a model syllable, say it back, and your pitch is drawn live over the target contour. Pitch tracking is on-device YIN with octave-jump correction. Scoring combines shape (pitch movement) with height, measured against a one-tap "set my voice" calibration, and each tone gets a specific tip ("Falling needs a clear drop…"). A tone unlocks after 80% Ear Dojo accuracy on it over at least 10 trials, so you hear a tone before you produce it. Microphone refusal is handled with a clear message. No audio leaves the device.
