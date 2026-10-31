@@ -2,9 +2,9 @@
 // compiled Tailwind CSS inlined. Only Google Fonts load from the network.
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 const tmp = mkdtempSync(join(tmpdir(), "suvarnakani-"));
@@ -37,11 +37,11 @@ const fonts = "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400
 // Galaxy S25 Ultra and other Android phones: edge-to-edge under the status and
 // gesture bars, keyboard resizes the page instead of covering the review input,
 // and Samsung Internet's forced dark mode leaves the palette alone.
-const head = (extra = "") => `<!doctype html><html lang="en"><head><meta charset="utf-8">
+const head = (extra = "", fontTag = `<link rel="stylesheet" href="${fonts}" data-suvarnakani-fonts>`) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>SuvarṇaKani</title><meta name="theme-color" content="#0B0F19"><meta name="color-scheme" content="dark">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-${extra}<link rel="stylesheet" href="${fonts}">
+${extra}${fontTag}
 <style>${css} :root{color-scheme:dark} html{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent} body{background:#0B0F19;color:#F1F5F9;margin:0;overscroll-behavior-y:none;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}</style></head>`;
 const html = `${head()}
 <body><div id="root"></div><script>${js}</script></body></html>`;
@@ -53,6 +53,36 @@ console.log(`SuvarnaKani.html written (${(html.length / 1024).toFixed(0)} KB)`);
 const dist = join(root, "dist");
 mkdirSync(dist, { recursive: true });
 const version = Date.now().toString(36);
+
+// Bundle the fonts into dist/fonts so the installed app (and the Android APK)
+// renders Thai and Lao offline from the very first launch. If the build has no
+// network, fall back to the Google Fonts link (cached by the service worker).
+const fontFiles = [];
+let fontTag;
+try {
+  const ua = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
+  const res = await fetch(fonts, { headers: { "User-Agent": ua } });
+  if (!res.ok) throw new Error(`fonts css ${res.status}`);
+  let fontCss = await res.text();
+  const urls = [...new Set(fontCss.match(/https:\/\/fonts\.gstatic\.com\/[^)\s]+/g) || [])];
+  if (!urls.length) throw new Error("no font files in css");
+  rmSync(join(dist, "fonts"), { recursive: true, force: true });
+  mkdirSync(join(dist, "fonts"), { recursive: true });
+  for (const [i, u] of urls.entries()) {
+    const r = await fetch(u);
+    if (!r.ok) throw new Error(`font ${r.status} ${u}`);
+    const name = `fonts/f${i}${extname(new URL(u).pathname) || ".woff2"}`;
+    writeFileSync(join(dist, name), Buffer.from(await r.arrayBuffer()));
+    fontCss = fontCss.replaceAll(u, name);
+    fontFiles.push(name);
+  }
+  fontTag = `<style data-suvarnakani-fonts>${fontCss}</style>`;
+  console.log(`bundled ${fontFiles.length} font files into dist/fonts`);
+} catch (err) {
+  fontFiles.length = 0;
+  rmSync(join(dist, "fonts"), { recursive: true, force: true });
+  console.warn(`fonts not bundled (${err.message}); the app will load them from Google Fonts`);
+}
 ["icon-192.png", "icon-512.png", "icon-maskable-512.png"].forEach((f) => copyFileSync(join(root, "assets", f), join(dist, f)));
 writeFileSync(join(dist, "manifest.webmanifest"), JSON.stringify({
   name: "SuvarṇaKani",
@@ -70,10 +100,12 @@ writeFileSync(join(dist, "manifest.webmanifest"), JSON.stringify({
     { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
   ],
 }, null, 2));
-writeFileSync(join(dist, "sw.js"), `// App shell is cached on install; Google Fonts are cached as they load.
+writeFileSync(join(dist, "sw.js"), `// App shell and the bundled fonts are cached on install, so the app works
+// offline from the first launch. Google Fonts (only used if the build could not
+// bundle them) are cached as they load.
 const SHELL = "suvarnakani-${version}";
 const FONTS = "suvarnakani-fonts";
-const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png"];
+const FILES = ${JSON.stringify(["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", ...fontFiles])};
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== FONTS).map((k) => caches.delete(k)))));
@@ -92,8 +124,10 @@ self.addEventListener("fetch", (e) => {
   }
 });
 `);
-const appHtml = `${head('<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">\n')}
+const appHtml = `${head('<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png">\n', fontTag)}
 <body><div id="root"></div><script>${js}</script>
-<script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js");</script></body></html>`;
+<script>if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js");
+// Ask Android not to clear saved progress when the phone runs low on space.
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});</script></body></html>`;
 writeFileSync(join(dist, "index.html"), appHtml);
 console.log("dist/ written (installable app)");

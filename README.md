@@ -15,15 +15,18 @@ npm run build   # writes SuvarnaKani.html
 
 ## Install on a Galaxy phone
 
-1. Serve the `dist/` folder over https. For example, drag it onto [Netlify Drop](https://app.netlify.com/drop) or publish it with GitHub Pages.
-2. Open the URL in Samsung Internet or Chrome.
-3. Choose **Add page to → Home screen** in Samsung Internet, or **Install app** in Chrome.
+The `Deploy app to GitHub Pages` workflow builds `dist/` and publishes it on every push to `main`. One-time setup: **Settings → Pages → Build and deployment → Source: GitHub Actions**. Pages on a private repo needs GitHub Pro; on a free plan, either make the repo public or drag the `dist/` folder onto [Netlify Drop](https://app.netlify.com/drop).
 
-The app then opens full screen and works offline after the first load.
+1. Open the Pages URL (`https://wazabi0.github.io/Suvarnakani/`) in Chrome or Samsung Internet.
+2. Chrome: **⋮ → Add to Home screen → Install**. Samsung Internet: **☰ → Add page to → Home screen**.
+3. Open SuvarṇaKani from its icon once while online. From then on it runs full screen and fully offline, fonts included.
+
+Progress is stored on the phone, per browser and per web address. Install from one browser and keep using that icon. Updates arrive automatically: the next launch after a deploy fetches the new version.
 
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.19.0**: Install on the phone. A GitHub Actions workflow publishes `dist/` to GitHub Pages. The build now bundles the Thai, Lao and Latin fonts into `dist/fonts` (about 430 KB) and the service worker precaches them, so the installed app works offline from its first launch with no requests to Google. The app also asks the browser for persistent storage, so Android does not clear saved progress when space runs low.
 - **0.18.0**: Lao as a full course. Lao mode now has its own item list:
   - **Fewer duplicates.** Thai-only letters such as ศ ษ ฉ ฆ ฐ, and the Thai final-consonant groups, collapse onto Lao letters you already have, so they are dropped.
   - **Six Lao-only items.** ຢ (Middle-class y), ໜ ໝ ຫຼ (High-class n, m and l) and the vowels ◌ົ and ◌ຽ are added at the levels where they belong.
