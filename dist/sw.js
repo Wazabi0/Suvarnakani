@@ -1,5 +1,5 @@
 // App shell is cached on install; Google Fonts are cached as they load.
-const SHELL = "suvarnakani-mvvg3fzo";
+const SHELL = "suvarnakani-mvvg6bei";
 const FONTS = "suvarnakani-fonts";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES))); self.skipWaiting(); });
