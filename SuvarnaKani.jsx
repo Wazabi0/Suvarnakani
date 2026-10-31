@@ -772,6 +772,11 @@ class SuvarnaMobileAudioEngine {
     this.voices = [];
     this.primed = false;
     this.listeners = new Set();
+    // Speech health: null when fine, else { kind, error }. Shown as a banner.
+    this.issue = null;
+    this.issueListeners = new Set();
+    this.watchdog = null;
+    this.live = [];
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       const load = () => {
         this.voices = window.speechSynthesis.getVoices() || [];
@@ -794,6 +799,23 @@ class SuvarnaMobileAudioEngine {
   laoVoice() {
     return this.voices.find((v) => /^lo(-|_|$)/i.test(v.lang));
   }
+  onIssue(fn) {
+    this.issueListeners.add(fn);
+    return () => this.issueListeners.delete(fn);
+  }
+  setIssue(issue) {
+    if ((this.issue?.kind || null) === (issue?.kind || null)) return;
+    this.issue = issue;
+    this.issueListeners.forEach((fn) => fn(issue));
+  }
+  /**
+   * Speech could not start. Play the word's tone chimes (when the caller knows
+   * them) so the tap is never silent, and tell the UI why.
+   */
+  speechFailed(kind, fallbackTones, error) {
+    this.setIssue({ kind, error });
+    if (fallbackTones && fallbackTones.length) this.playRanatToneChime(fallbackTones);
+  }
   /** iOS needs a speech call inside the first user gesture. */
   prime() {
     if (this.primed || typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -815,7 +837,9 @@ class SuvarnaMobileAudioEngine {
   }
   cancelSpeech() {
     clearTimeout(this.speechTimer);
+    clearTimeout(this.watchdog);
     this.speechTimer = null;
+    this.watchdog = null;
     this.seqToken = (this.seqToken || 0) + 1;
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
   }
@@ -832,15 +856,27 @@ class SuvarnaMobileAudioEngine {
    * sound cancels the rest of the sequence.
    */
   speakSequence(list, gapMs = 450) {
-    if (this.muted || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (typeof window === "undefined") return;
+    if (this.muted) { this.setIssue({ kind: "muted" }); return; }
+    const fallbackTones = list.flatMap((e) => e.tones || []);
+    if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") {
+      this.speechFailed("unsupported", fallbackTones);
+      return;
+    }
     this.stopTones();
     this.cancelSpeech();
     const token = this.seqToken;
+    // Some Android browsers only fill the voice list after a first call.
+    if (!this.voices.length) {
+      try { this.voices = window.speechSynthesis.getVoices() || []; } catch { /* ignore */ }
+    }
+    let wantsThai = false;
     const utterances = list
       .map((e) => {
         const lv = e.lo ? this.laoVoice() : null;
         const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
         if (!text) return null;
+        if (!lv) wantsThai = true;
         const u = new SpeechSynthesisUtterance(text);
         u.lang = lv ? "lo-LA" : "th-TH";
         const voice = lv || e.voice || this.thaiVoice();
@@ -850,13 +886,53 @@ class SuvarnaMobileAudioEngine {
       })
       .filter(Boolean);
     if (!utterances.length) return;
+    // Keep references so Chrome does not garbage-collect them mid-sentence
+    // (which silently drops onend and the rest of the sequence).
+    this.live = utterances;
+    // The voice list has loaded but holds no Thai voice: most engines then stay
+    // silent or read nothing. Still try (some engines speak th-TH unlisted),
+    // and warn straight away.
+    const noThai = wantsThai && this.voices.length > 0 && !this.thaiVoice();
+    let started = false;
+    const fail = (kind, error) => {
+      if (token !== this.seqToken || started) return;
+      clearTimeout(this.watchdog);
+      this.watchdog = null;
+      this.speechFailed(kind, fallbackTones, error);
+    };
     const play = (i) => {
       if (token !== this.seqToken || i >= utterances.length) return;
       const u = utterances[i];
+      u.onstart = () => {
+        if (token !== this.seqToken) return;
+        if (!started) {
+          started = true;
+          clearTimeout(this.watchdog);
+          this.watchdog = null;
+          this.setIssue(noThai ? { kind: "novoice" } : null);
+        }
+      };
+      u.onerror = (ev) => {
+        const err = ev?.error || "synthesis-failed";
+        if (err === "interrupted" || err === "canceled") return;
+        fail(err === "not-allowed" ? "blocked" : noThai || err === "language-unavailable" || err === "voice-unavailable" ? "novoice" : "failed", err);
+      };
       u.onend = () => {
         if (i + 1 < utterances.length) this.speechTimer = setTimeout(() => play(i + 1), gapMs);
       };
-      window.speechSynthesis.speak(u);
+      try {
+        // Chrome can get stuck "paused" after the tab was in the background.
+        if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+        window.speechSynthesis.speak(u);
+      } catch (e) {
+        fail("failed", String(e?.message || e));
+        return;
+      }
+      if (i === 0) {
+        clearTimeout(this.watchdog);
+        // No onstart within a few seconds means nothing is coming out.
+        this.watchdog = setTimeout(() => fail(noThai ? "novoice" : "silent"), 2500);
+      }
     };
     this.speechTimer = setTimeout(() => play(0), 120);
   }
@@ -922,7 +998,7 @@ const haptic = (kind) => {
   }
 };
 const IS_ANDROID = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
-const ANDROID_VOICE_HINT = "On a Galaxy: Settings → General management → Text-to-speech → Preferred engine: Speech Services by Google, then download Thai in its settings.";
+const ANDROID_VOICE_HINT = "On a Galaxy, Samsung's own engine has no Thai: open Settings → General management → Text-to-speech output (or search Settings for \"text-to-speech\"), set Preferred engine to Speech Services by Google, tap its gear → Install voice data → Thai, then close and reopen the browser.";
 
 let audioSingleton = null;
 const getAudio = () => {
@@ -992,12 +1068,12 @@ function AudioButtons({ ttsTh, ttsLo, loRaw, tones, mode, compact }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {mode !== "lo" && (
-        <button className={`${btn} border-cyan-400/40 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20`} onClick={() => audio.speakHumanVoice(ttsTh)}>
+        <button className={`${btn} border-cyan-400/40 bg-cyan-400/10 text-cyan-200 hover:bg-cyan-400/20`} onClick={() => audio.speakHumanVoice(ttsTh, undefined, { tones })}>
           <Volume2 size={compact ? 14 : 16} /> {mode === "dual" ? "ไทย" : "Speak"}
         </button>
       )}
       {mode !== "th" && (
-        <button className={`${btn} border-purple-400/40 bg-purple-400/10 text-purple-200 hover:bg-purple-400/20`} onClick={() => audio.speakHumanVoice(ttsLo || ttsTh, loRaw)}>
+        <button className={`${btn} border-purple-400/40 bg-purple-400/10 text-purple-200 hover:bg-purple-400/20`} onClick={() => audio.speakHumanVoice(ttsLo || ttsTh, loRaw, { tones })}>
           <Volume2 size={compact ? 14 : 16} /> {mode === "dual" ? "ລາວ" : "Speak"}
         </button>
       )}
@@ -4707,6 +4783,50 @@ function SubTabs({ tabs, active, onChange }) {
 }
 
 /* ============================================================================
+ * Speech banner: says why a Listen tap made no sound, and how to fix it.
+ * ========================================================================== */
+const IN_FRAME = (() => { try { return typeof window !== "undefined" && window.self !== window.top; } catch { return true; } })();
+function speechIssueText(issue) {
+  const install = IS_ANDROID ? ANDROID_VOICE_HINT : "Install a Thai voice in your device's text-to-speech settings, then reload this page.";
+  switch (issue.kind) {
+    case "muted": return { title: "Sound is muted.", body: "Unmute it in the Audio Studio (headphones button, top right)." };
+    case "novoice": return { title: "No Thai voice on this device.", body: `${install} Words with known tones play their chimes meanwhile.` };
+    case "unsupported": return { title: "This browser cannot speak.", body: "Open the app in Chrome or Samsung Internet." };
+    case "blocked": return { title: "The browser blocked speech.", body: IN_FRAME ? "Tap Listen again. If it stays silent, open the app on its own page instead of inside the preview." : "Tap Listen again." };
+    default: return { title: "The voice did not start.", body: `Check your media volume and that silent mode is off. ${IN_FRAME ? "If it stays silent, open the app on its own page instead of inside the preview. " : ""}${install}` };
+  }
+}
+
+function SpeechIssueBanner({ onUnmute, onOpenStudio }) {
+  const audio = getAudio();
+  const [issue, setIssue] = useState(audio.issue);
+  const [hidden, setHidden] = useState(null);
+  useEffect(() => audio.onIssue((i) => { setIssue(i); setHidden(null); }), [audio]);
+  if (!issue || hidden === issue.kind) return null;
+  const { title, body } = speechIssueText(issue);
+  return (
+    <div role="status" aria-live="polite" className="fixed inset-x-2 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-40 mx-auto max-w-lg rounded-2xl border border-amber-400/40 bg-[#1C1917]/95 p-3 text-sm shadow-2xl backdrop-blur sm:bottom-4">
+      <div className="flex items-start gap-2">
+        <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-400" />
+        <div className="min-w-0 flex-1">
+          <div className="font-bold text-amber-200">{title}</div>
+          <p className="mt-0.5 text-xs leading-relaxed text-slate-300">{body}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {issue.kind === "muted" ? (
+              <button onClick={onUnmute} className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-black">Unmute</button>
+            ) : (
+              <button onClick={() => audio.speakHumanVoice("สวัสดี ครับ")} className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-black">Try again</button>
+            )}
+            <button onClick={onOpenStudio} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-slate-200">Audio Studio</button>
+          </div>
+        </div>
+        <button onClick={() => setHidden(issue.kind)} aria-label="Hide" className="rounded-full p-1 text-slate-400 hover:bg-white/10"><X size={14} /></button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================================
  * Audio Studio drawer
  * ========================================================================== */
 function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
@@ -4839,6 +4959,7 @@ export default function SuvarnaKani() {
     audio.rate = rate;
     audio.muted = muted;
     if (muted) { audio.cancelSpeech(); audio.stopTones(); }
+    else if (audio.issue?.kind === "muted") audio.setIssue(null);
   }, [rate, muted]);
 
   useEffect(() => {
@@ -4950,6 +5071,7 @@ export default function SuvarnaKani() {
         ))}
       </nav>
 
+      <SpeechIssueBanner onUnmute={() => setMuted(false)} onOpenStudio={() => setStudio(true)} />
       <AudioStudio open={studio} onClose={() => setStudio(false)} rate={rate} setRate={setRate} muted={muted} setMuted={setMuted} />
       <Inspector item={inspect} mode={mode} font={font} srs={srs} onClose={() => setInspect(null)} />
       {!onboarded && <Onboarding onDone={finishOnboarding} />}

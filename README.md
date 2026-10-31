@@ -24,6 +24,7 @@ The app then opens full screen and works offline after the first load.
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.18.1**: Silent Listen buttons now explain themselves. If speech does not start within 2.5 s, errors, the device lists no Thai voice, the browser cannot speak, or sound is muted, a banner says why and how to fix it (Galaxy steps for switching to Speech Services by Google and installing Thai), with Try again and Unmute buttons. Letter cards play the tone chimes as a fallback when no voice speaks. Utterances are kept alive so Chrome does not drop the rest of a sequence, and a stuck paused synth is resumed.
 - **0.18.0**: Lao as a full course. Lao mode now has its own item list:
   - **Fewer duplicates.** Thai-only letters such as ศ ษ ฉ ฆ ฐ, and the Thai final-consonant groups, collapse onto Lao letters you already have, so they are dropped.
   - **Six Lao-only items.** ຢ (Middle-class y), ໜ ໝ ຫຼ (High-class n, m and l) and the vowels ◌ົ and ◌ຽ are added at the levels where they belong.
