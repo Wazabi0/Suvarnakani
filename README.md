@@ -24,6 +24,17 @@ The app then opens full screen and works offline after the first load.
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.18.0**: Lao as a full course. Lao mode now has its own item list:
+  - **Fewer duplicates.** Thai-only letters such as ศ ษ ฉ ฆ ฐ, and the Thai final-consonant groups, collapse onto Lao letters you already have, so they are dropped.
+  - **Six Lao-only items.** ຢ (Middle-class y), ໜ ໝ ຫຼ (High-class n, m and l) and the vowels ◌ົ and ◌ຽ are added at the levels where they belong.
+  - **Lao classes.** Glyphs are asked about their Lao class, and class feedback names the Lao letters in each class.
+  - **Vientiane tones.** Every word gets Vientiane tones read from its Lao spelling. A small syllabifier splits unspaced Lao, such as ສະ|ບາຍ|ດີ and ຕະ|ຫຼາດ. Each syllable's class, live/dead, vowel length and mark then give one of five tones: Rising 24, High 45, Mid 33, Low falling 31 and High falling 52. The rules follow the five-rule summary in *The Lao writing system for Thai speakers (Vientiane dialect)*, and I checked them against its 31 example words.
+  - **Lao tone feedback.** Tone questions show the Lao tones, and a wrong answer gets a Lao rule line, for example "Middle class + live + no mark = Rising (24, Vientiane)".
+  - **Shared progress.** SRS progress is shared by item id across modes, so a word you know in Thai stays known in Lao. The Tracer, confusable distractors, the Shrine level list and the Today Path all follow the Lao list.
+  - **Ear Dojo.** Lao sets now show each word's tone after you answer.
+  - **Lao romanisation.** Romanisation in Lao mode is Lao-only.
+
+  Caveat: Lao tone descriptions vary by speaker and source. This course teaches the common learner model and does not split the rising tone by class.
 - **0.17.0**: Dialogue shadowing. The Shadow Mirror has a new Dialogue view with two short Bangkok dialogues, *At the counter* and *Asking the way*, 12 lines in all.
   - You can hear one line or play the dialogue from the top up to your line, then say it.
   - Your pitch over the whole line is octave-fixed and lined up with the chained Chao contours of its syllables by dynamic time warping. People never give every syllable the same length, so the warping matters.
