@@ -1,7 +1,7 @@
 {
   "name": "suvarnakani",
   "private": true,
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Learn to read Thai and Lao: SRS, tone physics, tracing and listening drills.",
   "scripts": {
     "build": "node scripts/build.mjs",

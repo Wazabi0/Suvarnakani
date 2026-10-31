@@ -114,5 +114,47 @@ for (const sen of T.SENTENCES.filter((x) => x.script === "th")) {
 const senIds = new Set(T.SENTENCES.map((x) => x.id));
 check(senIds.size >= 15 && T.SENTENCES.length >= 30, `30 slicer lines (got ${T.SENTENCES.length})`);
 
+// 9. Word Garden: unique ids, no clash with the course, tones from the reading agree with the engine.
+const GARDEN_KNOWN = new Set(["มีความสุข", "ภูมิใจ"]); // read by segmentation, or against the spelling
+check(T.GARDEN_BEDS.length === 7, "seven garden beds");
+check(T.GARDEN_ITEMS.length >= 250, `at least 250 garden words (got ${T.GARDEN_ITEMS.length})`);
+const allIds = [...T.CURRICULUM, ...T.LAO_ONLY_ITEMS, ...T.GARDEN_ITEMS].map((i) => i.id);
+eq(allIds.length, new Set(allIds).size, "item ids are unique");
+const courseTh = new Set(T.CURRICULUM.map((i) => i.th));
+for (const it of T.GARDEN_ITEMS) {
+  check(!courseTh.has(it.th), `garden ${it.th} is not already a course item`);
+  check(it.tone.length === it.thRoman.split("-").length && it.loRoman && it.ttsLo && it.example?.th, `garden ${it.id} has tones, Lao reading and an example`);
+  check(/^[ก-๛]+$/.test(it.ttsLo), `garden ${it.id} ttsLo is Thai script: ${it.ttsLo}`);
+  if (GARDEN_KNOWN.has(it.th)) continue;
+  const rd = T.readThai(it.th);
+  if (rd.some((x) => x.guess || x.raw) || rd.length !== it.tone.length) continue;
+  eq(rd.map((x) => x.tone), it.tone, `garden ${it.th} (${it.thRoman})`);
+}
+check(T.courseItems("lo").some((i) => i.garden) && T.courseItems("th").some((i) => i.garden), "garden words are in both courses");
+eq(T.laoToThai("ເຂົ້າໜຽວ"), "เข้าเหนียว", "Lao → Thai letters: ◌ົາ and ◌ຽ");
+eq(T.laoToThai("ເຜັດ"), "เผ็ด", "Lao → Thai letters: ເ◌ັ");
+eq(T.laoToThai("ມື້ນີ້"), "มื้อนี้", "Lao → Thai letters: open ◌ື");
+eq(T.laoToThai("ບໍ່"), "บ่อ", "Lao → Thai letters: ◌ໍ");
+eq(T.laoToThai("ເບຍ"), "เบีย", "Lao → Thai letters: open ເ◌ຍ");
+
+// 10. Forgiving romanisation (D5) and numbers.
+const naam = T.CURRICULUM.find((i) => i.id === "v-naam");
+check(T.isCorrect(naam, "nam") && T.isCorrect(naam, "náam"), "náam accepts nam");
+const khaaw = T.CURRICULUM.find((i) => i.id === "v-khaaw");
+check(T.isCorrect(khaaw, "kao") && T.isCorrect(khaaw, "khao"), "khâaw accepts kao and khao");
+check(!T.isCorrect(khaaw, "kin"), "khâaw does not accept kin");
+eq(T.numberWords(21), "ยี่สิบเอ็ด", "21");
+eq(T.numberWords(11), "สิบเอ็ด", "11");
+eq(T.numberWords(1500), "หนึ่งพันห้าร้อย", "1,500");
+eq(T.numberWords(10000, "lo"), "ສິບພັນ", "Lao 10,000");
+eq(T.numberWords(20, "lo"), "ຊາວ", "Lao 20");
+eq(T.clockPhrase(14, 30).text, "บ่ายสองโมงครึ่ง", "14:30");
+eq(T.clockPhrase(19, 0).text, "หนึ่งทุ่ม", "19:00");
+eq(T.clockPhrase(2, 0).text, "ตีสอง", "02:00");
+eq(T.clockPhrase(17, 0).text, "ห้าโมงเย็น", "17:00");
+eq(T.interleave([1, 2, 3, 4], ["a", "b", "c"], 3, 2), [1, 2, 3, "a", "b", 4, "c"], "lesson interleave");
+const cards = T.sentenceCards({ mode: "th", saved: [{ th: "ซอย", meaning: "lane", script: "th" }, { th: "ถนน", script: "th" }] });
+check(cards.some((c) => c.id === "dw-ซอย") && !cards.some((c) => c.id === "dw-ถนน"), "saved words become sentence cards only with a meaning");
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
