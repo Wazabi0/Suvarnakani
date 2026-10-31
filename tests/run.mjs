@@ -185,5 +185,28 @@ for (const s of T.LIBRARY) for (const sc of ["th", "lo"]) T.storyText(s, sc).for
 const mined = T.sentenceCards({ mode: "th", mined: ["morning:0:th", "morning:1:lo"] });
 check(mined.some((c) => c.id === "lib-morning:0:th") && !mined.some((c) => c.id === "lib-morning:1:lo"), "library sentences join the Thai deck by script");
 
+// 12. Wave E: Sound Dojo sets keep one tone; Talk Path lines read the way the engine reads them.
+for (const s of T.SOUND_SETS) {
+  const tones = s.words.map((w) => T.readThai(w.th).map((x) => x.tone).join(","));
+  check(new Set(tones).size === 1, `sound set ${s.id} keeps one tone (${tones.join(" | ")})`);
+  for (const w of s.words) eq(T.readThai(w.th).map((x) => x.tone).join(","), T.talkLine([w.th, w.r, w.m]).tones.join(","), `sound ${w.th} reading ${w.r}`);
+}
+for (const p of T.TALK_PATHS.filter((x) => x.script === "th")) {
+  for (const [id, n] of Object.entries(p.nodes)) {
+    for (const o of n.opts) {
+      const line = T.talkLine(o);
+      const rd = T.segmentThai(o[0]).flatMap((w) => w.syllables || []).filter((x) => !x.raw);
+      check(rd.length === line.syl.length, `talk ${p.id} ${id} "${o[0]}": ${line.syl.length} syllables in the reading, ${rd.length} in the spelling`);
+      if (rd.length === line.syl.length) rd.forEach((x, k) => { if (!x.guess) check(x.tone === line.tones[k], `talk ${p.id} ${o[0]} syllable ${k + 1}: engine ${x.tone}, reading ${line.tones[k]}`); });
+      if (o[5]) check(!!p.nodes[o[5]], `talk ${p.id} ${id} leads to an existing node`);
+    }
+  }
+}
+check(T.phraseTrials().length >= 40, `tones-in-phrases has at least 40 trials (got ${T.phraseTrials().length})`);
+eq(T.climbLadder({ ladder: 1 }, 18, 20), 2, "ladder climbs at 90%");
+eq(T.climbLadder({ ladder: 1 }, 10, 20), 0, "ladder drops at 50%");
+eq(T.climbLadder({ ladder: 5 }, 20, 20), 5, "ladder tops out");
+check(T.voiceBankLists("th").every((l) => l.items.length && l.items.every((x) => x.key.startsWith(x.script + ":"))), "voice bank lists have keys");
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

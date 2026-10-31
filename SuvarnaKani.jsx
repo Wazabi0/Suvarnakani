@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.23.0";
+const APP_VERSION = "0.24.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -1480,7 +1480,8 @@ function readBackup(text) {
 async function deliverBackup(state) {
   const day = new Date().toISOString().slice(0, 10);
   const name = `suvarnakani-backup-${day}.json`;
-  const blob = new Blob([JSON.stringify(makeBackup(state))], { type: "application/json" });
+  // Voice Bank recordings and your best takes travel with the backup.
+  const blob = new Blob([JSON.stringify({ ...makeBackup(state), voices: await exportVoices() })], { type: "application/json" });
   try {
     const file = new File([blob], name, { type: "application/json" });
     if (navigator.canShare?.({ files: [file] })) {
@@ -1514,7 +1515,7 @@ function restoreState(state) {
 }
 
 const IDB_NAME = "suvarnakani";
-const IDB_VERSION = 2;
+const IDB_VERSION = 3;
 function openDb() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === "undefined") { reject(new Error("no IndexedDB")); return; }
@@ -1523,6 +1524,7 @@ function openDb() {
       const db = req.result;
       if (!db.objectStoreNames.contains("snapshots")) db.createObjectStore("snapshots", { keyPath: "key" });
       if (!db.objectStoreNames.contains("reviews")) db.createObjectStore("reviews", { autoIncrement: true }).createIndex("t", "t");
+      if (!db.objectStoreNames.contains("voices")) db.createObjectStore("voices", { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -1585,6 +1587,82 @@ async function pruneReviews() {
   try { await idbRequest("reviews", "readwrite", (s) => { const r = s.index("t").openCursor(IDBKeyRange.upperBound(Date.now() - REVIEW_KEEP_DAYS * DAY)); r.onsuccess = () => { const c = r.result; if (c) { c.delete(); c.continue(); } }; }); } catch { /* ignore */ }
 }
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushReviews(); });
+
+/* ---------------------------------------------------------------------------
+ * Voice Bank (N11). Recordings of real voices, keyed "th:<text>" or "lo:<text>",
+ * replace text-to-speech wherever that text is spoken. Your shadowing takes are
+ * kept in the same store as "take:<line>" and are never used as a model.
+ * ------------------------------------------------------------------------- */
+const voiceBank = new Map(); // key -> object URL
+const voiceBankListeners = new Set();
+const voiceKey = (script, text) => `${script}:${(script === "lo" ? sanitizeLao(text) : sanitizeThai(text))}`;
+function notifyVoiceBank() { voiceBankListeners.forEach((fn) => fn()); }
+async function loadVoiceBank() {
+  try {
+    const all = (await idbRequest("voices", "readonly", (s) => s.getAll())) || [];
+    all.forEach((r) => { if (!voiceBank.has(r.key)) voiceBank.set(r.key, URL.createObjectURL(r.blob)); });
+    notifyVoiceBank();
+  } catch { /* no IndexedDB */ }
+}
+async function saveVoice(key, blob) {
+  await idbRequest("voices", "readwrite", (s) => s.put({ key, blob, at: Date.now() }));
+  if (voiceBank.has(key)) URL.revokeObjectURL(voiceBank.get(key));
+  voiceBank.set(key, URL.createObjectURL(blob));
+  notifyVoiceBank();
+}
+async function deleteVoice(key) {
+  try { await idbRequest("voices", "readwrite", (s) => s.delete(key)); } catch { /* ignore */ }
+  if (voiceBank.has(key)) URL.revokeObjectURL(voiceBank.get(key));
+  voiceBank.delete(key);
+  notifyVoiceBank();
+}
+function useVoiceBank() {
+  const [, force] = useState(0);
+  useEffect(() => { const fn = () => force((n) => n + 1); voiceBankListeners.add(fn); return () => voiceBankListeners.delete(fn); }, []);
+  return voiceBank;
+}
+const blobToB64 = (blob) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.readAsDataURL(blob); });
+async function exportVoices() {
+  try {
+    const all = (await idbRequest("voices", "readonly", (s) => s.getAll())) || [];
+    return Promise.all(all.map(async (r) => ({ key: r.key, type: r.blob.type, data: await blobToB64(r.blob) })));
+  } catch { return []; }
+}
+async function importVoices(list = []) {
+  for (const v of list) {
+    const bytes = Uint8Array.from(atob(v.data), (c) => c.charCodeAt(0));
+    // eslint-disable-next-line no-await-in-loop
+    await idbRequest("voices", "readwrite", (s) => s.put({ key: v.key, blob: new Blob([bytes], { type: v.type }), at: Date.now() }));
+  }
+}
+/** Record from the microphone until stop() or `ms`, resolving with the audio. */
+function recordClip(ms = 2500) {
+  let stopper = null;
+  const done = (async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error("unsupported");
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const rec = new MediaRecorder(stream);
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    return new Promise((resolve) => {
+      rec.onstop = () => { stream.getTracks().forEach((tr) => tr.stop()); resolve(new Blob(chunks, { type: rec.mimeType || "audio/webm" })); };
+      rec.start();
+      const timer = setTimeout(() => rec.state !== "inactive" && rec.stop(), ms);
+      stopper = () => { clearTimeout(timer); if (rec.state !== "inactive") rec.stop(); };
+    });
+  })();
+  return { done, stop: () => stopper?.() };
+}
+function playUrl(url, rate = 1) {
+  return new Promise((resolve) => {
+    const a = new Audio(url);
+    playUrl.current = a;
+    try { a.preservesPitch = true; a.playbackRate = Math.min(1.3, Math.max(0.7, rate)); } catch { /* old browser */ }
+    a.onended = resolve;
+    a.onerror = resolve;
+    a.play().catch(resolve);
+  });
+}
 
 /* ---------------------------------------------------------------------------
  * Android back gesture. Each open sheet (and leaving the Shrine) pushes one
@@ -1675,6 +1753,14 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.24.0", title: "Real voices", points: [
+    "Voice Bank (Ear → Voice Bank): hand the phone to a tutor or friend and they read each word. Their recordings replace the synthetic voice everywhere, and go into your backups.",
+    "Talk Paths (Ear): five conversations where you choose your reply, then say it. A politeness meter reacts to what you pick.",
+    "Sound Dojo (Ear Dojo): puffed or plain consonants, short or long vowels, hidden final stops and initial ง.",
+    "Tones in phrases (Ear Dojo): name one syllable's tone inside running speech.",
+    "The Ear speeds up as you improve, from 0.7× to 1.2×, and rotates the voices on your phone.",
+    "Hear yourself: after shadowing, play the model then your take, A then B. Your best take for each line is kept.",
+  ] },
   { v: "0.23.0", title: "Read the world", points: [
     "Lantern Library (Read → Library): twelve short stories in Thai and in Lao. Tap any word, read aloud with the sentence lit up, and time your re-reads to see your speed grow.",
     "Press and hold a story sentence to add it to the Sentence deck.",
@@ -1772,6 +1858,7 @@ class SuvarnaMobileAudioEngine {
     this.speechTimer = null;
     this.seqToken = (this.seqToken || 0) + 1;
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
+    try { playUrl.current?.pause(); } catch { /* ignore */ }
   }
   /**
    * Speak with a human voice. `ttsThai` must be Thai script. If `laoRaw` is
@@ -1786,10 +1873,44 @@ class SuvarnaMobileAudioEngine {
    * sound cancels the rest of the sequence.
    */
   speakSequence(list, gapMs = 450) {
-    if (this.muted || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (this.muted || typeof window === "undefined") return;
     this.stopTones();
     this.cancelSpeech();
     const token = this.seqToken;
+    // A Voice Bank recording of the same text wins over the synthetic voice.
+    const recOf = (e) => (e.lo && voiceBank.get(voiceKey("lo", e.lo))) || (e.th && voiceBank.get(voiceKey("th", e.th)));
+    if (list.some(recOf) || !("speechSynthesis" in window)) {
+      const run = async () => {
+        for (let i = 0; i < list.length; i += 1) {
+          if (token !== this.seqToken) return;
+          const url = recOf(list[i]);
+          if (url) {
+            // eslint-disable-next-line no-await-in-loop
+            await playUrl(url, (list[i].rate || this.rate) / 0.85);
+          } else if ("speechSynthesis" in window) {
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((res) => {
+              const e = list[i];
+              const lv = e.lo ? this.laoVoice() : null;
+              const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
+              if (!text) { res(); return; }
+              const u = new SpeechSynthesisUtterance(text);
+              u.lang = lv ? "lo-LA" : "th-TH";
+              const voice = lv || e.voice || this.thaiVoice();
+              try { if (voice) u.voice = voice; } catch { /* stale voice */ }
+              u.rate = e.rate || this.rate;
+              u.onend = res;
+              u.onerror = res;
+              window.speechSynthesis.speak(u);
+            });
+          }
+          // eslint-disable-next-line no-await-in-loop
+          if (i + 1 < list.length) await new Promise((r) => setTimeout(r, gapMs));
+        }
+      };
+      this.speechTimer = setTimeout(run, 60);
+      return;
+    }
     const utterances = list
       .map((e) => {
         const lv = e.lo ? this.laoVoice() : null;
@@ -3805,11 +3926,221 @@ const EAR_LAO_SETS = [
 const EAR_DECKS = [
   { id: "single", label: "Single syllables", sub: "Minimal sets like มา · ม้า · หมา" },
   { id: "words", label: "Two-syllable words", sub: "Name the tone of each syllable" },
+  { id: "phrases", label: "Tones in phrases", sub: "One syllable's tone inside running speech" },
+  { id: "sounds", label: "Sound Dojo", sub: "Puffed or plain, short or long, hidden finals, ง" },
   { id: "lao", label: "Lao sets", sub: "Which Lao word did you hear?" },
 ];
 
+/* Sound Dojo (N8): the other contrasts that change meaning, in same-tone sets. */
+const SOUND_KINDS = { aspiration: "Puffed or plain (k/kh, t/th/d, p/ph/b, j/ch)", length: "Short or long vowel", finals: "Hidden final stops (-k, -t, -p)", ng: "Initial ง" };
+const SOUND_SETS = [
+  { id: "a-kaang", kind: "aspiration", words: [{ th: "กาง", r: "kaang", m: "spread out" }, { th: "คาง", r: "khaang", m: "chin" }] },
+  { id: "a-kor", kind: "aspiration", words: [{ th: "กอ", r: "kɔɔ", m: "clump" }, { th: "คอ", r: "khɔɔ", m: "neck" }] },
+  { id: "a-tii", kind: "aspiration", words: [{ th: "ตี", r: "tii", m: "hit" }, { th: "ที", r: "thii", m: "a turn / time" }, { th: "ดี", r: "dii", m: "good" }] },
+  { id: "a-taa", kind: "aspiration", words: [{ th: "ตา", r: "taa", m: "eye" }, { th: "ทา", r: "thaa", m: "paint on" }] },
+  { id: "a-paan", kind: "aspiration", words: [{ th: "ปาน", r: "paan", m: "birthmark" }, { th: "พาน", r: "phaan", m: "offering tray" }, { th: "บาน", r: "baan", m: "bloom" }] },
+  { id: "a-jaan", kind: "aspiration", words: [{ th: "จาน", r: "jaan", m: "plate" }, { th: "ชาน", r: "chaan", m: "porch" }] },
+  { id: "l-khao", kind: "length", words: [{ th: "เข้า", r: "khâo", m: "enter" }, { th: "ข้าว", r: "khâaw", m: "rice" }] },
+  { id: "l-yang", kind: "length", words: [{ th: "ยัง", r: "yang", m: "still / yet" }, { th: "ยาง", r: "yaang", m: "rubber" }] },
+  { id: "l-fan", kind: "length", words: [{ th: "ฝัน", r: "fǎn", m: "dream" }, { th: "ฝาน", r: "fǎan", m: "slice" }] },
+  { id: "l-wang", kind: "length", words: [{ th: "วัง", r: "wang", m: "palace" }, { th: "วาง", r: "waang", m: "put down" }] },
+  { id: "l-khon", kind: "length", words: [{ th: "ขน", r: "khǒn", m: "fur / body hair" }, { th: "ขาน", r: "khǎan", m: "answer a call" }] },
+  { id: "f-kat", kind: "finals", words: [{ th: "กัด", r: "kàt", m: "bite" }, { th: "กับ", r: "kàp", m: "with" }, { th: "กัก", r: "kàk", m: "hold back" }] },
+  { id: "f-rot", kind: "finals", words: [{ th: "รบ", r: "róp", m: "fight" }, { th: "รด", r: "rót", m: "water (plants)" }, { th: "รก", r: "rók", m: "messy" }] },
+  { id: "f-paak", kind: "finals", words: [{ th: "ปาก", r: "pàak", m: "mouth" }, { th: "ปาด", r: "pàat", m: "swipe" }] },
+  { id: "n-ngaan", kind: "ng", words: [{ th: "งาน", r: "ngaan", m: "work" }, { th: "อาน", r: "aan", m: "saddle" }, { th: "นาน", r: "naan", m: "a long time" }] },
+  { id: "n-ngor", kind: "ng", words: [{ th: "งอ", r: "ngɔɔ", m: "bend" }, { th: "นอ", r: "nɔɔ", m: "horn (rhino)" }] },
+];
+
+/* Speed ladder (D12): the Ear plays faster as you get better. */
+const EAR_LADDER = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2];
+const ladderRate = (ear) => EAR_LADDER[Math.max(0, Math.min(EAR_LADDER.length - 1, ear?.ladder ?? 1))];
+/** Pass 85% and the next session is one step faster; drop below 60% and it slows down. */
+function climbLadder(ear, right, total) {
+  const cur = ear.ladder ?? 1;
+  if (!total) return cur;
+  const acc = right / total;
+  return Math.max(0, Math.min(EAR_LADDER.length - 1, cur + (acc >= 0.85 ? 1 : acc < 0.6 ? -1 : 0)));
+}
+function earVoice(audio, ear) {
+  const vs = audio.thaiVoices();
+  if (!vs.length || ear?.varyVoices === false) return vs[0];
+  return vs[Math.floor(Math.random() * vs.length)];
+}
+
+/* Tones in phrases (D14): three to five words from a slicer line, one target syllable. */
+function phraseTrials() {
+  const out = [];
+  SENTENCES.filter((s) => s.script === "th").forEach((s) => s.words.forEach((w, i) => {
+    if (w.tone?.length !== 1 || [...w.w].length < 2) return;
+    const a = Math.max(0, i - 2);
+    const win = s.words.slice(a, Math.min(s.words.length, a + 5));
+    if (win.length < 3) return;
+    out.push({ key: `${s.id}:${i}`, words: win, target: i - a, tone: w.tone[0], gloss: s.gloss });
+  }));
+  return out;
+}
+const stripTone = (r) => (r || "").normalize("NFD").replace(/[̀-ͯ]/g, "").normalize("NFC");
+
+function EarDeckPicker({ deck, setDeck }) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-3">
+      {EAR_DECKS.map((d) => (
+        <button key={d.id} data-ear-deck={d.id} onClick={() => setDeck(d.id)} className={`rounded-2xl border px-3 py-2 text-left transition ${deck === d.id ? "border-amber-400 bg-amber-400/10" : "border-white/10 hover:bg-white/5"}`}>
+          <div className="text-sm font-bold text-white">{d.label}</div>
+          <div className="text-[11px] text-slate-400">{d.sub}</div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SpeedNote({ ear, setEar }) {
+  const audio = getAudio();
+  const n = audio.thaiVoices().length;
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+      <span className="rounded-full bg-white/[0.06] px-2.5 py-1">Speed {ladderRate(ear)}× · climbs at 85%</span>
+      {n > 1 && (
+        <button onClick={() => setEar((e) => ({ ...e, varyVoices: e.varyVoices === false }))} className="rounded-full bg-white/[0.06] px-2.5 py-1">
+          {ear.varyVoices === false ? "One voice" : `Rotating ${n} voices`}
+        </button>
+      )}
+      {n <= 1 && <span>One Thai voice on this phone. Recordings in the Voice Bank add real ones.</span>}
+    </div>
+  );
+}
+
+/** Shared runner for the Sound Dojo and tones-in-phrases decks. */
+function EarExtraDeck({ deck, ear, setEar, logActivity }) {
+  const audio = getAudio();
+  const [run, setRun] = useState(null); // { n, right, trial, pick, voice, rate }
+  const make = () => {
+    if (deck === "sounds") {
+      const weights = SOUND_SETS.map((s) => { const [r, n] = ear.sounds?.[s.id] || [0, 0]; return 1 + (n ? (1 - r / n) * 3 : 1); });
+      let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
+      const set = SOUND_SETS.find((_, k) => (roll -= weights[k]) <= 0) || SOUND_SETS[0];
+      return { set, word: set.words[Math.floor(Math.random() * set.words.length)] };
+    }
+    const all = phraseTrials();
+    const weights = all.map((p) => { const a = earAccuracy(ear, p.tone); return 1 + (a == null ? 1 : (1 - a) * 3); });
+    let roll = Math.random() * weights.reduce((a, b) => a + b, 0);
+    return all.find((_, k) => (roll -= weights[k]) <= 0) || all[0];
+  };
+  const play = (tr, voice, rate) => {
+    if (deck === "sounds") audio.speakHumanVoice(tr.word.th, undefined, { voice, rate });
+    else audio.speakHumanVoice(tr.words.map((w) => w.tts || w.w).join(""), undefined, { voice, rate });
+  };
+  const next = (prev) => {
+    const trial = make();
+    const voice = earVoice(audio, ear);
+    const rate = Math.round((ladderRate(ear) + (Math.random() - 0.5) * 0.1) * 100) / 100;
+    play(trial, voice, rate);
+    setRun({ n: prev ? prev.n + 1 : 0, right: prev ? prev.right : 0, trial, pick: null, voice, rate });
+  };
+  const answer = (choice) => {
+    if (!run || run.pick) return;
+    const tr = run.trial;
+    const ok = deck === "sounds" ? choice === tr.word.th : choice === tr.tone;
+    haptic(ok ? "ok" : "miss");
+    setRun({ ...run, pick: choice, right: run.right + (ok ? 1 : 0) });
+    logActivity?.({ ear: 1 });
+    if (deck === "sounds") {
+      logReview(tr.set.id, "sound", ok ? 3 : 1);
+      setEar((e) => { const cur = e.sounds?.[tr.set.id] || [0, 0]; const conf = { ...(e.soundConf || {}) }; if (!ok) conf[`${tr.word.th}>${choice}`] = (conf[`${tr.word.th}>${choice}`] || 0) + 1; return { ...e, sounds: { ...(e.sounds || {}), [tr.set.id]: [cur[0] + (ok ? 1 : 0), cur[1] + 1] }, soundConf: conf }; });
+      if (!ok) audio.speakSequence([{ th: choice, voice: run.voice, rate: run.rate }, { th: tr.word.th, voice: run.voice, rate: run.rate }], 600);
+    } else {
+      logReview(`${tr.tone}>${choice}`, "ear", ok ? 3 : 1);
+      setEar((e) => {
+        const tones = { ...e.tones, [tr.tone]: [e.tones[tr.tone][0] + (ok ? 1 : 0), e.tones[tr.tone][1] + 1] };
+        const confusions = { ...e.confusions };
+        if (!ok) confusions[`${tr.tone}>${choice}`] = (confusions[`${tr.tone}>${choice}`] || 0) + 1;
+        const ph = e.phrase || [0, 0];
+        return { ...e, tones, confusions, phrase: [ph[0] + (ok ? 1 : 0), ph[1] + 1] };
+      });
+      if (ok) audio.playRanatToneChime([tr.tone]);
+    }
+  };
+  const advance = () => {
+    if (run.n + 1 >= EAR_TRIALS) {
+      setEar((e) => ({ ...e, ladder: climbLadder(e, run.right, EAR_TRIALS), sessions: (e.sessions || 0) + 1 }));
+      setRun({ ...run, done: true });
+      return;
+    }
+    next(run);
+  };
+  if (!run || run.done) {
+    const kinds = Object.entries(SOUND_KINDS).map(([k, label]) => {
+      const sets = SOUND_SETS.filter((s) => s.kind === k).map((s) => ear.sounds?.[s.id] || [0, 0]);
+      const r = sets.reduce((a, x) => a + x[0], 0);
+      const n = sets.reduce((a, x) => a + x[1], 0);
+      return { k, label, acc: n ? r / n : null, n };
+    });
+    return (
+      <Card className="p-5" glow={TONES.rising.color}>
+        <h3 className="text-lg font-bold text-white">{run?.done ? `Session done: ${run.right} / ${EAR_TRIALS}` : deck === "sounds" ? "Hear the sounds that change meaning" : "Hear tones in running speech"}</h3>
+        <p className="mt-1 max-w-prose text-sm text-slate-300">
+          {deck === "sounds" ? "Each set keeps the tone the same and changes one thing: a puff of air, the vowel's length, a hidden final, or ง at the start. Pick the word you heard." : "A few words from a real line play at speaking speed. Name the tone of the highlighted syllable. Tones are shorter and flatter here than said alone."}
+        </p>
+        {deck === "sounds" && (
+          <div className="mt-3 space-y-1.5 text-sm">
+            {kinds.map((x) => <div key={x.k} className="flex justify-between text-slate-300"><span>{x.label}</span><span className="tabular-nums text-slate-400">{x.acc == null ? "–" : `${Math.round(x.acc * 100)}% /${x.n}`}</span></div>)}
+          </div>
+        )}
+        {deck === "phrases" && ear.phrase && <p className="mt-2 text-sm text-slate-400">In phrases so far: {Math.round((ear.phrase[0] / Math.max(1, ear.phrase[1])) * 100)}% of {ear.phrase[1]}.</p>}
+        <SpeedNote ear={ear} setEar={setEar} />
+        <button onClick={() => next(null)} className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Start 20 trials</button>
+      </Card>
+    );
+  }
+  const tr = run.trial;
+  return (
+    <Card className="mx-auto max-w-xl p-5" glow={TONES.rising.color}>
+      <div className="flex items-center justify-between text-xs text-slate-400">
+        <span>{deck === "sounds" ? SOUND_KINDS[tr.set.kind] : "Tones in phrases"}</span>
+        <span className="tabular-nums">{run.n + 1} / {EAR_TRIALS}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400" style={{ width: `${(run.n / EAR_TRIALS) * 100}%` }} /></div>
+      <div className="my-5 flex flex-col items-center gap-3">
+        <button onClick={() => play(tr, run.voice, run.rate)} className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-500 text-black shadow-[0_0_40px_#F59E0B66] active:scale-95" aria-label="Play again"><Volume2 size={34} /></button>
+        <div className="text-xs text-slate-400">{run.rate}×{run.voice ? ` · ${run.voice.name}` : ""}</div>
+      </div>
+      {deck === "phrases" && (
+        <div className="mb-4 text-center text-lg text-slate-200">
+          {tr.words.map((w, k) => <span key={k} className={k === tr.target ? "mx-1 rounded-md bg-amber-400/25 px-1.5 font-bold text-amber-100" : "mx-1"}>{k === tr.target && !run.pick ? stripTone(w.r) : run.pick ? R(w.r) : stripTone(w.r)}</span>)}
+          {run.pick && <div className="mt-1 text-2xl text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{tr.words.map((w) => w.w).join("")}</div>}
+          {run.pick && <div className="text-xs text-slate-400">{tr.gloss}</div>}
+        </div>
+      )}
+      {deck === "sounds" ? (
+        <div className={`grid gap-2 ${tr.set.words.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+          {tr.set.words.map((w) => {
+            const state = !run.pick ? "idle" : w.th === tr.word.th ? "right" : w.th === run.pick ? "wrong" : "idle";
+            return (
+              <button key={w.th} data-sound={w.th} disabled={!!run.pick} onClick={() => answer(w.th)} className={`rounded-2xl border p-2 text-center ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03]"}`}>
+                <div className="text-3xl leading-[1.5] text-white" style={{ fontFamily: FONT_STACKS.loop.th }}>{w.th}</div>
+                <div className="text-xs text-slate-300">{R(w.r)}</div>
+                <div className="text-[11px] text-slate-400">{w.m}</div>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <ToneChoice key={tr.key + run.n} onPick={answer} picked={run.pick} correct={run.pick ? tr.tone : null} disabled={!!run.pick} options={TONE_ORDER} />
+      )}
+      {run.pick && (
+        <div className="mt-4 flex items-center gap-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
+          <span className={(deck === "sounds" ? run.pick === tr.word.th : run.pick === tr.tone) ? "font-semibold text-emerald-300" : "text-rose-200"}>
+            {deck === "sounds" ? (run.pick === tr.word.th ? "Correct." : `It was ${tr.word.th} (${tr.word.r}). You heard your pick, then the right one.`) : run.pick === tr.tone ? "Correct." : `That syllable is ${TONES[tr.tone].name}.`}
+          </span>
+          <button onClick={advance} className="ml-auto rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 const EAR_TRIALS = 20;
-const EAR_RATES = [0.8, 0.95, 1.05];
 
 const emptyEar = () => ({ tones: Object.fromEntries(TONE_ORDER.map((t) => [t, [0, 0]])), confusions: {}, sessions: 0, lao: {} });
 
@@ -3871,8 +4202,8 @@ function EarDojo({ ear, setEar, logActivity }) {
 
   const say = (w, voice, rate) => (w.lo ? audio.speakHumanVoice(w.lo, w.lo, { rate }) : audio.speakHumanVoice(w.th, undefined, { voice, rate }));
   const playTrial = (t) => {
-    const voice = voices.length ? voices[Math.floor(Math.random() * voices.length)] : undefined;
-    const rate = EAR_RATES[Math.floor(Math.random() * EAR_RATES.length)];
+    const voice = earVoice(audio, ear);
+    const rate = Math.round((ladderRate(ear) + (Math.random() - 0.5) * 0.1) * 100) / 100;
     say(t.word, voice, rate);
     return { voice, rate };
   };
@@ -3961,7 +4292,7 @@ function EarDojo({ ear, setEar, logActivity }) {
     if (n >= EAR_TRIALS) {
       setRunning(false);
       setTrial(null);
-      setEar((prev) => ({ ...prev, sessions: (prev.sessions || 0) + 1 }));
+      setEar((prev) => ({ ...prev, sessions: (prev.sessions || 0) + 1, ladder: climbLadder(prev, session.right, session.total) }));
       return;
     }
     nextTrial(trial.key);
@@ -3973,6 +4304,15 @@ function EarDojo({ ear, setEar, logActivity }) {
   const laoBlocked = isLao && !laoVoice;
   const laoSetStats = EAR_LAO_SETS.map((set) => ({ set, stat: ear.lao?.[set.id] || [0, 0] }));
 
+  if (deck === "sounds" || deck === "phrases") {
+    return (
+      <div className="space-y-4">
+        <SectionTitle icon={Ear} title="Tone Ear Dojo" sub="Hear a syllable, pick its contour. Many speeds and voices, minimal sets, instant feedback." color={TONES.rising.ink} />
+        <EarDeckPicker deck={deck} setDeck={(d) => { setDeck(d); setSession({ right: 0, total: 0 }); }} />
+        <EarExtraDeck key={deck} deck={deck} ear={ear} setEar={setEar} logActivity={logActivity} />
+      </div>
+    );
+  }
   return (
     <div className="space-y-4">
       <SectionTitle icon={Ear} title="Tone Ear Dojo" sub="Hear a syllable, pick its contour. Many speeds and voices, minimal sets, instant feedback." color={TONES.rising.ink} />
@@ -3988,6 +4328,7 @@ function EarDojo({ ear, setEar, logActivity }) {
               ))}
             </div>
             <h3 className="text-lg font-bold text-white">{session.total ? `Session done: ${session.right} / ${session.total}` : isWords ? "Hear tones in running words" : isLao ? "Hear Vientiane tones" : "Train your ear on minimal sets"}</h3>
+            {!isLao && <SpeedNote ear={ear} setEar={setEar} />}
             {isWords && (
               <p className="mt-1 max-w-prose text-sm text-slate-300">
                 Each trial plays a two-syllable word such as <span style={{ fontFamily: FONT_STACKS.loop.th }}>ข้าวผัด</span>. Pick the tone of the first syllable, then the second. The word stays hidden until you finish, and both answers feed your per-tone scores below.
@@ -6048,16 +6389,24 @@ function useMicPitch() {
     ctx.createMediaStreamSource(stream).connect(an);
     const buf = new Float32Array(an.fftSize);
     const frames = [];
+    // The take itself is kept too, so you can play it back against the model (D15).
+    let rec = null;
+    const chunks = [];
+    try { rec = typeof MediaRecorder !== "undefined" ? new MediaRecorder(stream) : null; rec?.addEventListener("dataavailable", (e) => e.data.size && chunks.push(e.data)); rec?.start(); } catch { rec = null; }
     const t0 = performance.now();
     return new Promise((resolve) => {
       let raf = 0;
       let lastT = -1;
       const finish = () => {
         cancelAnimationFrame(raf);
-        stream.getTracks().forEach((t) => t.stop());
-        ctx.close();
         stopRef.current = null;
-        resolve(frames);
+        const close = () => {
+          stream.getTracks().forEach((t) => t.stop());
+          ctx.close();
+          frames.audio = chunks.length ? new Blob(chunks, { type: rec?.mimeType || "audio/webm" }) : null;
+          resolve(frames);
+        };
+        if (rec && rec.state !== "inactive") { rec.addEventListener("stop", close, { once: true }); rec.stop(); } else close();
       };
       stopRef.current = finish;
       const step = () => {
@@ -6113,6 +6462,283 @@ function ShadowPlot({ tone, trace, live, height = 200 }) {
   );
 }
 
+
+/* ============================================================================
+ * Talk Paths (N12): conversations where you choose your line, then say it.
+ * Your lines follow your particle setting and are scored like dialogue
+ * shadowing; a politeness meter reacts to register.
+ * ========================================================================== */
+const TALK_PATHS = [
+  { id: "food", script: "th", title: "Ordering food", who: "Vendor", start: "n0", nodes: {
+    n0: { say: ["รับอะไรดีคะ", "ráp à-rai dii khá", "What would you like?"], opts: [
+      ["ขอข้าวผัดกุ้งหนึ่งจานครับ", "khɔ̌ɔ khâaw phàt kûng nʉ̀ng jaan khráp", "One shrimp fried rice, please.", 1, "", "n1"],
+      ["เอาข้าวผัดกุ้ง", "ao khâaw phàt kûng", "Shrimp fried rice.", 0, "Fine at a stall, but ขอ … ครับ sounds warmer.", "n1"]] },
+    n1: { say: ["เผ็ดไหมคะ", "phèt mǎi khá", "Spicy?"], opts: [
+      ["ไม่เผ็ดครับ", "mâi phèt khráp", "Not spicy, please.", 0, "", "n2"],
+      ["เผ็ดนิดหน่อยครับ", "phèt nít nɔ̀i khráp", "A little spicy.", 0, "", "n2"]] },
+    n2: { say: ["ทานที่นี่หรือกลับบ้านคะ", "thaan thîi nîi rʉ̌ʉ klàp bâan khá", "Eat here or take away?"], opts: [
+      ["ทานที่นี่ครับ", "thaan thîi nîi khráp", "Eat here.", 0, "", "n3"],
+      ["กลับบ้านครับ", "klàp bâan khráp", "Take away.", 0, "", "n3"]] },
+    n3: { say: ["หกสิบบาทค่ะ", "hòk sìp bàat khâ", "Sixty baht."], opts: [
+      ["ขอบคุณครับ", "khɔ̀ɔp khun khráp", "Thank you.", 1, "", null],
+      ["ขอบใจนะ", "khɔ̀ɔp jai ná", "Thanks.", -1, "ขอบใจ is for someone younger or close to you. To a vendor, say ขอบคุณครับ.", null]] },
+  } },
+  { id: "grab", script: "th", title: "A Grab ride", who: "Driver", start: "n0", nodes: {
+    n0: { say: ["ไปไหนครับ", "pai nǎi khráp", "Where to?"], opts: [
+      ["ไปสนามบินครับ", "pai sà nǎam bin khráp", "To the airport, please.", 0, "", "n1"],
+      ["ไปสยามครับ", "pai sà yǎam khráp", "To Siam, please.", 0, "", "n1"]] },
+    n1: { say: ["ขึ้นทางด่วนไหมครับ", "khʉ̂n thaang dùan mǎi khráp", "Shall I take the expressway?"], opts: [
+      ["ขึ้นครับ", "khʉ̂n khráp", "Yes, take it.", 0, "", "n2"],
+      ["ไม่ขึ้นครับ", "mâi khʉ̂n khráp", "No, thanks.", 0, "", "n2"]] },
+    n2: { say: ["ถึงแล้วครับ", "thʉ̌ng lɛ́ɛw khráp", "We're here."], opts: [
+      ["จอดตรงนี้ได้ไหมครับ", "jɔ̀ɔt trong níi dâai mǎi khráp", "Can you stop right here?", 1, "", "n3"],
+      ["จอดเลย", "jɔ̀ɔt ləəi", "Stop.", -1, "A bare command sounds sharp. Add ได้ไหมครับ, or at least ครับ.", "n3"]] },
+    n3: { say: ["ได้ครับ", "dâai khráp", "Sure."], opts: [
+      ["ขอบคุณมากครับ", "khɔ̀ɔp khun mâak khráp", "Thank you very much.", 1, "", null]] },
+  } },
+  { id: "bargain", script: "th", title: "Bargaining at the market", who: "Seller", start: "n0", nodes: {
+    n0: { say: ["เสื้อตัวละสามร้อยค่ะ", "sʉ̂a tua lá sǎam rɔ́ɔi khâ", "The shirts are 300 each."], opts: [
+      ["ลดได้ไหมครับ", "lót dâai mǎi khráp", "Can you go lower?", 1, "", "n1"],
+      ["แพงจัง", "phɛɛng jang", "So expensive!", 0, "Fine with a smile, but ลดได้ไหมครับ opens the haggle politely.", "n1"]] },
+    n1: { say: ["สองร้อยห้าสิบค่ะ", "sɔ̌ɔng rɔ́ɔi hâa sìp khâ", "250, then."], opts: [
+      ["สองตัวสี่ร้อยได้ไหมครับ", "sɔ̌ɔng tua sìi rɔ́ɔi dâai mǎi khráp", "Two for 400?", 1, "", "n2"],
+      ["สองร้อยได้ไหมครับ", "sɔ̌ɔng rɔ́ɔi dâai mǎi khráp", "200?", 0, "", "n2"]] },
+    n2: { say: ["ได้ค่ะ", "dâai khâ", "Okay."], opts: [
+      ["เอาครับ ขอบคุณครับ", "ao khráp khɔ̀ɔp khun khráp", "I'll take it, thanks.", 1, "", null]] },
+  } },
+  { id: "way", script: "th", title: "Asking the way", who: "Guard", start: "n0", nodes: {
+    n0: { say: null, opts: [
+      ["ขอโทษครับ ห้องน้ำอยู่ที่ไหนครับ", "khɔ̌ɔ thôot khráp hɔ̂ng náam yùu thîi nǎi khráp", "Excuse me, where's the toilet?", 1, "", "n1"],
+      ["ห้องน้ำอยู่ไหน", "hɔ̂ng náam yùu nǎi", "Where's the toilet?", -1, "To a stranger, start with ขอโทษครับ.", "n1"]] },
+    n1: { say: ["เดินตรงไปแล้วเลี้ยวซ้ายครับ", "dəən trong pai lɛ́ɛw líaw sáai khráp", "Go straight, then turn left."], opts: [
+      ["ไกลไหมครับ", "klai mǎi khráp", "Is it far?", 0, "", "n2"],
+      ["ขอบคุณครับ", "khɔ̀ɔp khun khráp", "Thank you.", 1, "", null]] },
+    n2: { say: ["ไม่ไกลครับ ประมาณห้านาที", "mâi klai khráp prà maan hâa naa thii", "Not far, about five minutes."], opts: [
+      ["ขอบคุณมากครับ", "khɔ̀ɔp khun mâak khráp", "Thank you very much.", 1, "", null]] },
+  } },
+  { id: "guesthouse", script: "lo", title: "A Vientiane guesthouse", who: "Owner", start: "n0", nodes: {
+    n0: { say: ["ສະບາຍດີ ມີຫຍັງໃຫ້ຊ່ວຍບໍ", "sabaidee, mii nyang hai suay bo", "Hello, how can I help?"], opts: [
+      ["ມີຫ້ອງຫວ່າງບໍ", "mii hong wang bo", "Do you have a free room?", 1, "", "n1"],
+      ["ຂ້ອຍຢາກໄດ້ຫ້ອງ", "khoi yak dai hong", "I want a room.", 0, "", "n1"]] },
+    n1: { say: ["ມີ ຈັກຄືນ", "mii, chak khuen", "Yes. How many nights?"], opts: [
+      ["ສອງຄືນ", "song khuen", "Two nights.", 0, "", "n2"],
+      ["ຄືນດຽວ", "khuen diao", "Just one night.", 0, "", "n2"]] },
+    n2: { say: ["ຄືນລະສອງແສນກີບ", "khuen la song saen kip", "200,000 kip a night."], opts: [
+      ["ຫຼຸດໄດ້ບໍ", "lut dai bo", "Can you go lower?", 0, "", "n3"],
+      ["ໄດ້ ຂອບໃຈ", "dai, khop chai", "Fine, thank you.", 1, "In Lao, ຂອບໃຈ is the everyday thank-you, unlike Thai ขอบใจ.", null]] },
+    n3: { say: ["ໜຶ່ງແສນແປດໝື່ນ", "neung saen paet muen", "180,000, then."], opts: [
+      ["ໄດ້ ຂອບໃຈຫຼາຍໆ", "dai, khop chai lai lai", "Fine, thank you very much.", 1, "", null]] },
+  } },
+];
+/** A choice as a shadowing line: syllables and tones come from the reading. */
+function talkLine([th, r, m]) {
+  const syl = r.split(/[\s,-]+/).filter(Boolean);
+  return { th, r, m, syl, tones: syl.map(toneOfRoman) };
+}
+
+function TalkPaths({ mode, shadow, logActivity }) {
+  const audio = getAudio();
+  const mic = useMicPitch();
+  const { particle } = usePrefs();
+  const paths = TALK_PATHS.filter((p) => mode === "dual" || p.script === (mode === "lo" ? "lo" : "th"));
+  const [pid, setPid] = useState(paths[0]?.id);
+  const path = paths.find((p) => p.id === pid) || paths[0];
+  const [state, setState] = useState(null); // { node, chosen, meter, log: [], result }
+  const [phase, setPhase] = useState("idle");
+  const [err, setErr] = useState(null);
+  const lao = path.script === "lo";
+  const fontFam = FONT_STACKS.loop[path.script];
+  const speak = (th) => (lao ? audio.speakHumanVoice(laoToThai(th), th) : audio.speakHumanVoice(th));
+  const begin = () => {
+    const node = path.nodes[path.start];
+    setState({ node: path.start, chosen: null, meter: 60, log: [], result: null });
+    setErr(null);
+    if (node.say) setTimeout(() => speak(node.say[0]), 200);
+  };
+  useEffect(() => { setState(null); }, [pid]);
+  const mine = (o) => { const l = talkLine(o); return lao ? l : politeLine(l, particle === "unset" ? "male" : particle); };
+  const shownMine = (o) => (lao || particle !== "unset" ? mine(o) : politeLine(talkLine(o), "unset"));
+  const choose = (o) => {
+    const meter = Math.max(0, Math.min(100, state.meter + (o[3] > 0 ? 12 : o[3] < 0 ? -18 : 0)));
+    setState({ ...state, chosen: o, meter, result: null });
+    speak(mine(o).th);
+  };
+  const say = async () => {
+    const line = mine(state.chosen);
+    audio.cancelSpeech();
+    setErr(null);
+    setPhase("recording");
+    try {
+      const frames = await mic.capture(1200 + line.tones.length * 450);
+      const run = voicedRun(frames);
+      if (!run) setErr("I couldn't hear the line. Say it a little louder.");
+      else { const r = scorePhrase(line, run, shadow?.base); setState((s) => ({ ...s, result: r })); logActivity?.({ shadow: 1 }); haptic(r.score >= SHADOW_PASS ? "ok" : "bad"); }
+    } catch (e) {
+      setErr(micErrorText(e));
+    }
+    setPhase("idle");
+  };
+  const cont = () => {
+    const o = state.chosen;
+    const entry = { node: state.node, line: shownMine(o), note: o[4], pol: o[3], score: state.result?.score };
+    const nextId = o[5];
+    if (!nextId) { setState({ ...state, log: [...state.log, entry], done: true }); logActivity?.({ drills: 1 }); return; }
+    const node = path.nodes[nextId];
+    setState({ ...state, node: nextId, chosen: null, result: null, log: [...state.log, entry] });
+    if (node.say) setTimeout(() => speak(node.say[0]), 200);
+  };
+  const meterLabel = (m) => (m >= 75 ? "Warm and polite" : m >= 45 ? "Fine" : "A bit blunt");
+  const node = state ? path.nodes[state.node] : null;
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={MessageCircle} title="Talk Paths" sub="Pick your reply, hear it, then say it. Your lines use your polite particle from Settings." color="#F472B6" />
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 [&>*]:shrink-0">
+        {paths.map((p) => <Chip key={p.id} active={p.id === path.id} color="#F472B6" onClick={() => setPid(p.id)}>{p.title}</Chip>)}
+      </div>
+      {!state ? (
+        <Card className="p-5">
+          <div className="text-lg font-bold text-white">{path.title}</div>
+          <p className="mt-1 text-sm text-slate-300">{Object.keys(path.nodes).length} turns with a {path.who.toLowerCase()}. Choices change where it goes and how polite you come across.</p>
+          {lao && <p className="mt-2 text-xs text-slate-400">Lao paths are listen-and-choose: the shadow scoring follows Bangkok tones. The Lao lines need a native check.</p>}
+          <button onClick={begin} className="mt-4 w-full rounded-2xl bg-pink-500 py-3 font-bold text-black">Start</button>
+        </Card>
+      ) : (
+        <Card className="p-5">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Politeness</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-all" style={{ width: `${state.meter}%`, background: state.meter >= 75 ? "#34D399" : state.meter >= 45 ? "#F5A524" : "#FB7185" }} /></div>
+            <span className="text-xs text-slate-300">{meterLabel(state.meter)}</span>
+          </div>
+          <div className="mt-4 space-y-2">
+            {state.log.map((e, k) => (
+              <div key={k} className="space-y-1">
+                {path.nodes[e.node].say && <div className="mr-10 rounded-2xl rounded-tl-sm bg-white/[0.06] px-3 py-2"><div className="text-lg text-white" style={{ fontFamily: fontFam }}>{path.nodes[e.node].say[0]}</div></div>}
+                <div className="ml-10 rounded-2xl rounded-tr-sm bg-pink-500/15 px-3 py-2 text-right"><div className="text-lg text-white" style={{ fontFamily: fontFam }}>{e.line.th}</div>{e.score != null && <div className="text-[11px] text-slate-300">said · {e.score}</div>}{e.note && <div className="text-left text-xs text-amber-200">{e.note}</div>}</div>
+              </div>
+            ))}
+            {!state.done && node.say && (
+              <button onClick={() => speak(node.say[0])} className="mr-10 block w-[calc(100%-2.5rem)] rounded-2xl rounded-tl-sm bg-white/[0.06] px-3 py-2 text-left">
+                <div className="text-[11px] font-bold uppercase text-slate-400">{path.who}</div>
+                <div className="text-2xl text-white" style={{ fontFamily: fontFam }}>{node.say[0]}</div>
+                <div className="text-sm text-slate-300">{lao ? node.say[1] : R(node.say[1])}</div>
+                <div className="text-xs text-slate-400">{node.say[2]}</div>
+              </button>
+            )}
+          </div>
+          {!state.done && !state.chosen && (
+            <div className="mt-4 grid gap-2">
+              {node.opts.map((o, k) => {
+                const l = shownMine(o);
+                return (
+                  <button key={k} data-talk-opt={k} onClick={() => choose(o)} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left">
+                    <div className="text-xl text-white" style={{ fontFamily: fontFam }}>{l.th}</div>
+                    <div className="text-xs text-slate-300">{lao ? l.r : R(l.r)} · {o[2]}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {!state.done && state.chosen && (
+            <div className="mt-4 rounded-2xl bg-pink-500/10 p-3">
+              <div className="text-2xl text-white" style={{ fontFamily: fontFam }}>{shownMine(state.chosen).th}</div>
+              <div className="text-sm text-slate-200">{lao ? state.chosen[1] : R(shownMine(state.chosen).r)}</div>
+              {state.chosen[4] && <p className="mt-1 text-xs text-amber-200">{state.chosen[4]}</p>}
+              {!lao && <PhrasePlot line={mine(state.chosen)} result={state.result} live={null} height={150} />}
+              {state.result && <p className="mt-1 text-sm text-slate-200"><b className={state.result.score >= SHADOW_PASS ? "text-emerald-300" : "text-amber-300"}>{state.result.score}</b> · {state.result.tip}</p>}
+              {err && <p className="mt-2 text-xs text-rose-200">{err}</p>}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button onClick={() => speak(mine(state.chosen).th)} className="rounded-xl border border-white/15 px-3 py-2 text-sm text-slate-100"><Volume2 size={14} className="mr-1 inline" />Hear it</button>
+                {!lao && (phase === "recording" ? <button onClick={mic.stop} className="rounded-xl bg-rose-500 px-3 py-2 text-sm font-bold text-white"><Mic size={14} className="mr-1 inline animate-pulse" />Listening…</button> : <button data-talk-say onClick={say} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-black"><Mic size={14} className="mr-1 inline" />Say it</button>)}
+                <button onClick={cont} className="ml-auto rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white">Continue <ChevronRight size={14} className="inline" /></button>
+              </div>
+            </div>
+          )}
+          {state.done && (
+            <div className="mt-4 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className="font-semibold text-white">Conversation done · {meterLabel(state.meter).toLowerCase()}</div>
+              <button onClick={begin} className="mt-3 w-full rounded-2xl bg-pink-500 py-2.5 font-bold text-black">Try other choices</button>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
+ * Voice Bank (N11): a tutor or friend reads each item; recordings replace
+ * text-to-speech everywhere that text is spoken, and go into backups.
+ * ========================================================================== */
+function voiceBankLists(mode) {
+  const lists = [];
+  const th = courseItems("th");
+  lists.push({ id: "th-course", label: "Thai course", items: th.filter((i) => !i.garden).map((i) => ({ key: voiceKey("th", i.ttsTh), text: i.ttsTh, sub: `${(i.thRoman || "").split(" ·")[0]} · ${i.meaning}`, script: "th" })) });
+  lists.push({ id: "lo-course", label: "Lao course", items: courseItems("lo").filter((i) => !i.garden && i.tier !== "glyph").map((i) => ({ key: voiceKey("lo", i.lo), text: i.lo, sub: `${i.loRoman} · ${i.meaning}`, script: "lo" })) });
+  lists.push({ id: "ear", label: "Ear words", items: [...EAR_SETS.flatMap((s) => s.words), ...SOUND_SETS.flatMap((s) => s.words), ...EAR_WORD_SETS.flatMap((s) => s.words)].map((w) => ({ key: voiceKey("th", w.th), text: w.th, sub: `${w.r} · ${w.m}`, script: "th" })) });
+  lists.push({ id: "garden", label: "Word Garden", items: GARDEN_ITEMS.map((i) => ({ key: voiceKey(mode === "lo" ? "lo" : "th", mode === "lo" ? i.lo : i.th), text: mode === "lo" ? i.lo : i.th, sub: `${mode === "lo" ? i.loRoman : i.thRoman} · ${i.meaning}`, script: mode === "lo" ? "lo" : "th" })) });
+  lists.forEach((l) => { const seen = new Set(); l.items = l.items.filter((x) => x.text && !seen.has(x.key) && seen.add(x.key)); });
+  return lists;
+}
+
+function VoiceBank({ mode }) {
+  const bank = useVoiceBank();
+  const lists = useMemo(() => voiceBankLists(mode), [mode]);
+  const [lid, setLid] = useState(mode === "lo" ? "lo-course" : "th-course");
+  const list = lists.find((l) => l.id === lid) || lists[0];
+  const [idx, setIdx] = useState(() => Math.max(0, list.items.findIndex((x) => !bank.has(x.key))));
+  const [rec, setRec] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => { setIdx(Math.max(0, list.items.findIndex((x) => !bank.has(x.key)))); }, [lid]); // eslint-disable-line react-hooks/exhaustive-deps
+  const item = list.items[idx];
+  const done = list.items.filter((x) => bank.has(x.key)).length;
+  const total = [...bank.keys()].filter((k) => !k.startsWith("take:")).length;
+  const record = async () => {
+    if (rec) { rec.stop(); return; }
+    setErr(null);
+    getAudio().cancelSpeech();
+    const r = recordClip(2500);
+    setRec(r);
+    try {
+      const blob = await r.done;
+      await saveVoice(item.key, blob);
+      await playUrl(voiceBank.get(item.key));
+    } catch (e) {
+      setErr(micErrorText(e));
+    }
+    setRec(null);
+  };
+  const nextUnrecorded = () => { const k = list.items.findIndex((x, i) => i > idx && !bank.has(x.key)); setIdx(k >= 0 ? k : Math.min(idx + 1, list.items.length - 1)); };
+  return (
+    <div className="space-y-4">
+      <SectionTitle icon={Mic} title="Voice Bank" sub="Hand the phone to a tutor or friend. Each recording replaces the synthetic voice for that word everywhere in the app, and goes into your backups." color="#7FD1B0" />
+      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0 [&>*]:shrink-0">
+        {lists.map((l) => <Chip key={l.id} active={l.id === list.id} color="#7FD1B0" onClick={() => setLid(l.id)}>{l.label} <span className="text-xs opacity-70">{l.items.filter((x) => bank.has(x.key)).length}/{l.items.length}</span></Chip>)}
+      </div>
+      {item && (
+        <Card className="p-5 text-center">
+          <div className="text-xs text-slate-400">{idx + 1} of {list.items.length} · {done} recorded</div>
+          <div className="my-3 text-6xl leading-[1.5] text-white" lang={item.script} style={{ fontFamily: FONT_STACKS.loop[item.script] }}>{item.text}</div>
+          <div className="text-sm text-slate-300">{item.sub}</div>
+          <div className="mt-5 flex items-center justify-center gap-3">
+            <button onClick={() => setIdx(Math.max(0, idx - 1))} className="rounded-xl border border-white/10 p-3 text-slate-300" aria-label="Previous"><ChevronLeft size={18} /></button>
+            <button data-bank-record onClick={record} className={`flex h-20 w-20 items-center justify-center rounded-full ${rec ? "animate-pulse bg-rose-500 text-white" : "bg-emerald-400 text-black"}`} aria-label={rec ? "Stop" : "Record"}><Mic size={32} /></button>
+            <button onClick={nextUnrecorded} className="rounded-xl border border-white/10 p-3 text-slate-300" aria-label="Next"><ChevronRight size={18} /></button>
+          </div>
+          <div className="mt-3 flex justify-center gap-2 text-xs">
+            {bank.has(item.key) ? (
+              <>
+                <button onClick={() => playUrl(bank.get(item.key))} className="rounded-xl bg-white/10 px-3 py-1.5 text-white"><Play size={12} className="mr-1 inline" />Play recording</button>
+                <button onClick={() => deleteVoice(item.key)} className="rounded-xl border border-white/10 px-3 py-1.5 text-slate-300">Delete</button>
+              </>
+            ) : <span className="text-slate-400">Not recorded yet. Tap the mic and read it once, clearly (about two seconds).</span>}
+          </div>
+          {err && <p className="mt-3 text-sm text-rose-200">{err}</p>}
+        </Card>
+      )}
+      <p className="text-xs text-slate-400">{total} recording{total === 1 ? "" : "s"} on this phone. A Lao speaker reading the Lao course would also give its Vientiane tones the native check they still need.</p>
+    </div>
+  );
+}
 
 /* ============================================================================
  * Dialogue shadowing: say whole lines and see every syllable's contour.
@@ -6240,6 +6866,33 @@ function PhrasePlot({ line, result, live, height = 190 }) {
   );
 }
 
+/* Hear yourself (D15): your last take against the model, A then B, and your best take per line. */
+function TakeAB({ take, takeKey, onModel, score, best }) {
+  const bank = useVoiceBank();
+  const bestUrl = bank.get(`take:${takeKey}`);
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    if (!take) { setUrl(null); return undefined; }
+    const u = URL.createObjectURL(take);
+    setUrl(u);
+    // A new best score keeps this take as the line's best.
+    if (score != null && score >= (best || 0)) saveVoice(`take:${takeKey}`, take).catch(() => {});
+    return () => URL.revokeObjectURL(u);
+  }, [take]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!url && !bestUrl) return null;
+  const ab = async () => { onModel(); await new Promise((r) => setTimeout(r, 1600)); if (url) await playUrl(url); };
+  const btn = "rounded-xl border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-100";
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2" data-take-ab>
+      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Hear yourself</span>
+      <button onClick={onModel} className={btn}>A · model</button>
+      {url && <button onClick={() => playUrl(url)} className={btn}>B · you</button>}
+      {url && <button onClick={ab} className={`${btn} border-amber-400/50 text-amber-200`}>A then B</button>}
+      {bestUrl && <button onClick={() => playUrl(bestUrl)} className={btn}>Best take{best ? ` · ${best}` : ""}</button>}
+    </div>
+  );
+}
+
 function DialogueShadow({ shadow, setShadow, logActivity }) {
   const audio = getAudio();
   const mic = useMicPitch();
@@ -6256,7 +6909,8 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
   const [live, setLive] = useState([]);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState(null);
-  useEffect(() => { setResult(null); setLive([]); setErr(null); }, [did, li]);
+  const [take, setTake] = useState(null);
+  useEffect(() => { setResult(null); setLive([]); setErr(null); setTake(null); }, [did, li]);
 
   const record = async () => {
     audio.cancelSpeech();
@@ -6275,7 +6929,8 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
       if (!run) setErr("I couldn't hear the line. Say it a little louder, close to the microphone.");
       else {
         const r = scorePhrase(line, run, shadow.base);
-        setResult(r);
+        setResult({ ...r, prevBest: shadow.lines?.[key] || 0 });
+        setTake(frames.audio || null);
         setShadow((s) => ({ ...s, lines: { ...(s.lines || {}), [key]: Math.max(s.lines?.[key] || 0, r.score) } }));
         logActivity?.({ shadow: 1 });
         haptic(r.score >= SHADOW_PASS ? "ok" : "bad");
@@ -6331,6 +6986,7 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
               <span className="flex flex-wrap gap-1">{result.perSyl.map((p, k) => <span key={k} className={`rounded-md px-1.5 text-xs ${p.score >= SHADOW_PASS ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>{line.syl[k]} {p.score}</span>)}</span>
             </div>
             <p className="mt-1 text-slate-200">{result.tip}</p>
+            <TakeAB take={take} takeKey={`dlg:${key}`} onModel={() => audio.speakHumanVoice(line.th)} score={result.score} best={result.prevBest} />
             {li < lines.length - 1 && <button onClick={() => setLi(li + 1)} className="mt-2 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">Next line <ChevronRight size={12} className="inline" /></button>}
           </div>
         )}
@@ -6360,7 +7016,9 @@ function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
   const [live, setLive] = useState([]);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState(null);
-  useEffect(() => { setResult(null); setLive([]); setWi(0); }, [tone]);
+  const [take, setTake] = useState(null);
+  useEffect(() => { setResult(null); setLive([]); setWi(0); setTake(null); }, [tone]);
+  useEffect(() => { setTake(null); }, [wi]);
   const [view, setView] = useState("syllables");
 
   const liveSt = (frames) => {
@@ -6386,7 +7044,9 @@ function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
         setShadow((s) => ({ ...s, base }));
       } else {
         const r = scoreShadow(tone, seg, shadow.base);
-        setResult(r);
+        setResult({ ...r, prevBest: shadow.takes?.[word.th] || 0 });
+        setTake(frames.audio || null);
+        setShadow((s) => ({ ...s, takes: { ...(s.takes || {}), [word.th]: Math.max(s.takes?.[word.th] || 0, r.score) } }));
         setShadow((s) => {
           const cur = s.tones[tone] || { best: 0, tries: 0 };
           return { ...s, tones: { ...s.tones, [tone]: { best: Math.max(cur.best, r.score), tries: cur.tries + 1 } } };
@@ -6473,6 +7133,7 @@ function ShadowMirror({ ear, shadow, setShadow, sandbox, logActivity }) {
                   <span className="text-slate-400">shape {result.shape}{result.height != null ? ` · height ${result.height}` : " · height not scored until you set your voice"}</span>
                 </div>
                 <p className="mt-1 text-slate-200">{result.tip}</p>
+                <TakeAB take={take} takeKey={`syl:${word.th}`} onModel={() => audio.speakHumanVoice(word.th)} score={result.score} best={result.prevBest} />
               </div>
             )}
             {err && <p className="mt-3 flex gap-2 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"><AlertTriangle size={16} className="mt-0.5 shrink-0" />{err}</p>}
@@ -7538,6 +8199,7 @@ function BackupSettings({ getState }) {
   const apply = async () => {
     try {
       await snapshotToday(getState());
+      if (confirm.obj.voices?.length) await importVoices(confirm.obj.voices);
       restoreState(confirm.obj.state);
     } catch (err) {
       setMsg({ ok: false, text: err.message });
@@ -7687,6 +8349,8 @@ const LAB_TABS = [
 const EAR_TABS = [
   { id: "dojo", label: "Ear Dojo", icon: Ear },
   { id: "shadow", label: "Shadow Mirror", icon: Mic },
+  { id: "talk", label: "Talk Paths", icon: MessageCircle },
+  { id: "bank", label: "Voice Bank", icon: Music },
 ];
 const READ_TABS = [
   { id: "library", label: "Library", icon: Library },
@@ -7788,6 +8452,7 @@ export default function SuvarnaKani() {
     window.addEventListener("keydown", touch);
     const id = setInterval(() => { if (document.visibilityState === "visible" && Date.now() - lastTouch < 90000) logActivity({ secs: 30 }); }, 30000);
     pruneReviews();
+    loadVoiceBank();
     return () => { clearInterval(id); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); };
   }, [logActivity]);
   const finishOnboarding = (a) => {
@@ -7899,6 +8564,8 @@ export default function SuvarnaKani() {
             <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
             {earTab === "dojo" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
             {earTab === "shadow" && <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />}
+            {earTab === "talk" && <TalkPaths mode={mode} shadow={shadow} logActivity={logActivity} />}
+            {earTab === "bank" && <VoiceBank mode={mode} />}
           </>
         )}
         {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} />}
@@ -7961,4 +8628,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
