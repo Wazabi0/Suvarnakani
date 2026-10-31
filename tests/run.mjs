@@ -208,5 +208,38 @@ eq(T.climbLadder({ ladder: 1 }, 10, 20), 0, "ladder drops at 50%");
 eq(T.climbLadder({ ladder: 5 }, 20, 20), 5, "ladder tops out");
 check(T.voiceBankLists("th").every((l) => l.items.length && l.items.every((x) => x.key.startsWith(x.script + ":"))), "voice bank lists have keys");
 
+// 13. Wave F: keyboard layouts cover every letter, dictation words are typeable, palettes swap cleanly.
+const thLetters = [..."กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"];
+const thMarks = [..."ะัาำิีึืุู็่้๊๋์เแโใไๆฯฤฦ๐๑๒๓๔๕๖๗๘๙"];
+for (const ch of [...thLetters, ...thMarks]) check(!!T.keyFor(ch, "th"), `Kedmanee has ${ch}`);
+const allKeys = (sc) => [...T.KEYMAPS[sc].rows.join(""), ...T.KEYMAPS[sc].shift.join("")];
+for (const sc of ["th", "lo"]) { const k = allKeys(sc); check(new Set(k).size === k.length, `${sc} layout has no duplicate keys`); }
+eq(T.KEYMAPS.th.rows.map((r) => [...r].length), [12, 13, 11, 10], "Kedmanee row lengths");
+eq(T.KEYMAPS.th.shift.map((r) => [...r].length), [12, 13, 11, 10], "Kedmanee shifted row lengths");
+eq(T.keyFor("ก", "th"), { row: 2, col: 2, shift: false }, "ก sits on the D key");
+eq(T.keyFor("ซ", "th"), { row: 2, col: 9, shift: true }, "ซ is shifted ;");
+for (const ch of [..."ກຂຄງຈສຊຍດຕຖທນບປຜຝພຟມຢຣລວຫອຮໜໝ"]) check(!!T.keyFor(ch, "lo"), `Lao layout has ${ch}`);
+for (const mode of ["th", "lo"]) {
+  const pool = T.dictationPool(mode, {});
+  check(pool.words.length >= 20, `${mode} dictation has at least 20 words (got ${pool.words.length})`);
+  check(pool.words.every((w) => T.typeable(w[pool.script], pool.script)), `${mode} dictation words are all typeable`);
+  const syl = T.syllableTargets(mode);
+  check(syl.length >= 20 && syl.every((x) => !/\s/.test(x.g) && [...x.g].length <= 5), `${mode} syllable targets are single short syllables (${syl.length})`);
+  check(T.traceTargets(mode).every((t) => t.tts && t.tts[0]), `${mode} trace targets can be spoken`);
+}
+check(Object.keys(T.ANATOMY).every((g) => T.ANATOMY[g].marks.every((m) => m.length === 4 && m[0] > 0 && m[0] < 320 && m[1] > 0 && m[1] < 320)), "anatomy marks sit inside the trace box");
+check(Object.values(T.ANATOMY).every((a) => !!T.ANATOMY[a.vs] || a.vs === "ภ"), "anatomy lookalikes are marked too");
+eq(T.SRS_STAGES.map((s) => s.icon), ["lock", "seed", "monk", "naga", "guardian", "stupa"], "stage icons");
+const before = JSON.stringify(T.TONES);
+T.applyTonePalette("light");
+eq(T.TONES.high.ink, T.TONES_LIGHT_BASE.high.ink, "daylight High ink");
+eq(T.TONES.lo_high.color, T.TONES_LIGHT_BASE.high.color, "Lao tones follow the daylight palette");
+T.applyTonePalette("dark");
+eq(JSON.stringify(T.TONES), before, "dark palette restores exactly");
+// Daylight inks must read on paper (#FAF7F0): WCAG contrast of at least 4.5.
+const lum = (h) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+for (const [k, t] of Object.entries(T.TONES_LIGHT_BASE)) check(contrast(t.ink, "#FAF7F0") >= 4.5, `daylight ${k} ink contrast ${contrast(t.ink, "#FAF7F0").toFixed(2)}`);
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

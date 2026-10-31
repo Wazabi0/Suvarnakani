@@ -4,7 +4,7 @@ import {
   Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
   Cloud, Sun, Waves, Ear, Target, Flame, Mic,
-  Settings, Download, Upload, History, RefreshCw, Search,
+  Settings, Download, Upload, History, RefreshCw, Search, Keyboard, Moon, EyeOff, Hand, SunMoon,
 } from "lucide-react";
 
 /* ============================================================================
@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.24.0";
+const APP_VERSION = "0.25.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -47,15 +47,55 @@ const FONT_STACKS = {
 const UI_FONT = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Noto Sans Lao", sans-serif';
 
 /* Design tokens. Tailwind's slate, white and black, and the sk-* colours, read
- * these variables (see tailwind.preset.cjs). Values are space-separated RGB. */
+ * these variables (see tailwind.preset.cjs). Values are space-separated RGB.
+ * Daylight (V1) flips the neutral ramp: "white" becomes deep indigo ink and the
+ * slate scale runs from ink to paper, so `text-white`, `bg-white/5` and
+ * `text-slate-400` keep their roles. Pale accent text (amber-300 and the like)
+ * gets a darker shade of the same hue. Night can be true black for OLED. */
+const LIGHT_TEXT = {
+  amber: ["#92400E", "#B45309"], emerald: ["#065F46", "#047857"], rose: ["#9F1239", "#BE123C"], cyan: ["#155E75", "#0E7490"],
+  pink: ["#9D174D", "#BE185D"], purple: ["#6B21A8", "#7E22CE"], sky: ["#075985", "#0369A1"], teal: ["#115E59", "#0F766E"],
+};
+const lightTextCss = Object.entries(LIGHT_TEXT).map(([hue, [deep, mid]]) => [100, 200, 300, 400].map((n) => {
+  const c = n <= 200 ? deep : mid;
+  return `[data-sk-theme=light] [class~="text-${hue}-${n}"],[data-sk-theme=light] [class*=" text-${hue}-${n}/"],[data-sk-theme=light] [class^="text-${hue}-${n}/"]{color:${c}}`;
+}).join("")).join("");
 const THEME_CSS = `:root{
 --sk-bg:11 15 25;--sk-panel:15 23 42;--sk-ink:241 245 249;--sk-gold:245 158 11;
 --sk-white:255 255 255;--sk-black:0 0 0;
 --sk-slate-50:248 250 252;--sk-slate-100:241 245 249;--sk-slate-200:226 232 240;--sk-slate-300:203 213 225;--sk-slate-400:148 163 184;
 --sk-slate-500:100 116 139;--sk-slate-600:71 85 105;--sk-slate-700:51 65 85;--sk-slate-800:30 41 59;--sk-slate-900:15 23 42;--sk-slate-950:2 6 23;
 --sk-script-leading:1.7;
+--sk-glow:radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%);
+--sk-river:#22D3EE;--sk-well:0 0 0;
+color-scheme:dark;
 }
-.sk-script{line-height:var(--sk-script-leading)}`;
+[data-sk-black]{--sk-bg:0 0 0;--sk-panel:10 10 14;--sk-slate-950:0 0 0;--sk-slate-900:12 12 18;--sk-glow:radial-gradient(ellipse at bottom right, #F59E0B0c, transparent 50%)}
+[data-sk-theme=light]{
+--sk-bg:250 247 240;--sk-panel:255 253 248;--sk-ink:30 27 75;--sk-gold:180 83 9;
+--sk-white:30 27 75;--sk-black:0 0 0;
+--sk-slate-50:15 17 42;--sk-slate-100:30 33 62;--sk-slate-200:44 49 82;--sk-slate-300:58 64 98;--sk-slate-400:82 89 120;
+--sk-slate-500:108 115 143;--sk-slate-600:150 157 180;--sk-slate-700:200 204 218;--sk-slate-800:226 229 237;--sk-slate-900:238 239 244;--sk-slate-950:248 247 243;
+--sk-glow:radial-gradient(ellipse at top, #FDE68A55, transparent 60%), radial-gradient(ellipse at bottom right, #A5B4FC22, transparent 50%);
+--sk-river:#0E7490;--sk-well:255 255 255;
+color-scheme:light;
+}
+[data-sk-theme=light] .text-slate-950,[data-sk-theme=light] .text-slate-900{color:rgb(2 6 23)}
+[data-sk-theme=light] .bg-black\\/20,[data-sk-theme=light] .bg-black\\/30{background-color:rgb(255 255 255/.75);box-shadow:inset 0 0 0 1px rgb(30 27 75/.08)}
+[data-sk-theme=light] .sk-card{background-color:rgb(255 255 255/.72);box-shadow:0 1px 2px rgb(30 27 75/.06),0 4px 16px rgb(30 27 75/.05)}
+[data-sk-theme=light] .sk-level-bg{background-image:none!important}
+[data-sk-theme=light] .sk-on-color,[data-sk-theme=light] .sk-on-color .text-white{color:#fff}
+${lightTextCss}
+.sk-script{line-height:var(--sk-script-leading)}
+@keyframes sk-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+.sk-stop-current{animation:sk-breathe 2.6s ease-in-out infinite}
+@keyframes sk-leaf{0%{transform:translate(0,-60px) rotate(0);opacity:0}15%{opacity:1}100%{transform:translate(var(--dx),110px) rotate(var(--rot));opacity:.9}}
+@keyframes sk-door-l{to{transform:perspective(600px) rotateY(-78deg)}}
+@keyframes sk-door-r{to{transform:perspective(600px) rotateY(78deg)}}
+@keyframes sk-lamp{0%{opacity:.15;transform:scale(.6)}60%{opacity:1;transform:scale(1.15)}100%{opacity:1;transform:scale(1)}}
+@keyframes sk-rise{from{transform:translateY(16px);opacity:0}to{transform:none;opacity:1}}
+@keyframes sk-ghost{0%,100%{opacity:.9}50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.sk-moment *,.sk-stop-current{animation:none!important;opacity:1!important}}`;
 
 /* Extra faces for the Font Gauntlet: loopless display, square, and handwriting. */
 const GAUNTLET_FONTS_HREF =
@@ -124,6 +164,29 @@ Object.assign(TONES, {
   lo_highfall: { name: "High falling", th: "ສຽງສູງຕົກ", chao: "52", color: "#FF6B4A", ink: "#FF8A6E", grad: ["#FFB199", "#C2381D"], notes: ["A4", "E4"], lao: true },
 });
 const LAO_TONE_ORDER = ["lo_mid", "lo_lowfall", "lo_highfall", "lo_high", "lo_rising"];
+
+/*
+ * Daylight tone palette (V1). On paper the lightest colour (High) would have the
+ * least contrast, so daylight keeps each hue but uses darker inks of similar
+ * weight, and pitch is carried by the contour glyph instead of lightness.
+ */
+const TONE_HUE = { lo_rising: "rising", lo_high: "high", lo_mid: "mid", lo_lowfall: "low", lo_highfall: "falling" };
+const TONES_DARK = Object.fromEntries(Object.entries(TONES).map(([k, t]) => [k, { color: t.color, ink: t.ink, grad: t.grad }]));
+const TONES_LIGHT_BASE = {
+  mid: { color: "#0F9D84", ink: "#0B7360", grad: ["#0F9D84", "#0F9D84"] },
+  low: { color: "#5B47D6", ink: "#4434B0", grad: ["#6E5CE6", "#3A2BA6"] },
+  falling: { color: "#E04A26", ink: "#B0361A", grad: ["#F07A5C", "#A82E12"] },
+  high: { color: "#C28F00", ink: "#7F5E00", grad: ["#A87C00", "#D9A514"] },
+  rising: { color: "#2F7FE0", ink: "#1D5BA8", grad: ["#1D4F94", "#5FA4F0"] },
+};
+let activePalette = "dark";
+/** Swap tone colours in place for the theme. Components read TONES at render time. */
+function applyTonePalette(theme) {
+  const light = theme === "light";
+  if ((light ? "light" : "dark") === activePalette) return;
+  activePalette = light ? "light" : "dark";
+  Object.keys(TONES).forEach((k) => Object.assign(TONES[k], light ? TONES_LIGHT_BASE[TONE_HUE[k] || k] : TONES_DARK[k]));
+}
 
 const NOTE_FREQ = { F3: 174.61, G3: 196.0, A3: 220.0, C4: 261.63, E4: 329.63, F4: 349.23, G4: 392.0, A4: 440.0 };
 
@@ -1147,13 +1210,15 @@ const COURSE_LEVELS = LEVELS.filter((l) => !l.garden);
 /* ---------------------------------------------------------------------------
  * SRS
  * ------------------------------------------------------------------------- */
+/* Stage colours are a gold ramp from bronze seed to bright Nirvana (V8), so stage
+ * never competes with tone colour. Each stage has its own small icon. */
 const SRS_STAGES = [
-  { name: "Locked", alias: "Queue", color: "#475569" },
-  { name: "Lotus Seed", alias: "Apprentice", color: "#EC4899" },
-  { name: "Novice Monk", alias: "Guru", color: "#9333EA" },
-  { name: "Naga Adept", alias: "Master", color: "#3B82F6" },
-  { name: "Temple Guardian", alias: "Enlightened", color: "#06B6D4" },
-  { name: "Golden Nirvana", alias: "Burned", color: "#F59E0B" },
+  { name: "Locked", alias: "Queue", color: "#64748B", icon: "lock" },
+  { name: "Lotus Seed", alias: "Apprentice", color: "#9A6432", icon: "seed" },
+  { name: "Novice Monk", alias: "Guru", color: "#BD7A2A", icon: "monk" },
+  { name: "Naga Adept", alias: "Master", color: "#D99424", icon: "naga" },
+  { name: "Temple Guardian", alias: "Enlightened", color: "#EDB43A", icon: "guardian" },
+  { name: "Golden Nirvana", alias: "Burned", color: "#FFD54F", icon: "stupa" },
 ];
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
@@ -1697,6 +1762,19 @@ function useBackClose(open, onClose) {
 }
 
 /** Keep the screen on while `active` (reviews, tracing, shadowing). */
+/** The theme in use: "light" or "dark", following the phone unless Settings picks one (V1). */
+function useResolvedTheme(pref) {
+  const query = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+  const [sysLight, setSysLight] = useState(() => !!query?.matches);
+  useEffect(() => {
+    if (!query) return undefined;
+    const on = (e) => setSysLight(e.matches);
+    query.addEventListener?.("change", on);
+    return () => query.removeEventListener?.("change", on);
+  }, [query]);
+  return pref === "light" || pref === "dark" ? pref : sysLight ? "light" : "dark";
+}
+
 function useWakeLock(active) {
   useEffect(() => {
     if (!active || typeof navigator === "undefined" || !navigator.wakeLock) return undefined;
@@ -1719,7 +1797,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false };
+const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 const usePrefs = () => React.useContext(PrefsContext);
 const runtimePrefs = { haptics: true, roman: "learner" };
@@ -1753,6 +1831,15 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.25.0", title: "Hand and look", points: [
+    "Daylight theme for reading in the sun, and true black for night on an OLED screen. Both follow your phone unless you pick one in Settings.",
+    "The Shrine is now a journey down the Mekong: each level is a stop that fills with gold as its items burn, with the next gate in view.",
+    "Memory Writer (Write → From memory): hear a letter's name and write it with no template. Syllables puts whole syllables on a four-line guide.",
+    "Show me: a ghost pen draws each letter from its head loop before you trace it.",
+    "Keyboard (Write → Keyboard): hear a word and type it on the Thai Kedmanee layout your phone uses. Clean typing counts on the spelling track.",
+    "Tap a big letter in a lesson or the inspector to see its parts: the head loop, the body, and what tells it from its lookalike.",
+    "New stage colours and icons, from bronze seed to golden stupa, and short moments for burns, new levels and streaks.",
+  ] },
   { v: "0.24.0", title: "Real voices", points: [
     "Voice Bank (Ear → Voice Bank): hand the phone to a tutor or friend and they read each word. Their recordings replace the synthetic voice everywhere, and go into your backups.",
     "Talk Paths (Ear): five conversations where you choose your reply, then say it. A politeness meter reacts to what you pick.",
@@ -2052,11 +2139,96 @@ function ToneGlyph({ tone, size = 16, color }) {
   );
 }
 
+/* ---------------------------------------------------------------------------
+ * Moments (V5): a short animation and haptic pattern for each milestone.
+ * ------------------------------------------------------------------------- */
+const momentListeners = new Set();
+function celebrate(m) { momentListeners.forEach((fn) => fn(m)); }
+const MOMENT_HAPTICS = { leaf: [12, 70, 12, 70, 40], gate: [35, 90, 70], lamps: [14, 45, 14, 45, 14, 45, 60] };
+const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100, 200, 365];
+const reducedMotion = () => typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+function MomentLayer() {
+  const [m, setM] = useState(null);
+  useEffect(() => {
+    const on = (next) => {
+      setM({ ...next, key: Date.now() });
+      if (runtimePrefs.haptics && navigator.userActivation?.hasBeenActive !== false) { try { navigator.vibrate?.(MOMENT_HAPTICS[next.kind] || 20); } catch { /* not supported */ } }
+    };
+    momentListeners.add(on);
+    return () => { momentListeners.delete(on); };
+  }, []);
+  useEffect(() => {
+    if (!m) return undefined;
+    const id = setTimeout(() => setM(null), reducedMotion() ? 2200 : 3200);
+    return () => clearTimeout(id);
+  }, [m]);
+  if (!m) return null;
+  return (
+    <div key={m.key} data-moment={m.kind} className="sk-moment pointer-events-auto fixed inset-x-0 top-[18vh] z-[60] mx-auto flex w-[min(20rem,calc(100vw-2rem))] flex-col items-center rounded-3xl border border-amber-400/30 bg-sk-panel/95 px-5 pb-5 pt-4 text-center shadow-2xl backdrop-blur" style={{ animation: "sk-rise .35s ease-out both" }} onClick={() => setM(null)} role="status">
+      <div className="relative h-28 w-full overflow-hidden">
+        {m.kind === "leaf" && (
+          <>
+            <div className="absolute inset-x-0 bottom-1 flex justify-center"><StageIcon stage={5} size={54} /></div>
+            {[...Array(9)].map((_, i) => (
+              <span key={i} className="absolute top-0 h-3 w-2 rounded-[60%_0] bg-gradient-to-br from-amber-200 to-amber-500" style={{ left: `${12 + i * 9}%`, "--dx": `${(i % 3 - 1) * 14}px`, "--rot": `${180 + i * 40}deg`, animation: `sk-leaf ${1.4 + (i % 4) * 0.25}s ${i * 0.09}s cubic-bezier(.3,.6,.4,1) both` }} />
+            ))}
+          </>
+        )}
+        {m.kind === "gate" && (
+          <div className="absolute inset-0 flex items-end justify-center">
+            <div className="relative flex h-24 w-32 items-center justify-center rounded-t-[3rem] border-2 border-amber-400/70 bg-gradient-to-b from-amber-200/40 to-transparent text-3xl font-black text-amber-300">
+              {m.level}
+              <div className="absolute inset-y-0 left-0 w-1/2 origin-left rounded-tl-[3rem] border-r border-amber-700/50 bg-gradient-to-br from-amber-600 to-amber-800" style={{ animation: "sk-door-l 1.1s .35s ease-in-out both" }} />
+              <div className="absolute inset-y-0 right-0 w-1/2 origin-right rounded-tr-[3rem] border-l border-amber-700/50 bg-gradient-to-bl from-amber-600 to-amber-800" style={{ animation: "sk-door-r 1.1s .35s ease-in-out both" }} />
+            </div>
+          </div>
+        )}
+        {m.kind === "lamps" && (
+          <div className="absolute inset-0 flex items-end justify-center gap-2 pb-2">
+            {[...Array(Math.min(7, m.lamps || 5))].map((_, i) => (
+              <div key={i} className="flex flex-col items-center">
+                <span className="h-5 w-3 rounded-[50%_50%_45%_45%/60%_60%_40%_40%] bg-gradient-to-t from-amber-500 via-amber-300 to-yellow-100 shadow-[0_0_14px_#F59E0B]" style={{ animation: `sk-lamp .5s ${0.2 + i * 0.22}s ease-out both` }} />
+                <span className="mt-0.5 h-2 w-6 rounded-b-full bg-gradient-to-b from-amber-700 to-amber-900" />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="mt-2 text-xs font-bold uppercase tracking-widest text-amber-300">{m.label}</div>
+      <div className="mt-1 text-lg font-bold text-white">{m.title}</div>
+      {m.sub && <div className="mt-0.5 text-sm text-slate-400">{m.sub}</div>}
+    </div>
+  );
+}
+
+const RIVER_MASK = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='120'%3E%3Cpath d='M8 0C14 20 14 40 8 60C2 80 2 100 8 120' stroke='black' stroke-width='5' fill='none'/%3E%3C/svg%3E")`;
+/** Small stage icons (V8): seed, monk, naga, guardian, stupa. */
+const STAGE_PATHS = {
+  seed: ["M12 21c-3.4 0-5.8-2.5-5.8-5.8 0-2.9 2.4-5.3 5.8-5.8 3.4.5 5.8 2.9 5.8 5.8 0 3.3-2.4 5.8-5.8 5.8z", "M12 9.4V5.2M12 5.2C10.6 3.5 8.8 3.2 7.2 3.6M12 5.2c1.4-1.7 3.2-2 4.8-1.6"],
+  monk: ["M5 21c0-6 3-10 7-10s7 4 7 10z", "M12 9.2a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM9 16.5h6"],
+  naga: ["M4 19c3 0 3.5-4 6.5-4s3 3.5 6 3.5 3.5-5.5.5-7.5c-2.2-1.5-1-4.5 1.5-4.5", "M18.5 6.5l2-1.5M17.6 4.6l.4 2.2"],
+  guardian: ["M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6z", "M12 8v8M9 11h6"],
+  stupa: ["M7 15c0-4 2.5-6 5-7 2.5 1 5 3 5 7z", "M12 2v6M10 4.5h4M5 15h14v3H5zM4 21h16"],
+};
+function StageIcon({ stage, size = 14, className = "" }) {
+  const s = SRS_STAGES[stage] || SRS_STAGES[0];
+  if (s.icon === "lock") return <Lock size={size} className={className} style={{ color: s.color }} />;
+  const [fill, line] = STAGE_PATHS[s.icon];
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none" stroke={s.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d={fill} fill={`${s.color}55`} />
+      <path d={line} />
+    </svg>
+  );
+}
+
+const CLASS_INK_LIGHT = { mid: "#A16207", high: "#57534E", low: "#9A3412" };
 function ClassBadge({ cls, small }) {
   const c = CLASSES[cls];
   const Icon = c.icon;
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`} style={{ background: `${c.color}1f`, color: c.color, border: `1px solid ${c.color}55` }}>
+    <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`} style={{ background: `${c.color}1f`, color: activePalette === "light" ? CLASS_INK_LIGHT[cls] : c.color, border: `1px solid ${c.color}55` }}>
       <Icon size={small ? 12 : 14} /> {c.name} · {c.persona}
     </span>
   );
@@ -2117,7 +2289,7 @@ function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
 
 function Card({ children, className = "", glow, style }) {
   return (
-    <div className={`rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={{ ...(glow ? { boxShadow: `0 0 40px ${glow}1f` } : {}), ...style }}>
+    <div className={`sk-card rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={{ ...(glow ? { boxShadow: `0 0 40px ${glow}1f` } : {}), ...style }}>
       {children}
     </div>
   );
@@ -2567,6 +2739,25 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [srs, sandbox, garden, course]);
 
+  // Moments: a burn or a newly opened level since this screen opened (V5).
+  const seenRef = useRef(null);
+  useEffect(() => {
+    const burnedIds = course.filter((i) => stageOf(i.id) >= 5).map((i) => i.id);
+    const levels = COURSE_LEVELS.filter((l) => unlockedLevels.has(l.n)).map((l) => l.n);
+    const prev = seenRef.current;
+    seenRef.current = { burned: new Set(burnedIds), levels: new Set(levels), sandbox };
+    if (!prev || prev.sandbox !== sandbox) return;
+    const opened = levels.filter((n) => !prev.levels.has(n));
+    const fresh = burnedIds.filter((id) => !prev.burned.has(id));
+    if (opened.length) {
+      const lvl = COURSE_LEVELS.find((l) => l.n === opened[0]);
+      celebrate({ kind: "gate", label: `Level ${lvl.n} is open`, title: lvl.title, sub: lvl.sub, level: lvl.n });
+    } else if (fresh.length) {
+      const it = course.find((i) => i.id === fresh[0]);
+      celebrate({ kind: "leaf", label: "Golden Nirvana", title: `${mode === "lo" ? it.lo : it.th} · ${it.meaning}`, sub: fresh.length > 1 ? `and ${fresh.length - 1} more burned` : "Burned. It won't come back for review." });
+    }
+  }, [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
+  const currentLevel = Math.max(...COURSE_LEVELS.filter((l) => unlockedLevels.has(l.n)).map((l) => l.n));
   const lessonQueue = useMemo(() => {
     const fresh = course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0);
     const core = fresh.filter((i) => !i.garden).sort((a, b) => a.level - b.level);
@@ -2691,7 +2882,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         <div className="grid grid-cols-3 gap-2 p-4 sm:grid-cols-6">
           {SRS_STAGES.map((s, idx) => (
             <div key={s.name} className="rounded-xl bg-white/[0.03] px-2 py-2 text-center">
-              <div className="text-lg font-black" style={{ color: s.color }}>{counts[idx]}</div>
+              <div className="flex items-center justify-center gap-1 text-lg font-black text-white"><StageIcon stage={idx} size={15} />{counts[idx]}</div>
               <div className="text-[11px] font-semibold text-slate-300">{s.name}</div>
               <div className="text-[11px] text-slate-400">{s.alias}</div>
             </div>
@@ -2733,54 +2924,81 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
 
       <SentenceDeck mode={mode} font={font} deck={sentSrs} setDeck={setSentSrs} saved={decoderSaved} mined={mined} sandbox={sandbox} logActivity={logActivity} course={course} stageOf={stageOf} />
 
-      {COURSE_LEVELS.map((lvl) => {
-        const items = course.filter((i) => i.level === lvl.n);
-        const unlocked = unlockedLevels.has(lvl.n);
-        const done = items.filter((i) => stageOf(i.id) >= 2).length;
-        return (
-          <Card key={lvl.n} className={`p-4 sm:p-5 ${unlocked ? "" : "opacity-60"}`} style={{ backgroundImage: lvl.bg }}>
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest" style={{ color: lvl.accent }}>
-                  {unlocked ? <Unlock size={13} /> : <Lock size={13} />} Level {lvl.n}
-                </div>
-                <h3 className="text-base font-bold text-white">{lvl.title}</h3>
-                <p className="text-xs text-slate-400">{lvl.sub}</p>
+      {/* The levels as stops down the Mekong (V3): each stop fills with gold as its items burn. */}
+      <div className="relative" data-river>
+        <div aria-hidden="true" className="pointer-events-none absolute bottom-8 left-[10px] top-8 w-4 opacity-40" style={{ backgroundColor: "var(--sk-river)", WebkitMaskImage: RIVER_MASK, maskImage: RIVER_MASK, WebkitMaskSize: "16px 120px", maskSize: "16px 120px", WebkitMaskRepeat: "repeat-y", maskRepeat: "repeat-y" }} />
+        {COURSE_LEVELS.map((lvl, k) => {
+          const items = course.filter((i) => i.level === lvl.n);
+          const unlocked = unlockedLevels.has(lvl.n);
+          const done = items.filter((i) => stageOf(i.id) >= 2).length;
+          const burned = items.filter((i) => stageOf(i.id) >= 5).length;
+          const current = lvl.n === currentLevel;
+          const gate = !unlocked && (k === 0 || unlockedLevels.has(lvl.n - 1));
+          const prev = course.filter((i) => i.level === lvl.n - 1);
+          const prevDone = prev.filter((i) => stageOf(i.id) >= 2).length;
+          return (
+            <div key={lvl.n} className="relative mb-4 pl-10" data-level-stop={lvl.n}>
+              <div className={`absolute left-0 top-5 flex h-9 w-9 items-center justify-center rounded-full border-2 text-xs font-black ${current ? "sk-stop-current" : ""}`} title={`${burned} of ${items.length} burned`}
+                style={{ borderColor: unlocked ? lvl.accent : "rgb(var(--sk-slate-600))", background: unlocked ? `conic-gradient(#FFD54F ${(burned / Math.max(1, items.length)) * 360}deg, rgb(var(--sk-bg)) 0)` : "rgb(var(--sk-bg))", boxShadow: current ? `0 0 0 4px ${lvl.accent}33, 0 0 22px ${lvl.accent}88` : undefined }}>
+                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sk-bg" style={{ color: unlocked ? lvl.accent : undefined }}>{unlocked ? lvl.n : <Lock size={12} className="text-slate-500" />}</span>
               </div>
-              <div className="text-right text-xs text-slate-400">
-                <div className="font-bold text-slate-200">{done}/{items.length}</div>
-                at Novice Monk+
-              </div>
-            </div>
-            {["glyph", "syllable", "vocab"].map((tier) => {
-              const list = items.filter((i) => i.tier === tier);
-              if (!list.length) return null;
-              return (
-                <div key={tier} className="mb-2">
-                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: TIER[tier].color }}>{TIER[tier].label}</div>
-                  <div className="flex flex-wrap gap-2">
-                    {list.map((item) => {
-                      const st = stageOf(item.id);
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => onInspect(item)}
-                          className="group relative min-w-[52px] rounded-xl px-2.5 py-1.5 text-center text-white shadow transition hover:-translate-y-0.5 active:scale-95"
-                          style={{ background: `linear-gradient(160deg, ${TIER[tier].color}, ${TIER[tier].color}aa)`, opacity: unlocked ? 1 : 0.55 }}
-                          title={item.meaning}
-                        >
-                          <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-2xl leading-tight" gapClass="gap-1.5" divider={false} />
-                          <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-[#0B0F19]" style={{ background: SRS_STAGES[st].color }} />
-                        </button>
-                      );
-                    })}
+              {unlocked ? (
+                <Card className="sk-level-bg p-4 sm:p-5" style={{ backgroundImage: lvl.bg }}>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest" style={{ color: lvl.accent }}>
+                        Level {lvl.n}{current && <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white">You are here</span>}
+                      </div>
+                      <h3 className="text-base font-bold text-white">{lvl.title}</h3>
+                      <p className="text-xs text-slate-400">{lvl.sub}</p>
+                    </div>
+                    <div className="text-right text-xs text-slate-400">
+                      <div className="font-bold text-slate-200">{burned ? `${burned}/${items.length} burned` : `${done}/${items.length}`}</div>
+                      {burned ? `${done} at Novice Monk+` : "at Novice Monk+"}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </Card>
-        );
-      })}
+                  {["glyph", "syllable", "vocab"].map((tier) => {
+                    const list = items.filter((i) => i.tier === tier);
+                    if (!list.length) return null;
+                    return (
+                      <div key={tier} className="mb-2">
+                        <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider" style={{ color: TIER[tier].color }}>{TIER[tier].label}</div>
+                        <div className="flex flex-wrap gap-2">
+                          {list.map((item) => {
+                            const st = stageOf(item.id);
+                            return (
+                              <button
+                                key={item.id}
+                                onClick={() => onInspect(item)}
+                                className="sk-on-color group relative min-w-[52px] rounded-xl px-2.5 py-1.5 text-center text-white shadow transition hover:-translate-y-0.5 active:scale-95"
+                                style={{ background: `linear-gradient(160deg, ${TIER[tier].color}, ${TIER[tier].color}aa)`, opacity: unlocked ? 1 : 0.55 }}
+                                title={item.meaning}
+                              >
+                                <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-2xl leading-tight" gapClass="gap-1.5" divider={false} />
+                                <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-sk-bg" style={{ background: SRS_STAGES[st].color }} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </Card>
+              ) : gate ? (
+                <Card className="border-dashed p-4">
+                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400"><Lock size={13} /> Level {lvl.n} · next gate</div>
+                  <h3 className="text-base font-bold text-white">{lvl.title}</h3>
+                  <p className="text-xs text-slate-400">{lvl.sub}</p>
+                  <p className="mt-2 text-xs text-slate-300">Opens when every Level {lvl.n - 1} item reaches Novice Monk: {prevDone} of {prev.length}.</p>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${(prevDone / Math.max(1, prev.length)) * 100}%`, background: lvl.accent }} /></div>
+                </Card>
+              ) : (
+                <div className="flex min-h-[3.25rem] items-center gap-2 pt-4 text-sm text-slate-500"><span className="font-semibold">Level {lvl.n}</span> · {lvl.title}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
       <WordGarden open={gardenOpen} course={course} planted={garden} setPlanted={setGarden} stageOf={stageOf} mode={mode} font={font} onInspect={onInspect} />
 
@@ -2793,12 +3011,24 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
 
 function ItemHero({ item, mode, font }) {
   const color = TIER[item.tier].color;
+  const [anat, setAnat] = useState(false);
+  useEffect(() => setAnat(false), [item.id]);
+  // Single letters can be tapped to show their parts (V4).
+  const single = item.tier === "glyph" && [...item.th].length === 1 && /[ก-ฮ]/.test(item.th);
+  const scripts = mode === "lo" ? ["lo"] : mode === "th" ? ["th"] : ["th", "lo"];
   return (
     <div className="rounded-3xl p-6 text-center" style={{ background: `radial-gradient(circle at 50% 30%, ${color}55, ${color}11 70%)` }}>
       <div className="text-xs font-bold uppercase tracking-widest" style={{ color }}>{TIER[item.tier].label}</div>
-      <div className="my-3 text-white drop-shadow-lg">
-        <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35]" />
-      </div>
+      {anat ? (
+        <button type="button" data-anatomy-toggle onClick={() => setAnat(false)} className={`my-3 grid w-full gap-2 ${scripts.length > 1 ? "grid-cols-2" : ""}`}>
+          {scripts.map((sc) => <GlyphAnatomy key={sc} g={item[sc]} script={sc} size={scripts.length > 1 ? 140 : 200} />)}
+        </button>
+      ) : (
+        <div className="my-3 text-white drop-shadow-lg" onClick={single ? () => setAnat(true) : undefined} data-anatomy-toggle={single ? "" : undefined} role={single ? "button" : undefined} title={single ? "Tap to see the letter's parts" : undefined}>
+          <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-7xl leading-[1.35]" />
+          {single && <div className="mt-1 text-[11px] font-normal text-slate-400 drop-shadow-none">Tap the letter to see its parts</div>}
+        </div>
+      )}
       <div className="text-sm text-slate-200">
         {mode !== "lo" && <span>{R(item.thRoman)}</span>}
         {mode === "dual" && <span className="text-slate-400"> · </span>}
@@ -2860,7 +3090,7 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
       <Modal open={open} onClose={onClose} title={`Lesson quiz · ${done} / ${items.length}`} accent={TIER[qItem.tier].color}>
         <form onSubmit={check}>
           <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${(done / items.length) * 100}%` }} /></div>
-          <div className="mt-4 rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[qItem.tier].color}, ${TIER[qItem.tier].color}88)` }}>
+          <div className="sk-on-color mt-4 rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[qItem.tier].color}, ${TIER[qItem.tier].color}88)` }}>
             <DualText th={qItem.th} lo={qItem.lo} mode={mode} font={font} className={`${qItem.th.length + qItem.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
           </div>
           <label htmlFor="lesson-quiz-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">Type the reading or the meaning</label>
@@ -3289,7 +3519,7 @@ function WordGarden({ open, course, planted, setPlanted, stageOf, mode, font, on
                   {items.map((it) => (
                     <button key={it.id} onClick={() => onInspect(it)} className="relative rounded-lg px-2 py-1 text-white" style={{ background: `${b.color}33` }} title={it.meaning}>
                       <DualText th={it.th} lo={it.lo} mode={mode} font={font} className="text-lg leading-tight" gapClass="gap-1" divider={false} />
-                      <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#0B0F19]" style={{ background: SRS_STAGES[stageOf(it.id)].color }} />
+                      <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-sk-bg" style={{ background: SRS_STAGES[stageOf(it.id)].color }} />
                     </button>
                   ))}
                 </div>
@@ -3684,7 +3914,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
         </div>
       ) : (
         <form onSubmit={submit}>
-          <div className="rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
+          <div className="sk-on-color rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
             <DualText th={item.th} lo={item.lo} mode={mode} font={fontFor ? fontFor(item) : font} className={`${item.th.length + item.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
           </div>
           <label htmlFor="review-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">1 · Type the reading or the meaning</label>
@@ -3773,7 +4003,7 @@ function Inspector({ item, mode, font, srs, onClose }) {
           <ItemHero item={item} mode={mode} font={font} />
           <div className="mt-3 flex justify-center"><AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} /></div>
           <div className="mt-3 text-center text-xs text-slate-400">
-            SRS stage: <span className="font-bold" style={{ color: SRS_STAGES[st].color }}>{SRS_STAGES[st].name}</span> ({SRS_STAGES[st].alias})
+            SRS stage: <StageIcon stage={st} size={13} className="mb-0.5 inline" /> <span className="font-bold text-white">{SRS_STAGES[st].name}</span> ({SRS_STAGES[st].alias})
           </div>
         </div>
         <div className="space-y-3 text-sm">
@@ -4522,7 +4752,7 @@ function traceTargets(mode) {
     if (it.tier !== "glyph" || [...g].length !== 1 || seen.has(g)) return;
     seen.add(g);
     const roman = script === "lo" ? it.loRoman : it.thRoman;
-    out.push({ id: it.id, g, script, level: it.level, cls: it.cls, name: roman.split("·").pop().trim(), meaning: it.meaning, note: script === "th" ? TRACE_NOTES[g] : null });
+    out.push({ id: it.id, g, script, level: it.level, cls: it.cls, name: roman.split("·").pop().trim(), meaning: it.meaning, note: script === "th" ? TRACE_NOTES[g] : null, tts: script === "lo" ? [it.ttsLo || it.ttsTh, it.lo] : [it.ttsTh] });
   });
   return out;
 }
@@ -4537,22 +4767,22 @@ function writeDue(srs, mode, now = Date.now()) {
   return traceTargets(mode).filter((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= now);
 }
 
-function renderGlyphMask(g, script, extraStroke = 0) {
+function renderGlyphMask(g, script, extraStroke = 0, px = TRACE_FONT_PX, base = TRACE_BASELINE) {
   const S = TRACE_SIZE;
   const c = document.createElement("canvas");
   c.width = S;
   c.height = S;
   const ctx = c.getContext("2d", { willReadFrequently: true });
-  ctx.font = `${TRACE_FONT_PX}px ${TRACE_FONTS[script]}`;
+  ctx.font = `${px}px ${TRACE_FONTS[script]}`;
   ctx.textAlign = "center";
   ctx.fillStyle = "#000";
   if (extraStroke) {
     ctx.lineWidth = extraStroke;
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#000";
-    ctx.strokeText(g, S / 2, TRACE_BASELINE);
+    ctx.strokeText(g, S / 2, base);
   }
-  ctx.fillText(g, S / 2, TRACE_BASELINE);
+  ctx.fillText(g, S / 2, base);
   return ctx;
 }
 
@@ -4604,9 +4834,224 @@ function detectHeadStart(g, script) {
   return start;
 }
 
-function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
+/**
+ * Ink distance field: how far along the ink each pixel is from the pen's start,
+ * walking only through ink (8-neighbour steps). Parts the walk can't reach, like
+ * a separate tail, continue from their top-left pixel after a short lift. It
+ * drives the ghost hand (D17) and the head-loop colouring in glyph anatomy (V4).
+ */
+const fieldCache = new Map();
+function glyphField(g, script, start, size = TRACE_FONT_PX, base = TRACE_BASELINE) {
+  const key = `${script}:${g}:${size}:${base}:${start ? start.join(",") : "-"}`;
+  if (fieldCache.has(key)) return fieldCache.get(key);
+  const S = TRACE_SIZE;
+  const A = renderGlyphMask(g, script, 0, size, base).getImageData(0, 0, S, S).data;
+  const ink = new Uint8Array(S * S);
+  let count = 0;
+  for (let i = 0; i < S * S; i += 1) if (A[i * 4 + 3] > 90) { ink[i] = 1; count += 1; }
+  const dist = new Float32Array(S * S).fill(-1);
+  if (!count) return null;
+  // Nearest ink pixel to the start (the start sits inside the head loop's counter).
+  let seed = -1;
+  if (start) {
+    let best = Infinity;
+    for (let p = 0; p < S * S; p += 1) if (ink[p]) { const d = (p % S - start[0]) ** 2 + (((p / S) | 0) - start[1]) ** 2; if (d < best) { best = d; seed = p; } }
+  }
+  const topLeft = () => { let b = -1; let bv = Infinity; for (let p = 0; p < S * S; p += 1) if (ink[p] && dist[p] < 0) { const v = ((p / S) | 0) + (p % S) * 0.6; if (v < bv) { bv = v; b = p; } } return b; };
+  if (seed < 0) seed = topLeft();
+  let offset = 0;
+  let max = 0;
+  const steps = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, 1.414], [1, -1, 1.414], [-1, 1, 1.414], [-1, -1, 1.414]];
+  while (seed >= 0) {
+    // Dial's buckets on rounded distances keep this a fast Dijkstra.
+    const buckets = [[seed]];
+    dist[seed] = offset;
+    for (let b = 0; b < buckets.length; b += 1) {
+      const list = buckets[b];
+      if (!list) continue;
+      for (let k = 0; k < list.length; k += 1) {
+        const p = list[k];
+        const d = dist[p];
+        const x = p % S; const y = (p / S) | 0;
+        for (const [dx, dy, w] of steps) {
+          const nx = x + dx; const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= S || ny >= S) continue;
+          const q = ny * S + nx;
+          if (!ink[q]) continue;
+          const nd = d + w;
+          if (dist[q] >= 0 && dist[q] <= nd) continue;
+          dist[q] = nd;
+          const bi = Math.round(nd - offset);
+          (buckets[bi] || (buckets[bi] = [])).push(q);
+          if (nd > max) max = nd;
+        }
+      }
+    }
+    offset = max + 24;
+    seed = topLeft();
+  }
+  // Head size: the blank counter around the start, as a radius.
+  let headR = 0;
+  if (start) {
+    const sp = start[1] * S + start[0];
+    if (!ink[sp]) {
+      const seen = new Uint8Array(S * S); const st = [sp]; seen[sp] = 1; let n = 0;
+      while (st.length && n < 2500) { const p = st.pop(); n += 1; const x = p % S; [p - S, p + S, x > 0 ? p - 1 : -1, x < S - 1 ? p + 1 : -1].forEach((q) => { if (q >= 0 && q < S * S && !ink[q] && !seen[q]) { seen[q] = 1; st.push(q); } }); }
+      if (n < 2500) headR = Math.sqrt(n / Math.PI);
+    }
+  }
+  const order = [];
+  for (let p = 0; p < S * S; p += 1) if (dist[p] >= 0) order.push(p);
+  order.sort((a, b) => dist[a] - dist[b]);
+  const field = { dist, order, max, headR, S };
+  fieldCache.set(key, field);
+  return field;
+}
+
+/** Hand-marked features that tell trap pairs apart (V4), for the Tracer's Noto Serif Thai at 220 px. */
+const ANATOMY = {
+  ด: { vs: "ต", marks: [[158, 112, 20, "smooth, unbroken roof"]] },
+  ต: { vs: "ด", marks: [[160, 116, 20, "notch in the roof"]] },
+  ค: { vs: "ด", marks: [[116, 195, 24, "straight left wall; the loop hangs off it"]] },
+  ผ: { vs: "พ", marks: [[138, 158, 22, "inner peak stops low"]] },
+  พ: { vs: "ผ", marks: [[160, 118, 22, "inner peak climbs to full height"]] },
+  ฝ: { vs: "ผ", marks: [[207, 72, 22, "right wall rises above the line"]] },
+  ฟ: { vs: "พ", marks: [[212, 70, 22, "right wall rises above the line"]] },
+  บ: { vs: "ป", marks: [[205, 114, 18, "right wall stops at the top line"]] },
+  ป: { vs: "บ", marks: [[206, 72, 22, "right wall climbs above the line"]] },
+  ข: { vs: "ช", marks: [[205, 112, 16, "plain right wall, no flag"]] },
+  ช: { vs: "ข", marks: [[205, 106, 18, "flag on the right wall"]] },
+  ซ: { vs: "ช", marks: [[124, 106, 18, "extra zigzag on the head"], [205, 106, 16, "flag on the right wall"]] },
+  ถ: { vs: "ภ", marks: [[113, 212, 22, "loop sits at the foot"]] },
+  ฎ: { vs: "ด", marks: [[150, 262, 26, "smooth tail under the line"]] },
+  ฏ: { vs: "ต", marks: [[160, 116, 18, "notch in the roof"], [165, 262, 24, "zigzag tail under the line"]] },
+};
+const ANATOMY_COLORS = { head: "#F59E0B", body: "#94A3B8", mark: "#E0457B" };
+
+/** The letter with its head loop in gold, its body, and the features that set it apart (V4). */
+function GlyphAnatomy({ g, script, size = 220 }) {
+  const ref = useRef(null);
+  const [ready, setReady] = useState(false);
+  const info = script === "th" ? ANATOMY[g] : null;
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[script]}"`, g); } catch { /* fallback font */ }
+      if (!live || !ref.current) return;
+      const start = (script === "th" && TRACE_NOTES[g]?.start) || detectHeadStart(g, script);
+      const f = glyphField(g, script, start);
+      const c = ref.current;
+      const ctx = c.getContext("2d");
+      const img = ctx.createImageData(f.S, f.S);
+      const headLen = start ? Math.PI * (f.headR || 12) + 14 : 0;
+      const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+      const [hc, bc, mc] = [ANATOMY_COLORS.head, ANATOMY_COLORS.body, ANATOMY_COLORS.mark].map(hex);
+      f.order.forEach((p) => {
+        const x = p % f.S; const y = (p / f.S) | 0;
+        const inMark = info?.marks.some(([mx, my, r]) => (x - mx) ** 2 + (y - my) ** 2 <= r * r);
+        const col = inMark ? mc : f.dist[p] <= headLen ? hc : bc;
+        img.data.set([...col, 255], p * 4);
+      });
+      ctx.putImageData(img, 0, 0);
+      setReady(true);
+    })();
+    return () => { live = false; };
+  }, [g, script]); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div data-anatomy className="text-left">
+      <div className="relative mx-auto" style={{ width: size, height: size }}>
+        <canvas ref={ref} width={TRACE_SIZE} height={TRACE_SIZE} className="absolute inset-0 h-full w-full" />
+        <svg viewBox={`0 0 ${TRACE_SIZE} ${TRACE_SIZE}`} className="absolute inset-0 h-full w-full">
+          <line x1="0" x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="currentColor" strokeOpacity=".15" strokeDasharray="5 5" />
+          {ready && info?.marks.map(([x, y, r], i) => <circle key={i} cx={x} cy={y} r={r + 6} fill="none" stroke={ANATOMY_COLORS.mark} strokeWidth="2" strokeDasharray="4 3" />)}
+        </svg>
+      </div>
+      <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-slate-300">
+        <span><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: ANATOMY_COLORS.head }} />head loop</span>
+        <span><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: ANATOMY_COLORS.body }} />body</span>
+        {info && <span><span className="mr-1 inline-block h-2 w-2 rounded-full" style={{ background: ANATOMY_COLORS.mark }} />tells it from <span style={{ fontFamily: FONT_STACKS.loop.th }}>{info.vs}</span></span>}
+      </div>
+      {info && <ul className="mt-1 space-y-0.5 text-center text-xs text-slate-400">{info.marks.map((m, i) => <li key={i}>{m[3]}</li>)}</ul>}
+    </div>
+  );
+}
+
+/** An animated pen that draws the letter from its head loop, then fades for you to follow (D17). */
+function GhostHand({ g, script, start, run, onDone }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!run) return undefined;
+    let raf = 0; let stopped = false;
+    (async () => {
+      try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[script]}"`, g); } catch { /* fallback font */ }
+      if (stopped || !ref.current) return;
+      const f = glyphField(g, script, start);
+      const c = ref.current;
+      const ctx = c.getContext("2d");
+      const img = ctx.createImageData(f.S, f.S);
+      const ink = activePalette === "light" ? [217, 119, 6] : [253, 230, 138];
+      const total = f.max;
+      const dur = reducedMotion() ? 0 : Math.min(3400, Math.max(1600, total * 6));
+      const t0 = performance.now();
+      let painted = 0;
+      let lead = f.order[0];
+      const frame = (now) => {
+        if (stopped) return;
+        const reach = dur ? Math.min(1, (now - t0) / dur) * total : total;
+        while (painted < f.order.length && f.dist[f.order[painted]] <= reach) { img.data.set([...ink, 235], f.order[painted] * 4); painted += 1; }
+        ctx.putImageData(img, 0, 0);
+        // The pen follows one branch of the frontier, the one nearest where it was.
+        let best = Infinity;
+        const lx = lead % f.S; const ly = (lead / f.S) | 0;
+        for (let k = painted - 1; k >= 0 && f.dist[f.order[k]] > reach - 6; k -= 1) {
+          const p = f.order[k]; const d = (p % f.S - lx) ** 2 + (((p / f.S) | 0) - ly) ** 2;
+          if (d < best) { best = d; lead = p; }
+        }
+        const px = lead % f.S; const py = (lead / f.S) | 0;
+        ctx.beginPath(); ctx.arc(px, py, 9, 0, Math.PI * 2); ctx.fillStyle = "#F59E0B"; ctx.shadowColor = "#F59E0B"; ctx.shadowBlur = 14; ctx.fill(); ctx.shadowBlur = 0;
+        if (reach < total) raf = requestAnimationFrame(frame);
+        else setTimeout(() => { if (!stopped) { ctx.clearRect(0, 0, f.S, f.S); onDone?.(); } }, 900);
+      };
+      raf = requestAnimationFrame(frame);
+    })();
+    return () => { stopped = true; cancelAnimationFrame(raf); if (ref.current) ref.current.getContext("2d").clearRect(0, 0, TRACE_SIZE, TRACE_SIZE); };
+  }, [run, g, script]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <canvas ref={ref} data-ghost={run ? "on" : "off"} width={TRACE_SIZE} height={TRACE_SIZE} className="pointer-events-none absolute inset-0 h-full w-full" />;
+}
+
+const WRITE_MODES = [
+  { id: "trace", label: "Trace", icon: PenTool },
+  { id: "memory", label: "From memory", icon: EyeOff },
+  { id: "syllable", label: "Syllables", icon: Layers },
+  { id: "keys", label: "Keyboard", icon: Keyboard },
+];
+// Four-line guide for syllables (N9): tone line, upper-vowel line, letter top, baseline, lower-vowel line.
+const SYL_PX = 150;
+const SYL_BASE = 212;
+const SYL_LINES = { tone: 48, upper: 92, top: 130, base: SYL_BASE, lower: 250 };
+const SYL_ZONES = [["above", 0, 122], ["letters", 122, 220], ["below", 220, TRACE_SIZE]];
+
+/** Single-syllable course words to write whole on the four-line guide, marks included. */
+function syllableTargets(mode) {
+  const script = mode === "lo" ? "lo" : "th";
+  const seen = new Set();
+  return courseItems(mode).filter((it) => {
+    const g = it[script];
+    if (!g || it.tier === "glyph" || it.tone.length !== 1 || /\s/.test(g) || [...g].length > 5 || seen.has(g)) return false;
+    seen.add(g);
+    return true;
+  }).map((it) => ({ id: it.id, g: it[script], script, level: it.level, name: script === "lo" ? it.loRoman : R(it.thRoman), meaning: it.meaning, px: SYL_PX, base: SYL_BASE, tts: script === "lo" ? [it.ttsLo || it.ttsTh, it.lo] : [it.ttsTh] }));
+}
+
+function Tracer({ mode = "dual", srs = {}, setSrs, logActivity, kb, setKb }) {
   useWakeLock(true);
-  const targets = useMemo(() => traceTargets(mode), [mode]);
+  const [practice, setPractice] = useState("trace");
+  const letters = useMemo(() => traceTargets(mode), [mode]);
+  const syllables = useMemo(() => syllableTargets(mode), [mode]);
+  const targets = practice === "syllable" ? syllables : letters;
+  const memory = practice === "memory" || practice === "syllable";
+  const [peek, setPeek] = useState(false);
+  const [ghost, setGhost] = useState(false);
   // Open on the first letter due to write, so the Today Path lands on real work.
   const [sel, setSel] = useState(() => Math.max(0, targets.findIndex((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= Date.now())));
   const [result, setResult] = useState(null);
@@ -4616,15 +5061,18 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
   const drawing = useRef(false);
   const activePointer = useRef(null);
   const penSeen = useRef(false);
-  const glyph = targets[Math.min(sel, targets.length - 1)];
+  const glyph = targets[Math.min(sel, targets.length - 1)] || letters[0];
+  const px = glyph.px || TRACE_FONT_PX;
+  const base = glyph.base || TRACE_BASELINE;
   const font = TRACE_FONTS[glyph.script];
   const key = `${glyph.script}:${glyph.g}`;
-  const start = glyph.note?.start || auto[key] || null;
+  const start = glyph.px ? null : glyph.note?.start || auto[key] || null;
+  const showTemplate = !memory || peek || !!result;
   const now = Date.now();
   const due = targets.filter((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= now);
 
   useEffect(() => {
-    if (glyph.note || key in auto) return undefined;
+    if (glyph.px || glyph.note || key in auto) return undefined;
     let live = true;
     (async () => {
       try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[glyph.script]}"`, glyph.g); } catch { /* fallback font */ }
@@ -4656,9 +5104,21 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
     if (ctx) ctx.clearRect(0, 0, TRACE_SIZE, TRACE_SIZE);
     strokes.current = [];
     setResult(null);
+    setPeek(false);
+    setGhost(false);
   }, []);
 
-  useEffect(() => { clear(); }, [sel, mode, clear]);
+  useEffect(() => { clear(); }, [sel, mode, practice, clear]);
+  // From memory: hear the letter's name instead of seeing it.
+  const sayTarget = useCallback(() => {
+    const audio = getAudio();
+    const [tts, raw] = glyph.tts || [];
+    if (tts) audio.speakHumanVoice(tts, raw);
+  }, [glyph]);
+  useEffect(() => { if (memory && glyph) { const id = setTimeout(sayTarget, 250); return () => clearTimeout(id); } return undefined; }, [glyph, memory]); // eslint-disable-line react-hooks/exhaustive-deps
+  const doPeek = () => { setPeek(true); setTimeout(() => setPeek(false), 1500); peekedRef.current = true; };
+  const peekedRef = useRef(false);
+  useEffect(() => { peekedRef.current = false; }, [sel, practice]);
 
   const pos = (e) => {
     const r = canvasRef.current.getBoundingClientRect();
@@ -4727,8 +5187,8 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
     if (!strokes.current.length) return;
     try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[glyph.script]}"`, glyph.g); } catch { /* fallback font */ }
     const S = TRACE_SIZE;
-    const gctx = renderGlyphMask(glyph.g, glyph.script);
-    const tctx = renderGlyphMask(glyph.g, glyph.script, 26);
+    const gctx = renderGlyphMask(glyph.g, glyph.script, 0, px, base);
+    const tctx = renderGlyphMask(glyph.g, glyph.script, glyph.px ? 22 : 26, px, base);
     const uc = document.createElement("canvas");
     uc.width = S;
     uc.height = S;
@@ -4747,9 +5207,15 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
     const T = tctx.getImageData(0, 0, S, S).data;
     const U = uctx.getImageData(0, 0, S, S).data;
     let gTot = 0; let gHit = 0; let uTot = 0; let uIn = 0;
+    const zones = SYL_ZONES.map(([name]) => ({ name, tot: 0, hit: 0 }));
     for (let i = 3; i < G.length; i += 4) {
       const g = G[i] > 100; const u = U[i] > 100;
-      if (g) { gTot += 1; if (u) gHit += 1; }
+      if (g) {
+        gTot += 1; if (u) gHit += 1;
+        const y = ((i - 3) / 4 / S) | 0;
+        const z = zones[SYL_ZONES.findIndex(([, y0, y1]) => y >= y0 && y < y1)];
+        z.tot += 1; if (u) z.hit += 1;
+      }
       if (u) { uTot += 1; if (T[i] > 100) uIn += 1; }
     }
     const coverage = gTot ? gHit / gTot : 0;
@@ -4757,10 +5223,11 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
     const first = strokes.current[0][0];
     const startOk = start ? Math.hypot(first[0] - start[0], first[1] - start[1]) < 34 : null;
     // Starting away from the head loop costs points: the habit is the point of the drill.
+    // Writing from memory is the harder rung: a peek makes it practice only.
     const score = Math.round(100 * (0.55 * coverage + 0.45 * accuracy) - (startOk === false ? 10 : 0));
-    const write = recordWrite(score);
+    const write = memory && peekedRef.current ? null : recordWrite(score);
     logActivity?.({ traces: 1 });
-    setResult({ coverage, accuracy, score, startOk, write });
+    setResult({ coverage, accuracy, score, startOk, write, zones: glyph.px ? zones.filter((z) => z.tot > 40).map((z) => ({ name: z.name, pct: z.hit / z.tot })) : null, peeked: memory && peekedRef.current });
     haptic(score >= 70 ? "ok" : "bad");
     const audio = getAudio();
     audio.playRanatToneChime(score >= 70 ? ["high"] : ["low"]);
@@ -4769,6 +5236,15 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
   const nextDue = () => {
     const t = due.find((d) => d.id !== glyph.id) || due[0];
     if (t) setSel(targets.indexOf(t));
+  };
+  // From memory and syllables: the next prompt, due writes first, then anything you have started.
+  const nextPrompt = () => {
+    const pool = targets.filter((x) => x.id !== glyph.id);
+    const dueNow = pool.filter((x) => srs[x.id]?.write && writeDueAt(srs[x.id].write) <= Date.now());
+    const started = pool.filter((x) => srs[x.id]);
+    const from = dueNow.length ? dueNow : started.length ? started : pool;
+    const pick = from[Math.floor(Math.random() * from.length)];
+    if (pick) setSel(targets.indexOf(pick));
   };
 
   const dotFor = (t) => {
@@ -4780,51 +5256,103 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
 
   const levels = [...new Set(targets.map((t) => t.level))];
 
+  const modeBar = (
+    <div className="flex gap-1.5 overflow-x-auto pb-1" data-write-modes>
+      {WRITE_MODES.map((m) => (
+        <button key={m.id} data-write-mode={m.id} onClick={() => { setPractice(m.id); setSel(0); }} className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold ${practice === m.id ? "bg-cyan-400/20 text-cyan-200" : "text-slate-400 hover:bg-white/5"}`}>
+          <m.icon size={15} />{m.label}
+        </button>
+      ))}
+    </div>
+  );
+  if (practice === "keys") {
+    return (
+      <div className="space-y-4">
+        {modeBar}
+        <KeyboardDojo mode={mode} srs={srs} setSrs={setSrs} kb={kb} setKb={setKb} logActivity={logActivity} />
+      </div>
+    );
+  }
+  const titles = {
+    trace: ["Head-Loop Tracing Dojo", "Start every letter at its golden head (1), then follow the body. Tap Show me to watch the pen first."],
+    memory: ["Memory Writer", "Hear a letter's name and write it with no template. Then the letter appears over your strokes."],
+    syllable: ["Syllables on four lines", "Write the whole syllable from memory. Vowels and tone marks must sit in their own zone above or below."],
+  }[practice];
+
   return (
     <div className="space-y-4">
-      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Every letter you have started gets its own write schedule." color={COLORS.cyan} />
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#F59E0B" }} /> due to write</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#34D399" }} /> written, not due</span>
-        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border border-white/20" /> not started in the Shrine</span>
-        {due.length > 0 && (
-          <button data-trace-next onClick={nextDue} className="ml-auto rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 font-semibold text-amber-200">
-            Next due ({due.length})
-          </button>
-        )}
-      </div>
-      <div className="max-h-56 space-y-2 overflow-y-auto pr-1 sm:max-h-none">
-        {levels.map((lv) => (
-          <div key={lv}>
-            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Level {lv}</div>
-            <div className="grid grid-cols-7 gap-1.5 sm:flex sm:flex-wrap">
-            {targets.filter((t) => t.level === lv).map((t) => {
-              const i = targets.indexOf(t);
-              const dot = dotFor(t);
-              return (
-                <button key={t.id} data-trace-glyph={t.id} onClick={() => setSel(i)} aria-label={t.name} className={`relative h-11 rounded-xl border text-2xl transition sm:w-11 ${t === glyph ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONTS[t.script] }}>
-                  {t.g}
-                  {dot && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ background: dot }} />}
-                </button>
-              );
-            })}
-            </div>
+      {modeBar}
+      <SectionTitle icon={practice === "trace" ? PenTool : practice === "memory" ? EyeOff : Layers} title={titles[0]} sub={titles[1]} color={COLORS.cyan} />
+      {!memory && (
+        <>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#F59E0B" }} /> due to write</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#34D399" }} /> written, not due</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border border-white/20" /> not started in the Shrine</span>
+            {due.length > 0 && (
+              <button data-trace-next onClick={nextDue} className="ml-auto rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 font-semibold text-amber-200">
+                Next due ({due.length})
+              </button>
+            )}
           </div>
-        ))}
-      </div>
+          <div className="max-h-56 space-y-2 overflow-y-auto pr-1 sm:max-h-none">
+            {levels.map((lv) => (
+              <div key={lv}>
+                <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Level {lv}</div>
+                <div className="grid grid-cols-7 gap-1.5 sm:flex sm:flex-wrap">
+                {targets.filter((t) => t.level === lv).map((t) => {
+                  const i = targets.indexOf(t);
+                  const dot = dotFor(t);
+                  return (
+                    <button key={t.id} data-trace-glyph={t.id} onClick={() => setSel(i)} aria-label={t.name} className={`relative h-11 rounded-xl border text-2xl transition sm:w-11 ${t === glyph ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONTS[t.script] }}>
+                      {t.g}
+                      {dot && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ background: dot }} />}
+                    </button>
+                  );
+                })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {memory && (
+        <Card className="flex items-center gap-3 p-4" data-memory-prompt>
+          <button onClick={sayTarget} aria-label="Hear it again" className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-cyan-500 text-black active:scale-95"><Volume2 size={22} /></button>
+          <div className="min-w-0 flex-1">
+            <div className="text-lg font-bold text-white">{glyph.name}</div>
+            <div className="text-xs text-slate-400">{glyph.meaning}{practice === "memory" && glyph.cls ? ` · ${CLASSES[glyph.cls]?.name || glyph.cls} class` : ""}</div>
+            <div className="mt-0.5 text-[11px] text-slate-500">{srs[glyph.id]?.write ? `Write track: next due ${fmtDue(writeDueAt(srs[glyph.id].write))}.` : srs[glyph.id] ? "A clean write (70+) starts its write schedule." : "Practice only: not started in the Shrine yet."}</div>
+          </div>
+          <button data-memory-next onClick={nextPrompt} className="shrink-0 rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-slate-200">Next <ChevronRight size={14} className="inline" /></button>
+        </Card>
+      )}
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <Card className="mx-auto w-full max-w-[360px] p-3" glow={COLORS.cyan}>
           <div className="relative aspect-square w-full touch-none select-none">
             <svg viewBox={`0 0 ${TRACE_SIZE} ${TRACE_SIZE}`} className="absolute inset-0 h-full w-full">
-              {[...Array(9)].map((_, i) => (
-                <g key={i} stroke="#ffffff0d">
+              {!glyph.px && [...Array(9)].map((_, i) => (
+                <g key={i} stroke="currentColor" strokeOpacity="0.06">
                   <line x1={i * 40} y1={0} x2={i * 40} y2={TRACE_SIZE} />
                   <line x1={0} y1={i * 40} x2={TRACE_SIZE} y2={i * 40} />
                 </g>
               ))}
-              <line x1={0} x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="#22D3EE33" strokeDasharray="6 6" />
-              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#22D3EE26" stroke="#22D3EE88" strokeWidth="1.5" style={{ fontFamily: font }}>{glyph.g}</text>
-              {start && (
+              {glyph.px ? (
+                <g data-four-lines>
+                  {[["tone", "4 4"], ["upper", "6 6"], ["top", ""], ["base", ""], ["lower", "6 6"]].map(([k, dash]) => (
+                    <line key={k} x1={0} x2={TRACE_SIZE} y1={SYL_LINES[k]} y2={SYL_LINES[k]} stroke="#22D3EE" strokeOpacity={k === "base" || k === "top" ? 0.5 : 0.25} strokeDasharray={dash || undefined} />
+                  ))}
+                  <text x="6" y={SYL_LINES.tone + 14} fontSize="10" fill="#22D3EE" fillOpacity=".6">tone marks</text>
+                  <text x="6" y={SYL_LINES.upper + 14} fontSize="10" fill="#22D3EE" fillOpacity=".6">upper vowels</text>
+                  <text x="6" y={SYL_LINES.lower + 14} fontSize="10" fill="#22D3EE" fillOpacity=".6">lower vowels</text>
+                </g>
+              ) : (
+                <line x1={0} x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="#22D3EE33" strokeDasharray="6 6" />
+              )}
+              {showTemplate && (
+                <text data-trace-template x={TRACE_SIZE / 2} y={base} textAnchor="middle" fontSize={px} fill={result && memory ? "#22D3EE18" : "#22D3EE26"} stroke={result && memory ? "#22D3EEcc" : "#22D3EE88"} strokeWidth="1.5" style={{ fontFamily: font }}>{glyph.g}</text>
+              )}
+              {start && showTemplate && !ghost && (
                 <g data-trace-start>
                   <circle cx={start[0]} cy={start[1]} r="16" fill="#F59E0B33" stroke="#F59E0B" strokeWidth="2">
                     <animate attributeName="r" values="13;18;13" dur="1.6s" repeatCount="indefinite" />
@@ -4833,47 +5361,60 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
                 </g>
               )}
             </svg>
+            {practice === "trace" && <GhostHand g={glyph.g} script={glyph.script} start={start} run={ghost} onDone={() => setGhost(false)} />}
             <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} />
           </div>
           <div className="mt-3 flex gap-2">
             <button onClick={clear} className="flex-1 rounded-xl border border-white/10 py-2 text-sm text-slate-300 hover:bg-white/5"><Eraser size={15} className="mr-1 inline" />Clear</button>
+            {practice === "trace" && <button data-ghost-hand onClick={() => { clear(); setGhost(true); }} disabled={ghost} className="flex-1 rounded-xl border border-amber-400/40 bg-amber-400/10 py-2 text-sm font-semibold text-amber-200 disabled:opacity-50"><Hand size={15} className="mr-1 inline" />Show me</button>}
+            {memory && !result && <button data-peek onClick={doPeek} className="flex-1 rounded-xl border border-white/10 py-2 text-sm text-slate-300"><Eye size={15} className="mr-1 inline" />Peek</button>}
             <button data-trace-check onClick={check} className="flex-1 rounded-xl bg-cyan-500 py-2 text-sm font-bold text-black"><Check size={15} className="mr-1 inline" />Check</button>
           </div>
         </Card>
         <div className="space-y-3">
-          <Card className="p-4">
-            <div className="flex items-baseline gap-3">
-              <span className="text-5xl text-white" style={{ fontFamily: font }}>{glyph.g}</span>
-              <div>
-                <div className="font-semibold text-white">{glyph.name}</div>
-                <div className="text-xs text-slate-400">{glyph.meaning}</div>
-                {glyph.cls && <div className="mt-1"><ClassBadge cls={glyph.cls} small /></div>}
+          {!memory && (
+            <Card className="p-4">
+              <div className="flex items-baseline gap-3">
+                <span className="text-5xl text-white" style={{ fontFamily: font }}>{glyph.g}</span>
+                <div>
+                  <div className="font-semibold text-white">{glyph.name}</div>
+                  <div className="text-xs text-slate-400">{glyph.meaning}</div>
+                  {glyph.cls && <div className="mt-1"><ClassBadge cls={glyph.cls} small /></div>}
+                </div>
               </div>
-            </div>
-            <p className="mt-3 text-sm text-slate-300">
-              {glyph.note?.path || (start ? "Start inside the head loop at (1), close the loop, then run the body in one stroke." : "No head loop on this one. Start at the top-left of the first stroke and keep the pen down.")}
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              {srs[glyph.id] ? (srs[glyph.id].write ? `Write track: next due ${fmtDue(writeDueAt(srs[glyph.id].write))}.` : "Score 70 or more once to start this letter's write schedule.") : "Practice only. Start this letter in the Shrine to schedule writing reviews."}
-            </p>
-          </Card>
+              <p className="mt-3 text-sm text-slate-300">
+                {glyph.note?.path || (start ? "Start inside the head loop at (1), close the loop, then run the body in one stroke." : "No head loop on this one. Start at the top-left of the first stroke and keep the pen down.")}
+              </p>
+              <p className="mt-2 text-xs text-slate-400">
+                {srs[glyph.id] ? (srs[glyph.id].write ? `Write track: next due ${fmtDue(writeDueAt(srs[glyph.id].write))}.` : "Score 70 or more once to start this letter's write schedule.") : "Practice only. Start this letter in the Shrine to schedule writing reviews."}
+              </p>
+            </Card>
+          )}
           {result && (
             <Card className="p-4">
               <div className="flex items-center gap-3">
                 <div data-trace-score className="text-4xl font-black" style={{ color: result.score >= 70 ? "#34D399" : result.score >= 45 ? COLORS.gold : "#F43F5E" }}>{result.score}</div>
                 <div className="text-sm text-slate-300">
-                  {result.score >= 70 ? "Clean trace." : result.score >= 45 ? "Close. Follow the outline more tightly." : "Try again, slower, on the outline."}
+                  {memory && <div className="text-2xl text-white" style={{ fontFamily: font }}>{glyph.g}</div>}
+                  {result.score >= 70 ? (memory ? "From memory, and clean." : "Clean trace.") : result.score >= 45 ? (memory ? "Close. Compare your strokes with the outline." : "Close. Follow the outline more tightly.") : memory ? "Not yet. Trace it a few times, then try again." : "Try again, slower, on the outline."}
+                  {result.peeked && <div className="text-xs text-slate-400">You peeked, so this one is practice only.</div>}
                   {result.write && <div className="text-xs text-cyan-300">Write review saved. Next due {fmtDue(writeDueAt(result.write))}.</div>}
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.coverage * 100)}%</div>coverage</div>
                 <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.accuracy * 100)}%</div>on the line</div>
-                <div className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${result.startOk == null ? "text-slate-300" : result.startOk ? "text-emerald-300" : "text-rose-300"}`}>{result.startOk == null ? "n/a" : result.startOk ? "Yes" : "No"}</div>started at 1</div>
+                {result.zones ? null : <div className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${result.startOk == null ? "text-slate-300" : result.startOk ? "text-emerald-300" : "text-rose-300"}`}>{result.startOk == null ? "n/a" : result.startOk ? "Yes" : "No"}</div>started at 1</div>}
               </div>
+              {result.zones && (
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs" data-zones>
+                  {result.zones.map((z) => <div key={z.name} className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${z.pct >= 0.6 ? "text-emerald-300" : "text-rose-300"}`}>{Math.round(z.pct * 100)}%</div>{z.name}</div>)}
+                </div>
+              )}
+              {memory && <button onClick={nextPrompt} className="mt-3 w-full rounded-xl bg-cyan-500 py-2 text-sm font-bold text-black">Next {practice === "syllable" ? "syllable" : "letter"}</button>}
             </Card>
           )}
-          {glyph.script === "th" ? (
+          {practice === "trace" && glyph.script === "th" ? (
             <Card className="p-4 text-sm text-slate-300">
               <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Feel the difference</div>
               <ul className="list-disc space-y-1 pl-5">
@@ -4883,10 +5424,19 @@ function Tracer({ mode = "dual", srs = {}, setSrs, logActivity }) {
                 <li><b>ก</b> has no loop at all. Start at the beak.</li>
               </ul>
             </Card>
-          ) : (
+          ) : practice === "trace" ? (
             <Card className="p-4 text-sm text-slate-300">
               <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Lao hand</div>
               <p>Lao letters keep the loop-first habit but are rounder and lower. Draw the loop small and tight, then let the body swing.</p>
+            </Card>
+          ) : (
+            <Card className="p-4 text-sm text-slate-300">
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">{practice === "memory" ? "How it counts" : "Where marks go"}</div>
+              {practice === "memory" ? (
+                <p>Writing from memory moves the same write schedule as tracing. A peek turns that try into practice, so the schedule only grows for letters you can really produce.</p>
+              ) : (
+                <p>Upper vowels (◌ิ ◌ี ◌ึ ◌ื ◌ั) sit between the letter top and the upper line, tone marks above them, and ◌ุ ◌ู hang below the baseline. The score shows each zone separately.</p>
+              )}
             </Card>
           )}
         </div>
@@ -7843,6 +8393,174 @@ function RideTheLine({ mode, drills = {}, setDrills, logActivity }) {
   );
 }
 
+/* ============================================================================
+ * Keyboard and dictation (N10): hear a word, type it on the layout your phone
+ * uses. Thai is Kedmanee, the layout in Gboard and Samsung Keyboard. The next
+ * key glows at first and the glow fades as you learn where keys are.
+ * ========================================================================== */
+const KEYMAPS = {
+  th: {
+    name: "Kedmanee",
+    rows: ["ๅ/-ภถุึคตจขช", "ๆไำพะัีรนยบลฃ", "ฟหกดเ้่าสวง", "ผปแอิืทมใฝ"],
+    shift: ["+๑๒๓๔ู฿๕๖๗๘๙", "๐\"ฎฑธํ๊ณฯญฐ,ฅ", "ฤฆฏโฌ็๋ษศซ.", "()ฉฮฺ์?ฒฬฦ"],
+  },
+  lo: {
+    name: "Lao",
+    rows: ["ຢຟໂຖຸູຄຕຈຂຊໍ", "ົໄຳພະິີຮນຍບລ", "ັຫກດເ້່າສວງ", "ຜປແອຶືທມໃຝ"],
+    // Rarer letters and marks. Phones place these differently, so they sit on one shifted page.
+    shift: ["໑໒໓໔໕໖໗໘໙໐", "໊໋ຣໜໝຽໆຯ໌ຼ", "", ""],
+  },
+};
+const KEY_GLOW_FADE = 600; // correct keystrokes until the glow only shows when you hesitate
+/** Where a character sits: its row, column, and whether it needs Shift. */
+function keyFor(ch, script) {
+  const map = KEYMAPS[script];
+  for (const [layer, rows] of [[false, map.rows], [true, map.shift]]) {
+    for (let r = 0; r < rows.length; r += 1) {
+      const c = [...rows[r]].indexOf(ch);
+      if (c >= 0) return { row: r, col: c, shift: layer };
+    }
+  }
+  return null;
+}
+const typeable = (word, script) => [...word].every((ch) => keyFor(ch, script));
+
+/** Words to type: started course and garden words first, else the early levels. */
+function dictationPool(mode, srs = {}) {
+  const script = mode === "lo" ? "lo" : "th";
+  const seen = new Set();
+  const all = courseItems(mode).filter((it) => {
+    const w = it[script];
+    if (!w || it.tier === "glyph" || /\s/.test(w) || [...w].length > 9 || seen.has(w) || !typeable(w, script)) return false;
+    seen.add(w);
+    return true;
+  });
+  const started = all.filter((it) => srs[it.id]);
+  return { script, words: started.length >= 4 ? started : all.filter((it) => it.level <= 3) };
+}
+
+function KeyboardDojo({ mode, srs = {}, setSrs, kb = {}, setKb, logActivity }) {
+  const pool = useMemo(() => dictationPool(mode, srs), [mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { script } = pool;
+  const map = KEYMAPS[script];
+  const pick = useCallback(() => {
+    const due = pool.words.filter((it) => srs[it.id]?.fsrs?.spell && srs[it.id].next <= Date.now());
+    const from = due.length ? due : pool.words;
+    return from[Math.floor(Math.random() * from.length)];
+  }, [pool]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [item, setItem] = useState(() => pick());
+  const [typed, setTyped] = useState("");
+  const [shift, setShift] = useState(false);
+  const [misses, setMisses] = useState(0);
+  const [bad, setBad] = useState(null);
+  const [done, setDone] = useState(null);
+  const [idle, setIdle] = useState(false);
+  const target = item ? [...item[script]] : [];
+  const pos = [...typed].length;
+  const nextCh = target[pos];
+  const nextKey = nextCh ? keyFor(nextCh, script) : null;
+  const learned = Math.min(1, (kb.typed || 0) / KEY_GLOW_FADE);
+  const glow = idle || misses > 0 ? 1 : 1 - learned;
+  const say = useCallback(() => {
+    if (!item) return;
+    const audio = getAudio();
+    if (script === "lo") audio.speakHumanVoice(item.ttsLo || item.ttsTh, item.lo); else audio.speakHumanVoice(item.ttsTh);
+  }, [item, script]);
+  useEffect(() => { const id = setTimeout(say, 250); return () => clearTimeout(id); }, [item]); // eslint-disable-line react-hooks/exhaustive-deps
+  // After 2.5 seconds without a key, the next key lights up again.
+  useEffect(() => { setIdle(false); const id = setTimeout(() => setIdle(true), 2500); return () => clearTimeout(id); }, [typed, item]);
+  useEffect(() => { if (nextKey) setShift(nextKey.shift && glow > 0.3 ? true : shift && nextKey.shift); }, [pos, item]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const finish = (miss) => {
+    const g = miss === 0 ? 3 : miss <= 2 ? 2 : 1;
+    const cur = srs[item.id];
+    if (cur && setSrs) {
+      setSrs((prev) => ({ ...prev, [item.id]: scheduleItem(prev[item.id], { spell: g }) }));
+      logReview(item.id, "spell", g, { from: "keys" });
+    }
+    logActivity?.({ drills: 1 });
+    setKb?.((k) => ({ ...k, words: (k.words || 0) + 1, clean: (k.clean || 0) + (miss === 0 ? 1 : 0) }));
+    setDone({ g, scheduled: !!cur });
+    haptic(g >= 2 ? "ok" : "bad");
+  };
+  const press = (ch) => {
+    if (done || !nextCh) return;
+    if (ch === nextCh) {
+      const t = typed + ch;
+      setTyped(t);
+      setBad(null);
+      setKb?.((k) => ({ ...k, typed: (k.typed || 0) + 1 }));
+      if (!(keyFor(ch, script)?.shift)) setShift(false);
+      if ([...t].length === target.length) finish(misses);
+    } else {
+      setMisses((m) => m + 1);
+      setBad(ch);
+      haptic("bad");
+    }
+  };
+  const next = () => { setItem(pick()); setTyped(""); setMisses(0); setBad(null); setDone(null); setShift(false); };
+  // A hardware keyboard set to Thai or Lao works too.
+  useEffect(() => {
+    const on = (e) => { if (e.key && [...e.key].length === 1 && keyFor(e.key, script)) { e.preventDefault(); press(e.key); } };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  });
+  if (!item) return <Card className="p-4 text-sm text-slate-300">No words to type yet. Start a few lessons in the Shrine.</Card>;
+  const rows = shift ? map.shift : map.rows;
+  const label = (ch) => (COMBINING.test(ch) ? `◌${ch}` : ch);
+  const fontFamily = FONT_STACKS.street[script];
+  return (
+    <div className="space-y-3" data-keyboard-dojo>
+      <SectionTitle icon={Keyboard} title="Keyboard and dictation" sub={`Hear a word and type it on the ${map.name} layout your phone uses. The next key glows less as you learn the layout.`} color={COLORS.cyan} />
+      <Card className="p-4">
+        <div className="flex items-center gap-3">
+          <button onClick={say} aria-label="Hear it again" className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-cyan-500 text-black active:scale-95"><Volume2 size={22} /></button>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-slate-300">{item.meaning}</div>
+            <div className="text-xs text-slate-500">{script === "lo" ? item.loRoman : R(item.thRoman)}</div>
+          </div>
+          <div className="text-right text-[11px] text-slate-500">{kb.words || 0} typed<br />{Math.round(learned * 100)}% of glow faded</div>
+        </div>
+        <div className="mt-3 flex min-h-[3.5rem] items-center justify-center rounded-2xl bg-black/30 px-3 text-4xl leading-[1.6]" lang={script} style={{ fontFamily }} data-typed>
+          <span className="text-white">{typed}</span>
+          {done ? null : <span className="ml-0.5 inline-block h-9 w-0.5 animate-pulse bg-cyan-400" />}
+        </div>
+        {done && (
+          <div className="mt-3 flex items-center gap-3">
+            <div className={`text-sm font-semibold ${done.g === 3 ? "text-emerald-300" : done.g === 2 ? "text-amber-300" : "text-rose-300"}`} data-kb-result>
+              {done.g === 3 ? "Spelled clean." : `${misses} wrong key${misses === 1 ? "" : "s"}.`} {done.scheduled ? "Saved to the spelling track." : "Practice only: start this word in the Shrine to schedule it."}
+            </div>
+            <button data-kb-next onClick={next} className="ml-auto shrink-0 rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-black">Next</button>
+          </div>
+        )}
+      </Card>
+      <div className="select-none space-y-1 rounded-2xl border border-white/10 bg-white/[0.03] p-1.5" lang={script} style={{ fontFamily }}>
+        {rows.map((row, r) => (
+          <div key={r} className="flex gap-1" style={{ paddingLeft: `${r * 3}%` }}>
+            {[...row].map((ch, c) => {
+              const isNext = nextKey && nextKey.row === r && nextKey.col === c && nextKey.shift === shift;
+              const wrong = bad === ch;
+              return (
+                <button key={c} data-key={ch} onClick={() => press(ch)} className={`h-11 min-w-0 flex-1 rounded-lg text-lg leading-none transition active:scale-95 ${wrong ? "bg-rose-500/40 text-white" : "bg-white/[0.07] text-slate-100"}`}
+                  style={isNext && glow > 0 ? { boxShadow: `0 0 0 2px rgba(34,211,238,${glow}), 0 0 ${14 * glow}px rgba(34,211,238,${glow})`, background: `rgba(34,211,238,${0.25 * glow})` } : undefined}>
+                  {label(ch)}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+        <div className="flex gap-1">
+          <button data-key-shift onClick={() => setShift(!shift)} className={`h-11 flex-[2] rounded-lg text-sm font-semibold ${shift ? "bg-cyan-400/30 text-white" : "bg-white/[0.07] text-slate-300"}`}
+            style={nextKey && nextKey.shift !== shift && glow > 0 ? { boxShadow: `0 0 0 2px rgba(34,211,238,${glow})` } : undefined}>⇧ Shift</button>
+          <button onClick={() => { setTyped([...typed].slice(0, -1).join("")); }} className="h-11 flex-1 rounded-lg bg-white/[0.07] text-sm text-slate-300" aria-label="Delete">⌫</button>
+          <button onClick={next} className="h-11 flex-[2] rounded-lg bg-white/[0.07] text-sm text-slate-300">Skip</button>
+        </div>
+      </div>
+      <p className="text-xs text-slate-500">{script === "th" ? "This is the standard Thai layout. Turn on Thai in Samsung Keyboard or Gboard and the keys sit in the same places." : "The main Lao rows follow the common Lao layout. Phones put the rarer marks in different places, so they share one shifted page here. A Lao speaker should check this layout."}</p>
+    </div>
+  );
+}
+
 function SubTabs({ tabs, active, onChange }) {
   return (
     <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
@@ -8247,6 +8965,12 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
           {[["dual", "Thai + Lao"], ["th", "Thai"], ["lo", "Lao"]].map(([k, l]) => <Chip key={k} active={s.mode === k} onClick={() => s.setMode(k)}>{l}</Chip>)}
         </div>
       </SettingRow>
+      <SettingRow label="Theme" hint="System follows your phone. True black saves power on the S25's OLED screen at night.">
+        <div className="flex flex-wrap gap-2">
+          {[["system", "System", SunMoon], ["light", "Daylight", Sun], ["dark", "Night", Moon]].map(([k, l, Icon]) => <Chip key={k} active={s.prefs.theme === k} onClick={() => s.setPref("theme", k)}><Icon size={13} className="mr-1 inline" />{l}</Chip>)}
+          <Chip active={s.prefs.trueBlack} onClick={() => s.setPref("trueBlack", !s.prefs.trueBlack)}>{s.prefs.trueBlack ? "True black at night" : "Soft night"}</Chip>
+        </div>
+      </SettingRow>
       <SettingRow label="Your polite particle" hint="Your lines in dialogues use it. Until you pick, they show both.">
         <div className="flex flex-wrap gap-2">
           <Chip active={s.prefs.particle === "male"} onClick={() => s.setPref("particle", "male")}><span style={{ fontFamily: FONT_STACKS.loop.th }}>ครับ</span> khráp</Chip>
@@ -8366,7 +9090,7 @@ const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slice
 const TABS = [
   { id: "shrine", label: "Shrine", icon: Landmark },
   { id: "ear", label: "Ear", icon: Ear },
-  { id: "tracer", label: "Tracer", icon: PenTool },
+  { id: "tracer", label: "Write", icon: PenTool },
   { id: "lab", label: "Lab", icon: FlaskConical },
   { id: "read", label: "Read", icon: BookOpen },
 ];
@@ -8410,6 +9134,8 @@ export default function SuvarnaKani() {
   });
   const [drills, setDrills] = useState(() => initial.drills || {});
   const [library, setLibrary] = useState(() => initial.library || {});
+  const [marks, setMarks] = useState(() => initial.marks || {});
+  const [kb, setKb] = useState(() => initial.kb || {});
   // Home-screen shortcuts (?go=reviews|ear|decoder) and text shared from other apps (?text=).
   const launch = useMemo(() => {
     try {
@@ -8431,6 +9157,15 @@ export default function SuvarnaKani() {
   useEffect(() => {
     document.documentElement.style.fontSize = prefs.textSize === 100 ? "" : `${prefs.textSize}%`;
   }, [prefs.textSize]);
+  const theme = useResolvedTheme(prefs.theme);
+  applyTonePalette(theme);
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute("data-sk-theme", theme);
+    if (theme === "dark" && prefs.trueBlack) root.setAttribute("data-sk-black", ""); else root.removeAttribute("data-sk-black");
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", theme === "light" ? "#FAF7F0" : prefs.trueBlack ? "#000000" : "#0B0F19");
+  }, [theme, prefs.trueBlack]);
   // Back from another tab returns to the Shrine instead of closing the app.
   useBackClose(tab !== "shrine", () => setTab("shrine"));
   const logActivity = useCallback((delta) => {
@@ -8455,6 +9190,14 @@ export default function SuvarnaKani() {
     loadVoiceBank();
     return () => { clearInterval(id); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); };
   }, [logActivity]);
+  // Lamps for streak milestones, once each (V5).
+  useEffect(() => {
+    const streak = computeStreak(log);
+    const hit = STREAK_MILESTONES.filter((n) => streak >= n).pop();
+    if (!hit || hit <= (marks.streak || 0)) return;
+    setMarks((m) => ({ ...m, streak: hit }));
+    if (onboarded) celebrate({ kind: "lamps", label: `${hit}-day streak`, title: hit >= 30 ? "A month of lamps lit" : "The lamps are lit", sub: "Every day you study lights one more.", lamps: Math.min(7, Math.ceil(hit / 5) + 2) });
+  }, [log]); // eslint-disable-line react-hooks/exhaustive-deps
   const finishOnboarding = (a) => {
     if (a.mode) setMode(a.mode);
     if (a.level === "reads") setSandbox(true);
@@ -8493,11 +9236,11 @@ export default function SuvarnaKani() {
   }, []);
 
   const stateRef = useRef(null);
-  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library };
+  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb };
   useEffect(() => {
     if (restoringState) return;
     saveState(stateRef.current);
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library]);
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb]);
   // A snapshot of the state as the app opens each day, before today's work changes it.
   useEffect(() => { if (stateRef.current.onboarded) snapshotToday(stateRef.current); }, []);
 
@@ -8521,13 +9264,15 @@ export default function SuvarnaKani() {
     setSentSrs({});
     setDrills({});
     setLibrary({});
+    setMarks({});
+    setKb({});
     setConfirmReset(false);
   };
 
   return (
     <PrefsContext.Provider value={prefs}>
     <style>{THEME_CSS}</style>
-    <div className="min-h-[100dvh] bg-sk-bg pb-[calc(6rem+env(safe-area-inset-bottom))] text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
+    <div className="min-h-[100dvh] bg-sk-bg pb-[calc(6rem+env(safe-area-inset-bottom))] text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "var(--sk-glow)" }}>
       <header className="sticky top-0 z-30 border-b border-white/5 bg-sk-bg/85 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-x-2 px-4 py-3">
           <div className="mr-auto flex items-center gap-2">
@@ -8568,7 +9313,7 @@ export default function SuvarnaKani() {
             {earTab === "bank" && <VoiceBank mode={mode} />}
           </>
         )}
-        {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} />}
+        {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} kb={kb} setKb={setKb} />}
         {tab === "lab" && (
           <>
             <SubTabs tabs={LAB_TABS} active={labTab} onChange={setLabTab} />
@@ -8621,6 +9366,7 @@ export default function SuvarnaKani() {
         </div>
       )}
       <Inspector item={inspect} mode={mode} font={font} srs={srs} onClose={() => setInspect(null)} />
+      <MomentLayer />
       {!onboarded && <Onboarding onDone={finishOnboarding} />}
     </div>
     </PrefsContext.Provider>
@@ -8628,4 +9374,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };

@@ -40,10 +40,10 @@ const fonts = "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400
 // and Samsung Internet's forced dark mode leaves the palette alone.
 const head = (extra = "", fontTag = `<link rel="stylesheet" href="${fonts}" data-suvarnakani-fonts>`) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-<title>SuvarṇaKani</title><meta name="theme-color" content="#0B0F19"><meta name="color-scheme" content="dark">
+<title>SuvarṇaKani</title><meta name="theme-color" content="#0B0F19"><meta name="color-scheme" content="dark light">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 ${extra}${fontTag}
-<style>${css} :root{color-scheme:dark} html{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent} body{background:#0B0F19;color:#F1F5F9;margin:0;overscroll-behavior-y:none;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}</style></head>`;
+<style>${css} html{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent} body{background:rgb(var(--sk-bg,11 15 25));color:rgb(var(--sk-ink,241 245 249));margin:0;overscroll-behavior-y:none;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}</style></head>`;
 const html = `${head()}
 <body><div id="root"></div><script>${js}</script></body></html>`;
 writeFileSync(join(root, "SuvarnaKani.html"), html);
