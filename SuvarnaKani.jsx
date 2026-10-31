@@ -4826,7 +4826,7 @@ export default function SuvarnaKani() {
   const [inspect, setInspect] = useState(null);
 
   useEffect(() => {
-    if (document.querySelector("link[data-suvarnakani-fonts]")) return;
+    if (document.querySelector("[data-suvarnakani-fonts]")) return;
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.href = GOOGLE_FONTS_HREF;
