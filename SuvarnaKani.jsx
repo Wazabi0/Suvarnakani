@@ -1434,18 +1434,84 @@ function ItemHero({ item, mode, font }) {
 
 function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
   const [idx, setIdx] = useState(0);
-  const batch = useRef([]);
+  // The batch is frozen when the modal opens, so finishing items doesn't reshuffle it mid-lesson.
+  const [batch, setBatch] = useState([]);
+  // After the cards, a short quiz: every item must be answered right once before it
+  // enters SRS. Misses go to the back of the line, as in WaniKani.
+  const [quiz, setQuiz] = useState(null); // { line: [ids], input, result: null | "ok" | "miss", misses }
+  const quizInput = useRef(null);
   useEffect(() => {
     if (open) {
-      batch.current = queue;
+      setBatch(queue);
       setIdx(0);
+      setQuiz(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  const items = open ? batch.current : [];
+  useEffect(() => {
+    if (quiz && !quiz.result) quizInput.current?.focus();
+  }, [quiz]);
+  const items = open ? batch : [];
   const item = items[idx];
   if (!open || !item) return null;
   const last = idx === items.length - 1;
+
+  if (quiz) {
+    const qItem = items.find((i) => i.id === quiz.line[0]);
+    const done = items.length - new Set(quiz.line).size;
+    const check = (e) => {
+      e.preventDefault();
+      if (quiz.result) {
+        const [head, ...rest] = quiz.line;
+        const line = quiz.result === "ok" ? rest : [...rest, head];
+        if (!line.length) return onFinish(items.map((i) => i.id));
+        return setQuiz({ ...quiz, line, input: "", result: null });
+      }
+      if (!quiz.input.trim()) return undefined;
+      const ok = isCorrect(qItem, quiz.input);
+      haptic(ok ? "ok" : "miss");
+      const audio = getAudio();
+      if (mode === "lo") audio.speakHumanVoice(qItem.ttsLo || qItem.ttsTh, qItem.lo);
+      else audio.speakHumanVoice(qItem.ttsTh);
+      return setQuiz({ ...quiz, result: ok ? "ok" : "miss", misses: quiz.misses + (ok ? 0 : 1) });
+    };
+    return (
+      <Modal open={open} onClose={onClose} title={`Lesson quiz · ${done} / ${items.length}`} accent={TIER[qItem.tier].color}>
+        <form onSubmit={check}>
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${(done / items.length) * 100}%` }} /></div>
+          <div className="mt-4 rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[qItem.tier].color}, ${TIER[qItem.tier].color}88)` }}>
+            <DualText th={qItem.th} lo={qItem.lo} mode={mode} font={font} className={`${qItem.th.length + qItem.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
+          </div>
+          <label htmlFor="lesson-quiz-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">Type the reading or the meaning</label>
+          <input
+            id="lesson-quiz-input"
+            ref={quizInput}
+            value={quiz.input}
+            onChange={(e) => setQuiz({ ...quiz, input: e.target.value })}
+            readOnly={!!quiz.result}
+            autoCapitalize="none"
+            autoCorrect="off"
+            autoComplete="off"
+            spellCheck={false}
+            enterKeyHint="go"
+            className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${quiz.result === "ok" ? "border-emerald-400 bg-emerald-500/20" : quiz.result === "miss" ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
+          />
+          {quiz.result && (
+            <div className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-sm">
+              <div className={`font-bold ${quiz.result === "ok" ? "text-emerald-300" : "text-rose-300"}`}>{quiz.result === "ok" ? "Got it" : "Not yet: it comes back at the end of this quiz"}</div>
+              <div className="mt-1 text-slate-200"><span className="text-slate-400">Reading:</span> {qItem.thRoman}{mode !== "th" && <> · <span className="text-purple-200">{qItem.loRoman}</span></>} · <span className="text-slate-400">Meaning:</span> {qItem.meaning}</div>
+              {quiz.result === "miss" && <p className="mt-1 text-slate-400">{qItem.mnemonic}</p>}
+            </div>
+          )}
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={() => setQuiz(null)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm text-slate-300">Cards</button>
+            <button type="submit" className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">{quiz.result ? (quiz.line.length === 1 && quiz.result === "ok" ? "Add to SRS" : "Next") : "Check"}</button>
+          </div>
+        </form>
+      </Modal>
+    );
+  }
+
   return (
     <Modal open={open} onClose={onClose} title={`Lesson ${idx + 1} / ${items.length}`} accent={TIER[item.tier].color}>
       <ItemHero item={item} mode={mode} font={font} />
@@ -1465,8 +1531,8 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
           {items.map((_, i) => <span key={i} className={`h-1.5 w-5 rounded-full ${i === idx ? "bg-amber-400" : "bg-white/15"}`} />)}
         </div>
         {last ? (
-          <button onClick={() => onFinish(items.map((i) => i.id))} className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">
-            <Check size={16} /> Add to SRS
+          <button onClick={() => setQuiz({ line: shuffle(items.map((i) => i.id)), input: "", result: null, misses: 0 })} className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">
+            <Check size={16} /> Quiz me
           </button>
         ) : (
           <button onClick={() => setIdx(idx + 1)} className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white">
