@@ -2305,28 +2305,141 @@ function EarDojo({ ear, setEar, logActivity }) {
 const TRACE_SIZE = 320;
 const TRACE_FONT_PX = 220;
 const TRACE_BASELINE = 230;
-const TRACE_FONT = '"Noto Serif Thai", "Sarabun", serif';
+const TRACE_FONTS = { th: FONT_STACKS.loop.th, lo: FONT_STACKS.loop.lo };
+const TRACE_FONT = TRACE_FONTS.th;
+const TRACE_FONT_FACE = { th: "Noto Serif Thai", lo: "Noto Serif Lao" };
 
-const TRACE_GLYPHS = [
-  { g: "ก", name: "gaw gài", cls: "mid", start: [150, 148], path: "Loopless. Begin at the beak on the upper left, arch over the roof, drop the right leg." },
-  { g: "ข", name: "khǎw khài", cls: "high", start: [126, 140], path: "Head loop top-left. Drop the left wall, round the floor, climb the right wall." },
-  { g: "ด", name: "daw dèk", cls: "mid", start: [156, 180], path: "Loop inside the bowl. Run down-left to the foot, climb the left wall, arch over, come down the right." },
-  { g: "ต", name: "taw tào", cls: "mid", start: [159, 172], path: "Same as ด, but dip into a notch in the middle of the roof." },
-  { g: "ค", name: "khaw khwaai", cls: "low", start: [150, 168], path: "Loop hangs inside the straight left wall. Start at the loop and follow the body round to the right foot." },
-  { g: "ผ", name: "phǎw phʉ̂ng", cls: "high", start: [131, 126], path: "Head loop top-left. Down, up to a LOW inner peak, down, then up the right wall." },
-  { g: "พ", name: "phaw phaan", cls: "low", start: [111, 126], path: "Head loop top-left. Down, up to a FULL-HEIGHT inner peak, down, then up the right wall." },
-  { g: "น", name: "naw nǔu", cls: "low", start: [114, 126], path: "Head loop top-left. Down the left wall, up the diagonal, finish in a curled tail at the bottom-right." },
-];
+// Hand-written stroke notes, with start points measured by hand for Noto Serif Thai.
+const TRACE_NOTES = {
+  ก: { start: [150, 148], path: "Loopless. Begin at the beak on the upper left, arch over the roof, drop the right leg." },
+  ข: { start: [126, 140], path: "Head loop top-left. Drop the left wall, round the floor, climb the right wall." },
+  ด: { start: [156, 180], path: "Loop inside the bowl. Run down-left to the foot, climb the left wall, arch over, come down the right." },
+  ต: { start: [159, 172], path: "Same as ด, but dip into a notch in the middle of the roof." },
+  ค: { start: [150, 168], path: "Loop hangs inside the straight left wall. Start at the loop and follow the body round to the right foot." },
+  ผ: { start: [131, 126], path: "Head loop top-left. Down, up to a LOW inner peak, down, then up the right wall." },
+  พ: { start: [111, 126], path: "Head loop top-left. Down, up to a FULL-HEIGHT inner peak, down, then up the right wall." },
+  น: { start: [114, 126], path: "Head loop top-left. Down the left wall, up the diagonal, finish in a curled tail at the bottom-right." },
+};
 
-function Tracer() {
+/** Every single-letter glyph item becomes a trace target, in the script the learner studies. */
+function traceTargets(mode) {
+  const script = mode === "lo" ? "lo" : "th";
+  const seen = new Set();
+  const out = [];
+  CURRICULUM.forEach((it) => {
+    const g = it[script];
+    if (it.tier !== "glyph" || [...g].length !== 1 || seen.has(g)) return;
+    seen.add(g);
+    const roman = script === "lo" ? it.loRoman : it.thRoman;
+    out.push({ id: it.id, g, script, level: it.level, cls: it.cls, name: roman.split("·").pop().trim(), meaning: it.meaning, note: script === "th" ? TRACE_NOTES[g] : null });
+  });
+  return out;
+}
+
+const fmtDue = (t) => {
+  const d = Math.round((t - Date.now()) / DAY);
+  return d <= 0 ? "now" : d === 1 ? "tomorrow" : `in ${d} days`;
+};
+const writeDueAt = (w) => (w ? w.last + fsrsInterval(w.S) * DAY : 0);
+/** Started glyphs whose write track is due, or that have never been traced cleanly. */
+function writeDue(srs, mode, now = Date.now()) {
+  return traceTargets(mode).filter((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= now);
+}
+
+function renderGlyphMask(g, script, extraStroke = 0) {
+  const S = TRACE_SIZE;
+  const c = document.createElement("canvas");
+  c.width = S;
+  c.height = S;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  ctx.font = `${TRACE_FONT_PX}px ${TRACE_FONTS[script]}`;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#000";
+  if (extraStroke) {
+    ctx.lineWidth = extraStroke;
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#000";
+    ctx.strokeText(g, S / 2, TRACE_BASELINE);
+  }
+  ctx.fillText(g, S / 2, TRACE_BASELINE);
+  return ctx;
+}
+
+const headStartCache = new Map();
+/**
+ * Find the head loop: the small closed counters of the rendered glyph. Flood the background
+ * in from the edges; whatever blank area stays unreached is enclosed by ink. The topmost-left
+ * small counter is the head (big counters like ๐ or the bowl of บ are not heads).
+ */
+function detectHeadStart(g, script) {
+  const key = `${script}:${g}`;
+  if (headStartCache.has(key)) return headStartCache.get(key);
+  const S = TRACE_SIZE;
+  const A = renderGlyphMask(g, script).getImageData(0, 0, S, S).data;
+  const ink = new Uint8Array(S * S);
+  for (let i = 0; i < S * S; i += 1) ink[i] = A[i * 4 + 3] > 90 ? 1 : 0;
+  const label = new Int32Array(S * S);
+  const flood = (seed, id) => {
+    const stack = [seed];
+    label[seed] = id;
+    let n = 0; let sx = 0; let sy = 0;
+    while (stack.length) {
+      const p = stack.pop();
+      n += 1; sx += p % S; sy += (p / S) | 0;
+      const x = p % S;
+      const nb = [p - S, p + S, x > 0 ? p - 1 : -1, x < S - 1 ? p + 1 : -1];
+      nb.forEach((q) => {
+        if (q >= 0 && q < S * S && !ink[q] && !label[q]) { label[q] = id; stack.push(q); }
+      });
+    }
+    return { n, cx: sx / n, cy: sy / n };
+  };
+  for (let i = 0; i < S; i += 1) {
+    [i, (S - 1) * S + i, i * S, i * S + S - 1].forEach((p) => { if (!ink[p] && !label[p]) flood(p, 1); });
+  }
+  const holes = [];
+  let id = 2;
+  for (let p = 0; p < S * S; p += 1) {
+    if (!ink[p] && !label[p]) {
+      const h = flood(p, id);
+      id += 1;
+      // Curls up on an ascender (ฬ) are not where the pen starts.
+      if (h.n >= 30 && h.n <= 1800 && h.cy > 105) holes.push(h);
+    }
+  }
+  holes.sort((a, b) => (a.cy + a.cx * 0.35) - (b.cy + b.cx * 0.35));
+  const start = holes.length ? [Math.round(holes[0].cx), Math.round(holes[0].cy)] : null;
+  headStartCache.set(key, start);
+  return start;
+}
+
+function Tracer({ mode = "dual", srs = {}, setSrs }) {
+  const targets = useMemo(() => traceTargets(mode), [mode]);
   const [sel, setSel] = useState(0);
   const [result, setResult] = useState(null);
+  const [auto, setAuto] = useState({});
   const canvasRef = useRef(null);
   const strokes = useRef([]);
   const drawing = useRef(false);
   const activePointer = useRef(null);
   const penSeen = useRef(false);
-  const glyph = TRACE_GLYPHS[sel];
+  const glyph = targets[Math.min(sel, targets.length - 1)];
+  const font = TRACE_FONTS[glyph.script];
+  const key = `${glyph.script}:${glyph.g}`;
+  const start = glyph.note?.start || auto[key] || null;
+  const now = Date.now();
+  const due = targets.filter((t) => srs[t.id] && writeDueAt(srs[t.id].write) <= now);
+
+  useEffect(() => {
+    if (glyph.note || key in auto) return undefined;
+    let live = true;
+    (async () => {
+      try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[glyph.script]}"`, glyph.g); } catch { /* fallback font */ }
+      const s = detectHeadStart(glyph.g, glyph.script);
+      if (live) setAuto((a) => ({ ...a, [key]: s }));
+    })();
+    return () => { live = false; };
+  }, [glyph, key, auto]);
 
   const getCtx = () => {
     const c = canvasRef.current;
@@ -2352,7 +2465,7 @@ function Tracer() {
     setResult(null);
   }, []);
 
-  useEffect(() => { clear(); }, [sel, clear]);
+  useEffect(() => { clear(); }, [sel, mode, clear]);
 
   const pos = (e) => {
     const r = canvasRef.current.getBoundingClientRect();
@@ -2404,25 +2517,28 @@ function Tracer() {
     activePointer.current = null;
   };
 
+  // A trace is a write review for a glyph you have started: it moves only its own
+  // write track, so a shaky hand never drags the reading schedule back.
+  const recordWrite = (score) => {
+    const cur = srs[glyph.id];
+    if (!cur || !setSrs) return null;
+    const g = score >= 70 ? 3 : score >= 50 ? 2 : 1;
+    if (!cur.write && g < 3) return null;
+    const write = fsrsUpdate(cur.write, g);
+    setSrs((s) => ({ ...s, [glyph.id]: { ...s[glyph.id], write } }));
+    return write;
+  };
+
   const check = async () => {
     if (!strokes.current.length) return;
-    try { await document.fonts?.load(`${TRACE_FONT_PX}px "Noto Serif Thai"`, glyph.g); } catch { /* fallback font */ }
+    try { await document.fonts?.load(`${TRACE_FONT_PX}px "${TRACE_FONT_FACE[glyph.script]}"`, glyph.g); } catch { /* fallback font */ }
     const S = TRACE_SIZE;
-    const mk = () => { const c = document.createElement("canvas"); c.width = S; c.height = S; return c.getContext("2d", { willReadFrequently: true }); };
-    const gctx = mk();
-    gctx.font = `${TRACE_FONT_PX}px ${TRACE_FONT}`;
-    gctx.textAlign = "center";
-    gctx.fillStyle = "#000";
-    gctx.fillText(glyph.g, S / 2, TRACE_BASELINE);
-    const tctx = mk();
-    tctx.font = gctx.font;
-    tctx.textAlign = "center";
-    tctx.lineWidth = 26;
-    tctx.lineJoin = "round";
-    tctx.strokeStyle = "#000";
-    tctx.strokeText(glyph.g, S / 2, TRACE_BASELINE);
-    tctx.fillText(glyph.g, S / 2, TRACE_BASELINE);
-    const uctx = mk();
+    const gctx = renderGlyphMask(glyph.g, glyph.script);
+    const tctx = renderGlyphMask(glyph.g, glyph.script, 26);
+    const uc = document.createElement("canvas");
+    uc.width = S;
+    uc.height = S;
+    const uctx = uc.getContext("2d", { willReadFrequently: true });
     uctx.strokeStyle = "#000";
     uctx.lineWidth = 22;
     uctx.lineCap = "round";
@@ -2445,21 +2561,60 @@ function Tracer() {
     const coverage = gTot ? gHit / gTot : 0;
     const accuracy = uTot ? uIn / uTot : 0;
     const first = strokes.current[0][0];
-    const startDist = Math.hypot(first[0] - glyph.start[0], first[1] - glyph.start[1]);
-    const score = Math.round(100 * (0.55 * coverage + 0.45 * accuracy));
-    setResult({ coverage, accuracy, score, startOk: startDist < 34 });
+    const startOk = start ? Math.hypot(first[0] - start[0], first[1] - start[1]) < 34 : null;
+    // Starting away from the head loop costs points: the habit is the point of the drill.
+    const score = Math.round(100 * (0.55 * coverage + 0.45 * accuracy) - (startOk === false ? 10 : 0));
+    const write = recordWrite(score);
+    setResult({ coverage, accuracy, score, startOk, write });
+    haptic(score >= 70 ? "ok" : "bad");
     const audio = getAudio();
     audio.playRanatToneChime(score >= 70 ? ["high"] : ["low"]);
   };
 
+  const nextDue = () => {
+    const t = due.find((d) => d.id !== glyph.id) || due[0];
+    if (t) setSel(targets.indexOf(t));
+  };
+
+  const dotFor = (t) => {
+    const s = srs[t.id];
+    if (!s) return null;
+    if (writeDueAt(s.write) <= now) return "#F59E0B";
+    return "#34D399";
+  };
+
+  const levels = [...new Set(targets.map((t) => t.level))];
+
   return (
     <div className="space-y-4">
-      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Feel the loop under your finger or S Pen." color={COLORS.cyan} />
-      <div className="flex flex-wrap gap-2">
-        {TRACE_GLYPHS.map((t, i) => (
-          <button key={t.g} onClick={() => setSel(i)} className={`h-12 w-12 rounded-xl border text-2xl transition ${i === sel ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONT }}>
-            {t.g}
+      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Every letter you have started gets its own write schedule." color={COLORS.cyan} />
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#F59E0B" }} /> due to write</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ background: "#34D399" }} /> written, not due</span>
+        <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full border border-white/20" /> not started in the Shrine</span>
+        {due.length > 0 && (
+          <button data-trace-next onClick={nextDue} className="ml-auto rounded-full border border-amber-400/40 bg-amber-400/10 px-3 py-1 font-semibold text-amber-200">
+            Next due ({due.length})
           </button>
+        )}
+      </div>
+      <div className="max-h-56 space-y-2 overflow-y-auto pr-1 sm:max-h-none">
+        {levels.map((lv) => (
+          <div key={lv}>
+            <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">Level {lv}</div>
+            <div className="grid grid-cols-7 gap-1.5 sm:flex sm:flex-wrap">
+            {targets.filter((t) => t.level === lv).map((t) => {
+              const i = targets.indexOf(t);
+              const dot = dotFor(t);
+              return (
+                <button key={t.id} data-trace-glyph={t.id} onClick={() => setSel(i)} aria-label={t.name} className={`relative h-11 rounded-xl border text-2xl transition sm:w-11 ${t === glyph ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONTS[t.script] }}>
+                  {t.g}
+                  {dot && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ background: dot }} />}
+                </button>
+              );
+            })}
+            </div>
+          </div>
         ))}
       </div>
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
@@ -2473,54 +2628,72 @@ function Tracer() {
                 </g>
               ))}
               <line x1={0} x2={TRACE_SIZE} y1={TRACE_BASELINE} y2={TRACE_BASELINE} stroke="#22D3EE33" strokeDasharray="6 6" />
-              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#22D3EE26" stroke="#22D3EE88" strokeWidth="1.5" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</text>
-              <circle cx={glyph.start[0]} cy={glyph.start[1]} r="16" fill="#F59E0B33" stroke="#F59E0B" strokeWidth="2">
-                <animate attributeName="r" values="13;18;13" dur="1.6s" repeatCount="indefinite" />
-              </circle>
-              <text x={glyph.start[0]} y={glyph.start[1] + 5} textAnchor="middle" fontSize="14" fontWeight="800" fill="#FDE68A">1</text>
+              <text x={TRACE_SIZE / 2} y={TRACE_BASELINE} textAnchor="middle" fontSize={TRACE_FONT_PX} fill="#22D3EE26" stroke="#22D3EE88" strokeWidth="1.5" style={{ fontFamily: font }}>{glyph.g}</text>
+              {start && (
+                <g data-trace-start>
+                  <circle cx={start[0]} cy={start[1]} r="16" fill="#F59E0B33" stroke="#F59E0B" strokeWidth="2">
+                    <animate attributeName="r" values="13;18;13" dur="1.6s" repeatCount="indefinite" />
+                  </circle>
+                  <text x={start[0]} y={start[1] + 5} textAnchor="middle" fontSize="14" fontWeight="800" fill="#FDE68A">1</text>
+                </g>
+              )}
             </svg>
             <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} />
           </div>
           <div className="mt-3 flex gap-2">
             <button onClick={clear} className="flex-1 rounded-xl border border-white/10 py-2 text-sm text-slate-300 hover:bg-white/5"><Eraser size={15} className="mr-1 inline" />Clear</button>
-            <button onClick={check} className="flex-1 rounded-xl bg-cyan-500 py-2 text-sm font-bold text-black"><Check size={15} className="mr-1 inline" />Check</button>
+            <button data-trace-check onClick={check} className="flex-1 rounded-xl bg-cyan-500 py-2 text-sm font-bold text-black"><Check size={15} className="mr-1 inline" />Check</button>
           </div>
         </Card>
         <div className="space-y-3">
           <Card className="p-4">
             <div className="flex items-baseline gap-3">
-              <span className="text-5xl text-white" style={{ fontFamily: TRACE_FONT }}>{glyph.g}</span>
+              <span className="text-5xl text-white" style={{ fontFamily: font }}>{glyph.g}</span>
               <div>
                 <div className="font-semibold text-white">{glyph.name}</div>
-                <div className="mt-1"><ClassBadge cls={glyph.cls} small /></div>
+                <div className="text-xs text-slate-400">{glyph.meaning}</div>
+                {glyph.cls && <div className="mt-1"><ClassBadge cls={glyph.cls} small /></div>}
               </div>
             </div>
-            <p className="mt-3 text-sm text-slate-300">{glyph.path}</p>
-            <p className="mt-2 text-xs text-slate-400">The tracer always uses head-loop type, because that is where the loops are visible.</p>
+            <p className="mt-3 text-sm text-slate-300">
+              {glyph.note?.path || (start ? "Start inside the head loop at (1), close the loop, then run the body in one stroke." : "No head loop on this one. Start at the top-left of the first stroke and keep the pen down.")}
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              {srs[glyph.id] ? (srs[glyph.id].write ? `Write track: next due ${fmtDue(writeDueAt(srs[glyph.id].write))}.` : "Score 70 or more once to start this letter's write schedule.") : "Practice only. Start this letter in the Shrine to schedule writing reviews."}
+            </p>
           </Card>
           {result && (
             <Card className="p-4">
               <div className="flex items-center gap-3">
-                <div className="text-4xl font-black" style={{ color: result.score >= 70 ? "#34D399" : result.score >= 45 ? COLORS.gold : "#F43F5E" }}>{result.score}</div>
+                <div data-trace-score className="text-4xl font-black" style={{ color: result.score >= 70 ? "#34D399" : result.score >= 45 ? COLORS.gold : "#F43F5E" }}>{result.score}</div>
                 <div className="text-sm text-slate-300">
                   {result.score >= 70 ? "Clean trace." : result.score >= 45 ? "Close. Follow the outline more tightly." : "Try again, slower, on the outline."}
+                  {result.write && <div className="text-xs text-cyan-300">Write review saved. Next due {fmtDue(writeDueAt(result.write))}.</div>}
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
                 <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.coverage * 100)}%</div>coverage</div>
                 <div className="rounded-xl bg-white/5 p-2"><div className="font-bold text-white">{Math.round(result.accuracy * 100)}%</div>on the line</div>
-                <div className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${result.startOk ? "text-emerald-300" : "text-rose-300"}`}>{result.startOk ? "Yes" : "No"}</div>started at 1</div>
+                <div className="rounded-xl bg-white/5 p-2"><div className={`font-bold ${result.startOk == null ? "text-slate-300" : result.startOk ? "text-emerald-300" : "text-rose-300"}`}>{result.startOk == null ? "n/a" : result.startOk ? "Yes" : "No"}</div>started at 1</div>
               </div>
             </Card>
           )}
-          <Card className="p-4 text-sm text-slate-300">
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Feel the difference</div>
-            <ul className="list-disc space-y-1 pl-5">
-              <li><b>ด vs ค</b>: ด's loop sits inside the bowl with a diagonal run to the foot. ค's loop hangs off a straight left wall.</li>
-              <li><b>ผ vs พ</b>: same start, but พ's inner peak climbs to full height.</li>
-              <li><b>ก</b> has no loop at all. Start at the beak.</li>
-            </ul>
-          </Card>
+          {glyph.script === "th" ? (
+            <Card className="p-4 text-sm text-slate-300">
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Feel the difference</div>
+              <ul className="list-disc space-y-1 pl-5">
+                <li><b>ด vs ค</b>: ด's loop sits inside the bowl with a diagonal run to the foot. ค's loop hangs off a straight left wall.</li>
+                <li><b>ผ vs พ</b>: same start, but พ's inner peak climbs to full height.</li>
+                <li><b>บ vs ป</b>: ป is บ with a tall right wall. Lift the pen only after the wall.</li>
+                <li><b>ก</b> has no loop at all. Start at the beak.</li>
+              </ul>
+            </Card>
+          ) : (
+            <Card className="p-4 text-sm text-slate-300">
+              <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-cyan-300">Lao hand</div>
+              <p>Lao letters keep the loop-first habit but are rounder and lower. Draw the loop small and tight, then let the body swing.</p>
+            </Card>
+          )}
         </div>
       </div>
     </div>
@@ -4017,7 +4190,7 @@ export default function SuvarnaKani() {
             {earTab === "shadow" && <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />}
           </>
         )}
-        {tab === "tracer" && <Tracer />}
+        {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} />}
         {tab === "lab" && (
           <>
             <SubTabs tabs={LAB_TABS} active={labTab} onChange={setLabTab} />
