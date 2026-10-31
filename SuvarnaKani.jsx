@@ -626,6 +626,17 @@ class SuvarnaMobileAudioEngine {
   }
 }
 
+/** Short vibration on Android (Galaxy and others); iOS ignores it. */
+const haptic = (kind) => {
+  try {
+    navigator.vibrate?.(kind === "ok" ? 12 : [28, 40, 28]);
+  } catch {
+    /* not supported */
+  }
+};
+const IS_ANDROID = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+const ANDROID_VOICE_HINT = "On a Galaxy: Settings → General management → Text-to-speech → Preferred engine: Speech Services by Google, then download Thai in its settings.";
+
 let audioSingleton = null;
 const getAudio = () => {
   if (!audioSingleton) audioSingleton = new SuvarnaMobileAudioEngine();
@@ -723,7 +734,7 @@ function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-0 sm:p-4" onClick={onClose}>
       <div
-        className={`relative w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"} max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[#0F172A]/95 shadow-2xl`}
+        className={`relative w-full ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"} max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-3xl pb-[env(safe-area-inset-bottom)] sm:pb-0 sm:rounded-3xl border border-white/10 bg-[#0F172A]/95 shadow-2xl`}
         style={{ boxShadow: `0 0 60px ${accent}22` }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -1581,6 +1592,7 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
 
   const finish = (rOk, sOk) => {
     const ok = rOk && (sOk == null || sOk);
+    haptic(ok ? "ok" : "miss");
     setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
     pending.current = { id: item.id, ok, parts: { read: rOk, second: sOk, kind } };
     setPhase("result");
@@ -1642,7 +1654,9 @@ function ReviewModal({ open, queue, mode, font, onClose, onAnswer }) {
             readOnly={phase !== "read"}
             autoCapitalize="none"
             autoCorrect="off"
+            autoComplete="off"
             spellCheck={false}
+            enterKeyHint="go"
             placeholder="e.g. maa / horse"
             className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${readOk === true ? "border-emerald-400 bg-emerald-500/20" : readOk === false ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
           />
@@ -1890,7 +1904,7 @@ function EarDojo({ ear, setEar, logActivity }) {
               Each trial plays one word from a set like <span style={{ fontFamily: FONT_STACKS.loop.th }}>มา · ม้า · หมา</span> with a random speed{voices.length > 1 ? " and voice" : ""}. The word stays hidden until you answer, so you train your ear, not your reading. If you miss, you hear your choice and then the right answer, back to back.
             </p>
             <p className="mt-3 text-xs text-slate-400">
-              {voices.length ? `${voices.length} Thai voice${voices.length > 1 ? "s" : ""} on this device.` : "No Thai voice found on this device. Install one in your text-to-speech settings first."}{" "}
+              {voices.length ? `${voices.length} Thai voice${voices.length > 1 ? "s" : ""} on this device.` : (IS_ANDROID ? `No Thai voice found. ${ANDROID_VOICE_HINT}` : "No Thai voice found on this device. Install one in your text-to-speech settings first.")}{" "}
               Device voices sometimes blur tones; recorded native audio is planned.
             </p>
             <button onClick={start} className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 font-bold text-black active:scale-[0.98]">
@@ -1997,6 +2011,8 @@ function Tracer() {
   const canvasRef = useRef(null);
   const strokes = useRef([]);
   const drawing = useRef(false);
+  const activePointer = useRef(null);
+  const penSeen = useRef(false);
   const glyph = TRACE_GLYPHS[sel];
 
   const getCtx = () => {
@@ -2016,6 +2032,7 @@ function Tracer() {
   }, []);
 
   const clear = useCallback(() => {
+    activePointer.current = null;
     const ctx = getCtx();
     if (ctx) ctx.clearRect(0, 0, TRACE_SIZE, TRACE_SIZE);
     strokes.current = [];
@@ -2029,32 +2046,50 @@ function Tracer() {
     return [((e.clientX - r.left) / r.width) * TRACE_SIZE, ((e.clientY - r.top) / r.height) * TRACE_SIZE];
   };
 
+  // Once an S Pen (or any stylus) has touched the canvas, finger and palm
+  // contacts are ignored so a resting hand doesn't draw.
   const down = (e) => {
     e.preventDefault();
-    canvasRef.current.setPointerCapture?.(e.pointerId);
+    if (e.pointerType === "pen") penSeen.current = true;
+    else if (e.pointerType === "touch" && penSeen.current) return;
+    if (activePointer.current != null) return;
+    activePointer.current = e.pointerId;
+    try {
+      canvasRef.current.setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer already gone */
+    }
     drawing.current = true;
     strokes.current.push([pos(e)]);
     setResult(null);
   };
   const move = (e) => {
-    if (!drawing.current) return;
-    const p = pos(e);
+    if (!drawing.current || e.pointerId !== activePointer.current) return;
     const s = strokes.current[strokes.current.length - 1];
-    const prev = s[s.length - 1];
-    s.push(p);
     const ctx = getCtx();
     ctx.strokeStyle = "#F59E0B";
-    ctx.lineWidth = 14;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.shadowColor = "#F59E0B";
     ctx.shadowBlur = 8;
-    ctx.beginPath();
-    ctx.moveTo(prev[0], prev[1]);
-    ctx.lineTo(p[0], p[1]);
-    ctx.stroke();
+    // Pens report up to 240 samples a second; draw all of them, not just one per frame.
+    const samples = e.nativeEvent.getCoalescedEvents?.() || [];
+    (samples.length ? samples : [e.nativeEvent]).forEach((ev) => {
+      const p = pos(ev);
+      const prev = s[s.length - 1];
+      s.push(p);
+      ctx.lineWidth = e.pointerType === "pen" && ev.pressure > 0 ? 6 + ev.pressure * 16 : 14;
+      ctx.beginPath();
+      ctx.moveTo(prev[0], prev[1]);
+      ctx.lineTo(p[0], p[1]);
+      ctx.stroke();
+    });
   };
-  const up = () => { drawing.current = false; };
+  const up = (e) => {
+    if (e && e.pointerId !== activePointer.current) return;
+    drawing.current = false;
+    activePointer.current = null;
+  };
 
   const check = async () => {
     if (!strokes.current.length) return;
@@ -2106,7 +2141,7 @@ function Tracer() {
 
   return (
     <div className="space-y-4">
-      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Feel the loop under your finger." color={COLORS.cyan} />
+      <SectionTitle icon={PenTool} title="Head-Loop Tracing Dojo" sub="Start every letter at its golden head (1), then follow the body. Feel the loop under your finger or S Pen." color={COLORS.cyan} />
       <div className="flex flex-wrap gap-2">
         {TRACE_GLYPHS.map((t, i) => (
           <button key={t.g} onClick={() => setSel(i)} className={`h-12 w-12 rounded-xl border text-2xl transition ${i === sel ? "border-cyan-400 bg-cyan-400/20 text-white" : "border-white/10 text-slate-300 hover:bg-white/5"}`} style={{ fontFamily: TRACE_FONT }}>
@@ -2131,7 +2166,7 @@ function Tracer() {
               </circle>
               <text x={glyph.start[0]} y={glyph.start[1] + 5} textAnchor="middle" fontSize="14" fontWeight="800" fill="#FDE68A">1</text>
             </svg>
-            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} />
+            <canvas ref={canvasRef} className="absolute inset-0 h-full w-full cursor-crosshair touch-none select-none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up} onPointerCancel={up} />
           </div>
           <div className="mt-3 flex gap-2">
             <button onClick={clear} className="flex-1 rounded-xl border border-white/10 py-2 text-sm text-slate-300 hover:bg-white/5"><Eraser size={15} className="mr-1 inline" />Clear</button>
@@ -3502,7 +3537,7 @@ function AudioStudio({ open, onClose, rate, setRate, muted, setMuted }) {
           <button onClick={() => audio.playRanatToneChime(["mid", "low", "falling", "high", "rising"])} className="rounded-xl bg-amber-500/15 py-2 text-sm text-amber-200"><Music size={14} className="mr-1 inline" />5 tone chimes</button>
         </div>
         <div className="mt-3 space-y-1 text-xs">
-          <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings."}</div>
+          <div className={th ? "text-emerald-300" : "text-amber-300"}>{th ? `Thai voice: ${th.name}` : (IS_ANDROID ? `No Thai voice found. ${ANDROID_VOICE_HINT}` : "No Thai voice found. Install a Thai voice in your device's text-to-speech settings.")}</div>
           <div className={lo ? "text-emerald-300" : "text-slate-400"}>{lo ? `Lao voice: ${lo.name}` : "No Lao voice: Lao items are read with Thai-script approximations."}</div>
           <p className="pt-1 text-slate-400">Voice and chimes never play at the same time; starting one stops the other.</p>
         </div>
@@ -3626,8 +3661,8 @@ export default function SuvarnaKani() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F19] pb-24 text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
-      <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0B0F19]/85 backdrop-blur">
+    <div className="min-h-[100dvh] bg-[#0B0F19] pb-[calc(6rem+env(safe-area-inset-bottom))] text-slate-100 sm:pb-8" style={{ fontFamily: UI_FONT, backgroundImage: "radial-gradient(ellipse at top, #1E1B4B55, transparent 60%), radial-gradient(ellipse at bottom right, #F59E0B12, transparent 50%)" }}>
+      <header className="sticky top-0 z-30 border-b border-white/5 bg-[#0B0F19]/85 pt-[env(safe-area-inset-top)] backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
           <div className="mr-auto flex items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-300 to-amber-600 text-lg font-black text-black shadow-[0_0_20px_#F59E0B66]" style={{ fontFamily: FONT_STACKS.loop.th }}>สุ</div>
