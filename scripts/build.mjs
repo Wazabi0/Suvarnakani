@@ -29,20 +29,21 @@ const result = await build({
 const js = result.outputFiles[0].text.replaceAll("</script", "<\\/script");
 
 writeFileSync(join(tmp, "in.css"), "@tailwind base; @tailwind components; @tailwind utilities;");
-writeFileSync(join(tmp, "tailwind.config.cjs"), `module.exports = { content: [${JSON.stringify(join(root, "SuvarnaKani.jsx"))}] };`);
+writeFileSync(join(tmp, "tailwind.config.cjs"), `module.exports = { presets: [require(${JSON.stringify(join(root, "tailwind.preset.cjs"))})], content: [${JSON.stringify(join(root, "SuvarnaKani.jsx"))}] };`);
 execFileSync(join(root, "node_modules/.bin/tailwindcss"), ["-c", join(tmp, "tailwind.config.cjs"), "-i", join(tmp, "in.css"), "-o", join(tmp, "out.css"), "--minify"], { stdio: "inherit" });
 const css = readFileSync(join(tmp, "out.css"), "utf8");
 
+const gauntletFonts = "https://fonts.googleapis.com/css2?family=Prompt:wght@500&family=Mitr:wght@400&family=Chakra+Petch:wght@500&family=Sriracha&family=Itim&family=Noto+Sans+Lao+Looped:wght@400&display=swap";
 const fonts = "https://fonts.googleapis.com/css2?family=Noto+Serif+Thai:wght@400;600&family=Noto+Serif+Lao:wght@400;600&family=Sarabun:wght@400;600&family=Kanit:wght@300;500&family=Noto+Sans+Thai:wght@400;600&family=Noto+Sans+Lao:wght@400;600&display=swap";
 // Galaxy S25 Ultra and other Android phones: edge-to-edge under the status and
 // gesture bars, keyboard resizes the page instead of covering the review input,
 // and Samsung Internet's forced dark mode leaves the palette alone.
 const head = (extra = "", fontTag = `<link rel="stylesheet" href="${fonts}" data-suvarnakani-fonts>`) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-<title>SuvarṇaKani</title><meta name="theme-color" content="#0B0F19"><meta name="color-scheme" content="dark">
+<title>SuvarṇaKani</title><meta name="theme-color" content="#0B0F19"><meta name="color-scheme" content="dark light">
 <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 ${extra}${fontTag}
-<style>${css} :root{color-scheme:dark} html{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent} body{background:#0B0F19;color:#F1F5F9;margin:0;overscroll-behavior-y:none;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}</style></head>`;
+<style>${css} html{-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent} body{background:rgb(var(--sk-bg,11 15 25));color:rgb(var(--sk-ink,241 245 249));margin:0;overscroll-behavior-y:none;font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}</style></head>`;
 const html = `${head()}
 <body><div id="root"></div><script>${js}</script></body></html>`;
 writeFileSync(join(root, "SuvarnaKani.html"), html);
@@ -61,9 +62,16 @@ const fontFiles = [];
 let fontTag;
 try {
   const ua = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
-  const res = await fetch(fonts, { headers: { "User-Agent": ua } });
-  if (!res.ok) throw new Error(`fonts css ${res.status}`);
-  let fontCss = await res.text();
+  // The core faces in full; the Font Gauntlet faces only in their Thai and Lao subsets.
+  const sheets = [[fonts, null], [gauntletFonts, /\/\* (thai|lao) \*\//]];
+  let fontCss = "";
+  for (const [href, keep] of sheets) {
+    const res = await fetch(href, { headers: { "User-Agent": ua } });
+    if (!res.ok) throw new Error(`fonts css ${res.status}`);
+    let css = await res.text();
+    if (keep) css = css.split(/(?=\/\* )/).filter((block) => keep.test(block)).join("");
+    fontCss += css;
+  }
   const urls = [...new Set(fontCss.match(/https:\/\/fonts\.gstatic\.com\/[^)\s]+/g) || [])];
   if (!urls.length) throw new Error("no font files in css");
   rmSync(join(dist, "fonts"), { recursive: true, force: true });
@@ -76,14 +84,14 @@ try {
     fontCss = fontCss.replaceAll(u, name);
     fontFiles.push(name);
   }
-  fontTag = `<style data-suvarnakani-fonts>${fontCss}</style>`;
+  fontTag = `<style data-suvarnakani-fonts data-suvarnakani-gauntlet>${fontCss}</style>`;
   console.log(`bundled ${fontFiles.length} font files into dist/fonts`);
 } catch (err) {
   fontFiles.length = 0;
   rmSync(join(dist, "fonts"), { recursive: true, force: true });
   console.warn(`fonts not bundled (${err.message}); the app will load them from Google Fonts`);
 }
-["icon-192.png", "icon-512.png", "icon-maskable-512.png"].forEach((f) => copyFileSync(join(root, "assets", f), join(dist, f)));
+["icon-192.png", "icon-512.png", "icon-maskable-512.png", "icon-monochrome-512.png"].forEach((f) => copyFileSync(join(root, "assets", f), join(dist, f)));
 writeFileSync(join(dist, "manifest.webmanifest"), JSON.stringify({
   name: "SuvarṇaKani",
   short_name: "SuvarṇaKani",
@@ -98,14 +106,23 @@ writeFileSync(join(dist, "manifest.webmanifest"), JSON.stringify({
     { src: "icon-192.png", sizes: "192x192", type: "image/png" },
     { src: "icon-512.png", sizes: "512x512", type: "image/png" },
     { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+    { src: "icon-monochrome-512.png", sizes: "512x512", type: "image/png", purpose: "monochrome" },
   ],
+  // Long-press the home-screen icon.
+  shortcuts: [
+    { name: "Reviews", short_name: "Reviews", url: "./?go=reviews", icons: [{ src: "icon-192.png", sizes: "192x192" }] },
+    { name: "Ear Dojo", short_name: "Ear", url: "./?go=ear", icons: [{ src: "icon-192.png", sizes: "192x192" }] },
+    { name: "Decoder", short_name: "Decoder", url: "./?go=decoder", icons: [{ src: "icon-192.png", sizes: "192x192" }] },
+  ],
+  // Share text from Google Lens, LINE or Chrome straight into the Decoder.
+  share_target: { action: "./", method: "GET", params: { title: "title", text: "text", url: "url" } },
 }, null, 2));
 writeFileSync(join(dist, "sw.js"), `// App shell and the bundled fonts are cached on install, so the app works
 // offline from the first launch. Google Fonts (only used if the build could not
 // bundle them) are cached as they load.
 const SHELL = "suvarnakani-${version}";
 const FONTS = "suvarnakani-fonts";
-const FILES = ${JSON.stringify(["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", ...fontFiles])};
+const FILES = ${JSON.stringify(["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "icon-monochrome-512.png", ...fontFiles])};
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== FONTS).map((k) => caches.delete(k)))));

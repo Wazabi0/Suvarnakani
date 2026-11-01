@@ -5,11 +5,14 @@ A single-file React app for learning to read Thai and Lao script: an SRS "Shrine
 ## Files
 - `SuvarnaKani.jsx`: the React app (hooks, Tailwind, lucide-react). Use it as the default export in any React + Tailwind project.
 - `SuvarnaKani.html`: standalone build. Open it in a browser (internet is needed only for Google Fonts).
+- `tailwind.preset.cjs`: colour tokens. Add it as a Tailwind preset if you use the JSX in another project.
+- `tests/run.mjs`: tone, course and backup checks (`npm test`).
 - `NOTES.md`: build notes, feature list and linguistic corrections to the original spec.
 
 ## Build
 ```
 npm install
+npm test        # tone and course checks
 npm run build   # writes SuvarnaKani.html
 ```
 
@@ -26,6 +29,53 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.25.0**: Hand and look (Roadmap III, wave F).
+  - **Daylight theme and true black** (V1). Settings → Theme: System (follows the phone), Daylight or Night, plus a true-black night for OLED. Daylight flips the token ramp (`data-sk-theme` on the root), darkens pale accent text, and swaps the tone palette for darker inks of the same hues (all at least 4.5:1 on paper); pitch is carried by the contour glyph rather than lightness.
+  - **The Mekong river map** (V3). Shrine levels are stops down a river. Each stop fills with gold as its items burn, the current stop glows, the next locked level shows its gate and how close you are, and later levels are one line each.
+  - **Memory Writer** (Write → From memory, N9). Hear a letter's name and write it with no template or start marker; the letter then appears over your strokes. It moves the same write track, and a peek makes that try practice only. **Syllables** puts single-syllable words on a four-line guide and scores the zones above, on and below the letters separately.
+  - **Ghost hand** (D17). Show me draws the letter from its head loop: a distance field along the ink (`glyphField`) lights the letter in pen order with a moving nib.
+  - **Keyboard and dictation** (Write → Keyboard, N10). Hear a word and type it on the Kedmanee layout used by Gboard and Samsung Keyboard; Lao gets the common Lao layout, with rarer marks on one shifted page. The next key glows and fades over the first 600 correct keys, then lights only after a pause or a miss. A clean word is a Good on the spelling track.
+  - **Glyph anatomy** (V4). Tap a big single letter in a lesson or the inspector: head loop in gold, body in grey, and hand-marked features for the trap pairs (ด/ต/ค, ผ/พ/ฝ/ฟ, บ/ป, ข/ช/ซ, ถ, ฎ/ฏ).
+  - **Moments** (V5). Gold leaf for a burn, a gate for a new level, lamps at streak milestones (3, 7, 14, 30 days and on), each with its own vibration; reduced motion turns the animation off.
+  - **Stage colours** (V8). A bronze-to-gold ramp with icons: seed, monk, naga, guardian, stupa.
+  - The Tracer tab is now **Write**.
+- **0.24.0**: Real voices (Roadmap III, wave E).
+  - **Voice Bank** (Ear → Voice Bank, N11). Guided recording through the Thai course, the Lao course, the Ear words and the Word Garden (about 2.5 s each, tap to stop early). Clips live in a new IndexedDB `voices` store (database version 3) and load as object URLs at start. The audio engine checks every spoken entry for a recording of the same text (`lo:` first, then `th:`) and plays it instead of text-to-speech, at the requested rate with pitch preserved; this covers Listen, the Ear Dojo, the Shadow Mirror's model and everything else. Backups now carry the clips (base64) and restore puts them back.
+  - **Talk Paths** (Ear → Talk Paths, N12). Ordering food, a Grab ride, bargaining, asking the way and a Vientiane guesthouse. Each turn offers two replies; your line is shown and scored like dialogue shadowing (syllables and tones come from its reading), and your particle setting applies. A politeness meter reacts to register, with a note when a choice is blunt (for example ขอบใจ to a vendor). The Lao path is listen-and-choose.
+  - **Sound Dojo** (N8). Sixteen same-tone sets: aspiration (กาง/คาง, ตี/ที/ดี, ปาน/พาน/บาน, จาน/ชาน), vowel length (เข้า/ข้าว, ยัง/ยาง, ฝัน/ฝาน), hidden finals (กัด/กับ/กัก, รบ/รด/รก) and initial ง (งาน/อาน/นาน). Weak sets come up more often; accuracy is kept per kind.
+  - **Tones in phrases** (D14). Three to five words from a slicer line play together; name the tone of one highlighted syllable, shown in romanisation without its tone mark.
+  - **Speed ladder and voice variety** (D12). Ear sessions play at a ladder rate from 0.7× to 1.2× (with a little jitter), one step up after 85% and down below 60%. Voices rotate among the phone's Thai voices unless you pick one.
+  - **Hear yourself** (D15). The shadowing microphone also records the take. After a score: A (model), B (you), A then B, and Best take, which is saved whenever you match or beat your best for that syllable or line.
+- **0.23.0**: Read the world (Roadmap III, wave D).
+  - **Lantern Library** (Read → Library). Twelve stories of seven or eight sentences, each in Thai and in Lao (180 sentences), written from course and garden words; other words carry their reading and meaning in the source. Text is unspaced; tap a word for its reading, meaning and tones, with tone tint. Read aloud lights each sentence in turn. A timed re-read records letters per minute and charts every read. A story shows how many of its course words you know and opens at 90% (or in sandbox); it can still be opened early. Press and hold a sentence (or EN, then + card) to send it to the Sentence deck. The Lao versions need a native check.
+  - **Twenty-three signs** (D24). Fifteen new signs are written in a compact form (`SIGN_SRC`: words the course knows need nothing; others are word=reading=meaning; `$` prices and `#` numbers are read out with `numberWords`), with new worn-paint, road, pharmacy, hospital, neon, banner and river styles. A café menu is generated each day from food words (New menu reshuffles it).
+  - **Ride the line** (Read, D25). Ten signs across Bangkok (four in Vientiane) in order; each stop gives a second less, from 14 to 6 seconds. Best score per script is kept.
+  - **Review log** (F4). Each answer (item, track, rating, time; also tone-ear answers) goes to an IndexedDB `reviews` store and is kept for a year; the daily log keeps 365 days instead of 60. A 30-second study-time tick runs while the app is visible and in use.
+  - **Ledger** (N15). A sheet from the Shrine: 26-week heatmap, reviews per day, recall by track against the 90% target (from the review log, or per-item counts before it), most confused tones, the ten hardest items, study time and a 30-day forecast.
+- **0.22.0**: Words in the wild (Roadmap III, wave C).
+  - **Word Garden** (levels 10–16). 280 everyday words in seven beds, each with a reading, its Lao word and a short Thai phrase. The beds open once every Level 4 item reaches stage 2; planting a bed adds its words to the lesson queue, three course items then two garden words. Tones come from the reading's tone marks and the tests check them against the reading engine. The Lao reading and the Thai-script text for the voice are spelled out from the Lao letters by `laoToThai` (◌ົ, ◌ຽ, ເ◌ັ, open ◌ື and ◌ໍ handled). The Lao words need a native check.
+  - **Hear it in a phrase.** Lesson cards show and play the word's example, or a Slicer line that uses it.
+  - **Sentence deck.** Slicer lines, the phrases of garden words you know, and Decoder words you have given a meaning become cards with their own FSRS memory, apart from the course. Directions rotate between reading for meaning, listening for meaning and filling the gap. Five new cards a day.
+  - **Market Clock** (Lab). Prices in baht (or kip), times in the Thai six-period clock (ตี, โมงเช้า, บ่าย, โมงเย็น, ทุ่ม; Lao uses formal ໂມງ hours), and conversion between AD and Buddhist-era years, by ear or by eye. Numbers follow ยี่สิบ, เอ็ด and the Lao ຊາວ and ສິບພັນ.
+  - **Classifier Corral** (Lab). Sort 29 things into eight Thai classifiers (seven in Lao), then pick the right counting phrase (noun, number, classifier).
+  - **Forgiving readings.** Answers also match the RTGS spelling, and a loose match ignores aspiration, vowel length, g/k, j/ch and r/l.
+- **0.21.0**: Take it outside (Roadmap III, wave B).
+  - **Thai reading engine.** `readThai` splits Thai into syllables by trying every vowel pattern and picking the cheapest split (dynamic programming). It handles clusters, ห นำ and อ นำ, silent ◌์ letters, and the leading-letter rule (ขนม, ตลาด). Hidden vowels are inferred and flagged as guesses. Each syllable's class, live or dead, length and mark go through `computeTone`. `segmentThai` splits unspaced text into words, preferring words the course already knows (course items, slicer words, sign tokens) and their course readings. The tests check 42 words and every slicer word against it.
+  - **Decoder** (Read → Decoder). Paste or type Thai or Lao. Each word shows its tone-tinted syllables, a card per syllable (tone, class, live or dead, mark, the rule, any notes) and Listen. Course words open in the Inspector; other words can be saved. Lao uses the Vientiane reader from 0.18.
+  - **Share target and shortcuts.** The manifest registers SuvarṇaKani as a share target, so text shared from Google Lens, LINE or Chrome opens in the Decoder. Long-pressing the icon offers Reviews, Ear Dojo and Decoder. A monochrome icon supports Android's themed icons.
+  - **Tone tint.** Syllables are coloured by tone in the Decoder, Street Reader and the Slicer's word cards. A word is fully coloured until its item reaches stage 3, underlined in its tone colour at stages 3–4, and plain once burned. It can be turned off in Settings.
+  - **Font Gauntlet** (Read → Font Gauntlet). A word in eight faces (Noto Serif Thai, Sarabun, Kanit, Prompt, Mitr, Chakra Petch, Sriracha, Itim; three Lao faces), and a letter drill in loopless and handwritten faces with accuracy per face. The installed app bundles only the Thai and Lao subsets of the new faces (about 110 KB).
+  - **Romanisation.** Settings → Romanisation switches Thai readings between the learner spelling, RTGS and IPA (with Chao tone letters).
+  - **Random fonts in reviews.** An option shows stage 3+ items in a different face each day.
+  - **Slicer.** 26 new lines (13 topics in Thai and Lao), 30 in all, from toilets and prices to a trip to Chiang Mai or Luang Prabang. The Lao lines need a native check.
+- **0.20.0**: Safe ground (Roadmap III, wave A).
+  - **Backups.** Settings → Backup shares a backup file through the Android share sheet (or downloads it), and Restore a file brings it back on any phone or browser. The app also keeps one snapshot a day for the last seven days in IndexedDB, taken as the app opens, so you can roll back to the start of any of those days. A restore saves the current state as a snapshot first.
+  - **Back gesture.** Every sheet (reviews, lessons, the Inspector, Settings) adds a history entry, so Android's back gesture closes the sheet instead of leaving the app. Back from any other tab returns to the Shrine.
+  - **Settings sheet.** The header keeps the logo, the script switch and a gear. Font, unlock-all, daily goal, audio, reset and the new settings live in one sheet: your polite particle (ครับ, ค่ะ/คะ, or both shown until you choose), text size and haptics. With ค่ะ/คะ chosen, your lines in the Shadow Mirror dialogues and the Street Reader chat use ค่ะ for statements and คะ for questions, with the right tones for scoring.
+  - **Screen stays on** during any sheet, the Tracer and the Shadow Mirror (Screen Wake Lock).
+  - **Updates.** When a new build takes over, a bar offers Reload, and What's new lists the changes once.
+  - **Tests.** `npm test` checks every toned item against the tone engine, the Bangkok rule table, Lao syllable splits and Vientiane tones, course ids, scheduling, particles and backups (341 checks). The Pages workflow runs it on pull requests and before every deploy.
+  - **Design tokens.** Tailwind's slate, white and black, and the app surfaces, now read CSS variables defined in the app (`THEME_CSS`), ready for a daylight theme. When dropping the JSX into another project, add `tailwind.preset.cjs` as a Tailwind preset.
 - **0.19.0**: Install on the phone. A GitHub Actions workflow publishes `dist/` to GitHub Pages. The build now bundles the Thai, Lao and Latin fonts into `dist/fonts` (about 430 KB) and the service worker precaches them, so the installed app works offline from its first launch with no requests to Google. The app also asks the browser for persistent storage, so Android does not clear saved progress when space runs low.
 - **0.18.0**: Lao as a full course. Lao mode now has its own item list:
   - **Fewer duplicates.** Thai-only letters such as ศ ษ ฉ ฆ ฐ, and the Thai final-consonant groups, collapse onto Lao letters you already have, so they are dropped.
