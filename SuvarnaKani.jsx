@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.26.0";
+const APP_VERSION = "0.27.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -1445,6 +1445,61 @@ function letterGate(srs = {}, mode = "th", sandbox = false) {
   return { known, missing, ready: (...texts) => missing(...texts).length === 0, open: !!sandbox };
 }
 
+/* ---------------------------------------------------------------------------
+ * Unlock chain (WaniKani-style): letters, then syllables, then words. Glyph
+ * items play the part of WaniKani's radicals. A syllable or word joins the
+ * lesson queue once every letter in it that a glyph lesson teaches is at Novice
+ * Monk (it has climbed the Apprentice ladder). The scripts checked follow the
+ * course mode. Letters no glyph lesson teaches never block anything.
+ * ------------------------------------------------------------------------- */
+const chainScripts = (mode) => (mode === "lo" ? ["lo"] : mode === "th" ? ["th"] : ["th", "lo"]);
+const glyphCharCache = {};
+function glyphChars(mode) {
+  if (glyphCharCache[mode]) return glyphCharCache[mode];
+  const set = new Set();
+  courseItems(mode).forEach((it) => { if (it.tier === "glyph") chainScripts(mode).forEach((k) => [...(it[k] || "")].forEach((c) => { if (SCRIPT_CHAR.test(c)) set.add(c); })); });
+  return (glyphCharCache[mode] = set);
+}
+/** Letters whose glyph lesson has reached Novice Monk. */
+function masteredLetters(srs, mode) {
+  const set = new Set();
+  courseItems(mode).forEach((it) => { if (it.tier === "glyph" && (srs[it.id]?.stage || 0) >= 2) chainScripts(mode).forEach((k) => [...(it[k] || "")].forEach((c) => set.add(c))); });
+  return set;
+}
+/**
+ * The chain for one learner. `waiting(item)` lists the letters an unstarted
+ * syllable or word is still waiting on (empty once it can be learned).
+ * Glyphs, started items and sandbox mode never wait.
+ */
+function unlockChain(srs = {}, mode = "th", sandbox = false) {
+  const taught = glyphChars(mode);
+  const mastered = masteredLetters(srs, mode);
+  const waiting = (it) => {
+    if (sandbox || it.tier === "glyph" || (srs[it.id]?.stage || 0) > 0) return [];
+    return [...new Set(chainScripts(mode).flatMap((k) => [...(it[k] || "")]).filter((c) => taught.has(c) && !mastered.has(c)))];
+  };
+  return { mastered, waiting, ready: (it) => waiting(it).length === 0 };
+}
+/** The share of a level that must be at Novice Monk before the next level opens. */
+const LEVEL_PASS = 0.9;
+/**
+ * Whether a level is done enough to open the next one: 90% of its letters at
+ * Novice Monk (rounded down, so one stubborn letter never blocks; WaniKani counts only kanji the same way). A level with no letter
+ * lessons counts its other items instead, leaving out any still waiting on
+ * letters from a later level so they can't hold the gate shut.
+ */
+function levelGoal(n, course, srs, chain) {
+  const items = course.filter((i) => i.level === n);
+  const glyphs = items.filter((i) => i.tier === "glyph");
+  const key = glyphs.length ? glyphs : items.filter((i) => chain.ready(i));
+  const done = key.filter((i) => (srs[i.id]?.stage || 0) >= 2).length;
+  return { letters: glyphs.length > 0, done, total: key.length, need: Math.max(key.length ? 1 : 0, Math.floor(key.length * LEVEL_PASS)) };
+}
+function levelPassed(n, course, srs, chain) {
+  const g = levelGoal(n, course, srs, chain);
+  return g.done >= g.need;
+}
+
 const FSRS_FACTOR = 19 / 81;
 const TARGET_RETENTION = 0.9;
 const BURN_STABILITY_DAYS = 120;
@@ -1480,7 +1535,22 @@ function stageFromStability(S) {
   return 1;
 }
 
-function scheduleItem(cur, ratings, now = Date.now()) {
+/* Apprentice ladder (WaniKani-style). New items, and items you miss in reviews,
+ * climb fixed rungs before the FSRS model takes over: 4 hours, 8 hours, 1 day,
+ * 2 days. `ladder` is the rung you are waiting on (0 to 3); a right answer in
+ * reviews climbs one rung, a miss drops one (an item that had left the ladder
+ * comes back on the 8-hour rung), so a missed item returns several times a day
+ * until it sticks. Climbing off the top rung is what earns Novice Monk. Items
+ * from before the ladder (no `ladder` field) stay on FSRS until their next miss. */
+const LADDER_HOURS = [4, 8, 24, 48];
+const RELEARN_MS = 10 * 60 * 1000;
+
+/**
+ * Schedule an item after an answer. `ratings` maps memory track to grade
+ * (1 Again, 2 Hard, 3 Good). Only real reviews (`ladder: true`) move the ladder;
+ * other practice updates the memory model but leaves the ladder and due time alone.
+ */
+function scheduleItem(cur, ratings, now = Date.now(), { ladder: useLadder = false } = {}) {
   const fsrs = { ...(cur.fsrs || {}) };
   // A track added to an item you already know (e.g. tone questions on words) starts
   // from the read track's memory when answered right, instead of dragging the item back to stage 1.
@@ -1490,11 +1560,27 @@ function scheduleItem(cur, ratings, now = Date.now()) {
   Object.entries(ratings).forEach(([track, g]) => { if (g) fsrs[track] = fsrsUpdate(fsrs[track], g, now); });
   const tracks = Object.values(fsrs);
   const weakest = Math.min(...tracks.map((t) => t.S));
-  const stage = stageFromStability(weakest);
+  const lapse = Object.values(ratings).includes(1);
+  let ladder = cur.ladder ?? null;
+  let grad = !!cur.grad;
+  if (useLadder) {
+    if (lapse) ladder = ladder == null ? 1 : Math.max(0, ladder - 1);
+    else if (ladder != null && !cur.relearn) ladder += 1; // the 10-minute relearn answer doesn't climb
+    if (ladder != null && ladder >= LADDER_HOURS.length) { ladder = null; grad = true; }
+  }
+  const out = { ...cur, fsrs, ladder, grad };
+  if (lapse) out.lastMiss = now;
+  if (useLadder) out.relearn = lapse;
+  if (ladder != null) {
+    // On the ladder: Lotus Seed until the top rung. A miss comes back for a same-session relearn after 10 minutes.
+    const next = lapse ? now + RELEARN_MS : useLadder ? now + LADDER_HOURS[ladder] * HOUR : cur.next;
+    return { ...out, stage: 1, next };
+  }
+  const fromS = stageFromStability(weakest);
+  const stage = grad ? Math.max(2, fromS) : fromS;
   // A lapse sends the item back for a same-session relearn after 10 minutes.
-  const relearn = Object.values(ratings).includes(1);
-  const next = stage >= 5 ? Infinity : relearn ? now + 10 * 60 * 1000 : Math.min(...tracks.map((t) => t.last + fsrsInterval(t.S) * DAY));
-  return { ...cur, fsrs, stage, next };
+  const next = stage >= 5 ? Infinity : lapse ? now + RELEARN_MS : Math.min(...tracks.map((t) => t.last + fsrsInterval(t.S) * DAY));
+  return { ...out, stage, next };
 }
 
 const lapsesOf = (s) => (s?.fsrs ? Object.values(s.fsrs).reduce((n, t) => n + (t.lapses || 0), 0) : 0);
@@ -2761,15 +2847,15 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   }, []);
 
   const stageOf = (id) => srs[id]?.stage || 0;
-  const gardenOpen = sandbox || course.filter((i) => i.level === 4).every((i) => stageOf(i.id) >= 2);
+  const chain = useMemo(() => unlockChain(srs, mode, sandbox), [srs, mode, sandbox]);
+  const gardenOpen = sandbox || levelPassed(4, course, srs, chain);
 
   const unlockedLevels = useMemo(() => {
     const set = new Set([1]);
     for (let n = 2; n <= COURSE_LEVELS.length; n += 1) {
-      const prev = course.filter((i) => i.level === n - 1);
       // A level you have already started stays open when new items join the level before it.
       const started = course.some((i) => i.level === n && stageOf(i.id) > 0);
-      if (sandbox || started || prev.every((i) => stageOf(i.id) >= 2)) set.add(n);
+      if (sandbox || started || levelPassed(n - 1, course, srs, chain)) set.add(n);
       else break;
     }
     if (sandbox) COURSE_LEVELS.forEach((l) => set.add(l.n));
@@ -2777,7 +2863,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     GARDEN_BEDS.forEach((b) => { if (gardenOpen && (garden.includes(b.id) || course.some((i) => i.garden === b.id && stageOf(i.id) > 0))) set.add(b.level); });
     return set;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srs, sandbox, garden, course]);
+  }, [srs, sandbox, garden, course, chain]);
 
   // Moments: a burn or a newly opened level since this screen opened (V5).
   const seenRef = useRef(null);
@@ -2799,12 +2885,14 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   }, [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
   const currentLevel = Math.max(...COURSE_LEVELS.filter((l) => unlockedLevels.has(l.n)).map((l) => l.n));
   const lessonQueue = useMemo(() => {
-    const fresh = course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0);
+    const fresh = course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && chain.ready(i));
     const core = fresh.filter((i) => !i.garden).sort((a, b) => a.level - b.level);
     const order = (i) => { const k = garden.indexOf(i.garden); return k < 0 ? 99 : k; };
     const words = fresh.filter((i) => i.garden).sort((a, b) => order(a) - order(b));
     return interleave(core, words, 3, 2);
-  }, [srs, unlockedLevels, course, garden]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [srs, unlockedLevels, course, garden, chain]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Unstarted items in open levels still waiting on letters (shown under Lessons).
+  const waitingCount = useMemo(() => course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && !chain.ready(i) && (!i.garden || garden.includes(i.garden))).length, [course, unlockedLevels, chain, garden]); // eslint-disable-line react-hooks/exhaustive-deps
   const reviewQueue = useMemo(
     () => course.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
     [srs, now, sandbox, course]
@@ -2830,7 +2918,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const finishLessons = (ids) => {
     setSrs((prev) => {
       const next = { ...prev };
-      ids.forEach((id) => { next[id] = { stage: 1, next: Date.now() }; });
+      ids.forEach((id) => { next[id] = { stage: 1, next: Date.now() + LADDER_HOURS[0] * HOUR, ladder: 0 }; });
       return next;
     });
     logActivity({ lessons: ids.length });
@@ -2856,7 +2944,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       if (parts.read != null) stats.read = bump(stats.read, parts.read);
       if (parts.second != null) stats.second = bump(stats.second, parts.second);
       if (parts.spell != null) stats.spell = bump(stats.spell || [0, 0], parts.spell);
-      return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second), spell: grade(parts.spell) }), stats } };
+      return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second), spell: grade(parts.spell) }, Date.now(), { ladder: true }), stats } };
     });
     ["read", "second", "spell"].forEach((k) => logReview(id, k, grade(parts[k])));
     logActivity({ reviews: 1, reviewsRight: correct ? 1 : 0 });
@@ -2898,6 +2986,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
               <BookOpen size={18} className="text-pink-300" />
               <div className="mt-2 text-3xl font-black text-white">{lessonQueue.length}</div>
               <div className="text-xs font-semibold uppercase tracking-wider text-pink-200">Lessons</div>
+              {waitingCount > 0 && <div className="mt-1 text-[11px] text-pink-100/70" data-waiting-count>+{waitingCount} waiting on letters</div>}
             </button>
             <button
               disabled={!reviewQueue.length}
@@ -2974,8 +3063,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
           const burned = items.filter((i) => stageOf(i.id) >= 5).length;
           const current = lvl.n === currentLevel;
           const gate = !unlocked && (k === 0 || unlockedLevels.has(lvl.n - 1));
-          const prev = course.filter((i) => i.level === lvl.n - 1);
-          const prevDone = prev.filter((i) => stageOf(i.id) >= 2).length;
+          const goal = gate && k > 0 ? levelGoal(lvl.n - 1, course, srs, chain) : null;
           return (
             <div key={lvl.n} className="relative mb-4 pl-10" data-level-stop={lvl.n}>
               <div className={`absolute left-0 top-5 flex h-9 w-9 items-center justify-center rounded-full border-2 text-xs font-black ${current ? "sk-stop-current" : ""}`} title={`${burned} of ${items.length} burned`}
@@ -3006,13 +3094,15 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
                         <div className="flex flex-wrap gap-2">
                           {list.map((item) => {
                             const st = stageOf(item.id);
+                            const waits = chain.waiting(item);
                             return (
                               <button
                                 key={item.id}
                                 onClick={() => onInspect(item)}
+                                data-waiting={waits.length ? "" : undefined}
                                 className="sk-on-color group relative min-w-[52px] rounded-xl px-2.5 py-1.5 text-center text-white shadow transition hover:-translate-y-0.5 active:scale-95"
-                                style={{ background: `linear-gradient(160deg, ${TIER[tier].color}, ${TIER[tier].color}aa)`, opacity: unlocked ? 1 : 0.55 }}
-                                title={item.meaning}
+                                style={{ background: `linear-gradient(160deg, ${TIER[tier].color}, ${TIER[tier].color}aa)`, opacity: waits.length ? 0.4 : 1 }}
+                                title={waits.length ? `${item.meaning} · waiting on ${waits.join(" ")} to reach Novice Monk` : item.meaning}
                               >
                                 <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-2xl leading-tight" gapClass="gap-1.5" divider={false} />
                                 <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-sk-bg" style={{ background: SRS_STAGES[st].color }} />
@@ -3029,8 +3119,12 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
                   <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400"><Lock size={13} /> Level {lvl.n} · next gate</div>
                   <h3 className="text-base font-bold text-white">{lvl.title}</h3>
                   <p className="text-xs text-slate-400">{lvl.sub}</p>
-                  <p className="mt-2 text-xs text-slate-300">Opens when every Level {lvl.n - 1} item reaches Novice Monk: {prevDone} of {prev.length}.</p>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${(prevDone / Math.max(1, prev.length)) * 100}%`, background: lvl.accent }} /></div>
+                  {goal && (
+                    <>
+                      <p className="mt-2 text-xs text-slate-300" data-gate-goal>Opens when {goal.need} of the {goal.total} Level {lvl.n - 1} {goal.letters ? "letters" : "items"} reach Novice Monk: {Math.min(goal.done, goal.need)} so far.</p>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${(Math.min(goal.done, goal.need) / Math.max(1, goal.need)) * 100}%`, background: lvl.accent }} /></div>
+                    </>
+                  )}
                 </Card>
               ) : (
                 <div className="flex min-h-[3.25rem] items-center gap-2 pt-4 text-sm text-slate-500"><span className="font-semibold">Level {lvl.n}</span> · {lvl.title}</div>
@@ -3043,7 +3137,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       <WordGarden open={gardenOpen} course={course} planted={garden} setPlanted={setGarden} stageOf={stageOf} mode={mode} font={font} onInspect={onInspect} />
 
       <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
-      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} />
+      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} order={(q) => reviewOrder(q, srs)} />
       <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
     </div>
   );
@@ -3525,7 +3619,7 @@ function WordGarden({ open, course, planted, setPlanted, stageOf, mode, font, on
         <div>
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300">{open ? <Unlock size={13} /> : <Lock size={13} />} Word Garden · Levels 10–16</div>
           <h3 className="text-base font-bold text-white">Everyday words, one bed at a time</h3>
-          <p className="text-xs text-slate-400">{open ? "Plant a bed and its words join your lessons, mixed in with the course. Each word comes with a short phrase to hear it in." : "Opens when every Level 4 item reaches Novice Monk."}</p>
+          <p className="text-xs text-slate-400">{open ? "Plant a bed and its words join your lessons, mixed in with the course. Each word comes with a short phrase to hear it in." : "Opens when 90% of the Level 4 letters reach Novice Monk."}</p>
         </div>
       </div>
       <div className="mt-3 space-y-2">
@@ -3597,6 +3691,12 @@ function ExampleLine({ item, mode }) {
       </div>
     </button>
   );
+}
+
+/** Shuffle, but items you missed in the last day and leeches go first (each group shuffled). */
+function reviewOrder(queue, srs, now = Date.now()) {
+  const first = (i) => { const s = srs[i.id]; return !!s && ((s.lastMiss && now - s.lastMiss < DAY) || isLeech(s)); };
+  return [...shuffle(queue.filter(first)), ...shuffle(queue.filter((i) => !first(i)))];
 }
 
 function shuffle(arr) {
@@ -3748,7 +3848,7 @@ function ClassChoice({ onPick, picked, correct, disabled }) {
   );
 }
 
-function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer, fontFor }) {
+function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer, fontFor, order = shuffle }) {
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
@@ -3778,7 +3878,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   useEffect(() => {
     if (open) {
       pending.current = null;
-      setList(shuffle(queue));
+      setList(order(queue));
       setDirs(directions);
       setIdx(0);
       setInput("");
@@ -3903,7 +4003,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
         <div className="py-6 text-center">
           <Trophy size={44} className="mx-auto text-amber-400" />
           <div className="mt-3 text-2xl font-black text-white">{score.right} / {score.right + score.wrong}</div>
-          <p className="mt-1 text-sm text-slate-400">Each item's reading and its tone (or class) are scheduled separately, for about 90% recall. Missed items come back in 10 minutes, then sooner than before.</p>
+          <p className="mt-1 text-sm text-slate-400">Each item's reading and its tone (or class) are scheduled separately, for about 90% recall. New and missed items climb a ladder of 4 hours, 8 hours, 1 day and 2 days before the memory model takes over; a miss comes back in 10 minutes and drops a rung.</p>
           <button onClick={close} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
         </div>
       ) : spell && spell.id === item.id ? (
@@ -4044,6 +4144,7 @@ function Inspector({ item, mode, font, srs, onClose }) {
           <div className="mt-3 flex justify-center"><AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} /></div>
           <div className="mt-3 text-center text-xs text-slate-400">
             SRS stage: <StageIcon stage={st} size={13} className="mb-0.5 inline" /> <span className="font-bold text-white">{SRS_STAGES[st].name}</span> ({SRS_STAGES[st].alias})
+            {srs[item.id]?.ladder != null && <span data-ladder-rung> · rung {srs[item.id].ladder + 1} of {LADDER_HOURS.length}</span>}
           </div>
         </div>
         <div className="space-y-3 text-sm">
@@ -6845,7 +6946,7 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity, sandbox =
     return undefined;
   };
 
-  const addToSrs = (item) => setSrs((prev) => (prev[item.id]?.stage ? prev : { ...prev, [item.id]: { stage: 1, next: Date.now() } }));
+  const addToSrs = (item) => setSrs((prev) => (prev[item.id]?.stage ? prev : { ...prev, [item.id]: { stage: 1, next: Date.now(), ladder: 0 } }));
   let flat = -1;
 
   return (
@@ -9552,4 +9653,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
