@@ -241,5 +241,33 @@ const lum = (h) => { const c = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 
 const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
 for (const [k, t] of Object.entries(T.TONES_LIGHT_BASE)) check(contrast(t.ink, "#FAF7F0") >= 4.5, `daylight ${k} ink contrast ${contrast(t.ink, "#FAF7F0").toFixed(2)}`);
 
+// Letter gate: practice modes only show letters you have had lessons on.
+for (const mode of ["th", "lo", "dual"]) {
+  const sc = mode === "lo" ? "lo" : "th";
+  const upTo = (L) => { const srs = {}; T.courseItems(mode).filter((i) => i.level <= L).forEach((i) => { srs[i.id] = { stage: 1, next: 0 }; }); return srs; };
+  const fresh = T.letterGate({}, mode);
+  check(!fresh.ready("ก") && !fresh.ready("ກ") && fresh.ready("abc"), `${mode}: a new learner knows no letters, and Latin text never blocks`);
+  eq(T.bridgeAccess(upTo(2), mode).open.size, 0, `${mode}: Mekong Predictor stays locked before Level 3`);
+  const l3 = T.bridgeAccess(upTo(3), mode);
+  check(l3.open.size > 0, `${mode}: Level 3 opens some Mekong laws`);
+  const g3 = T.letterGate(upTo(3), mode);
+  for (const law of T.BRIDGE_LAWS) for (const w of l3.words[law.id]) check(g3.ready(w.th, w.lo), `${mode}: open bridge word ${w.th} uses only met letters`);
+  const all = T.bridgeAccess(upTo(99), mode);
+  eq([...all.open].length, T.BRIDGE_LAWS.length, `${mode}: every Mekong law opens by the end of the course`);
+  eq(T.bridgeAccess({}, mode, true).open.size, T.BRIDGE_LAWS.length, `${mode}: sandbox opens every law`);
+  eq(T.streetPacks(mode).filter((p) => T.packReady(p, T.letterGate(upTo(99), mode))).length, T.streetPacks(mode).length, `${mode}: every sign opens by the end of the course`);
+  eq(T.streetPacks(mode).filter((p) => T.packReady(p, fresh)).length, 0, `${mode}: no signs before any lessons`);
+  check(T.rideStops(sc, T.letterGate(upTo(99), mode)).length === T.RIDE_ROUTES[sc].stops.length, `${mode}: every ride stop opens by the end`);
+  for (const stop of T.rideRun(sc, g3)) check(g3.ready(stop.line.map((t) => t.t).join("")), `${mode}: ride line at Level 3 uses only met letters`);
+  check(!T.corralFor(sc, fresh).open && T.corralFor(sc, T.letterGate(upTo(99), mode)).open, `${mode}: Classifier Corral opens with the course`);
+  for (const it of T.corralFor(sc, g3).items) check(g3.ready(it[1], it[3]), `${mode}: corral noun ${it[1]} uses met letters`);
+  for (let d = 0; d < 8; d += 1) {
+    const tp = T.todayPractice({ srs: {}, mode, bridgeSched: {}, log: {}, now: Date.UTC(2026, 10, 2 + d, 12) });
+    check(tp.kind !== "mekong" && tp.kind !== "sign", `${mode}: Today Path skips Mekong and signs before their letters (day ${d} got ${tp.kind})`);
+  }
+  const kinds = new Set([0, 1, 2, 3, 4, 5, 6, 7].map((d) => T.todayPractice({ srs: upTo(99), mode, bridgeSched: {}, log: {}, now: Date.UTC(2026, 10, 2 + d, 12) }).kind));
+  check(kinds.size >= 1, `${mode}: Today Path still picks a practice late in the course`);
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

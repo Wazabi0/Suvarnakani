@@ -29,6 +29,11 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.26.0**: Only letters you know.
+  - **Letter gate.** A letter counts as met once you have started any course item that contains it (either script). Practice text opens only when every letter in it is met; letters the course never teaches never block. Sandbox ("Unlock all levels") opens everything. Helper: `letterGate(srs, mode, sandbox)`.
+  - **Mekong Predictor.** Opens with Level 3 (The Mekong Bridge). Words open once both spellings use met letters, laws open with their first word, and filler and decoy tiles come only from met letters. First-visit explainer with a worked example (re-open with "How it works"), the law shown on the card, and the sounding Thai letter under each Lao tile.
+  - **Also gated:** Script Slicer (per line/topic), Street Reader (per sign), Ride the line (per line; opens with 3 stops), Classifier Corral (pens, numbers 2 to 5 and at least 6 nouns). The Today Path skips Mekong laws and street signs until they are open.
+  - **Left open on purpose:** Tone Reactor and Vowel Orbit (explorers whose point is to show the system), Ear Dojo and Shadow Mirror (listening and speaking), Talk Paths and Voice Bank (spoken, with readings), Market Clock (ear-first numbers), Decoder (your own text), Write (an alphabet chart that already prefers letters you have started), and Lantern Library and Font Gauntlet (already gated by words you know).
 - **0.25.0**: Hand and look (Roadmap III, wave F).
   - **Daylight theme and true black** (V1). Settings → Theme: System (follows the phone), Daylight or Night, plus a true-black night for OLED. Daylight flips the token ramp (`data-sk-theme` on the root), darkens pale accent text, and swaps the tone palette for darker inks of the same hues (all at least 4.5:1 on paper); pitch is carried by the contour glyph rather than lightness.
   - **The Mekong river map** (V3). Shrine levels are stops down a river. Each stop fills with gold as its items burn, the current stop glows, the next locked level shows its gate and how close you are, and later levels are one line each.
