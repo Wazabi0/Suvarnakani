@@ -269,5 +269,74 @@ for (const mode of ["th", "lo", "dual"]) {
   check(kinds.size >= 1, `${mode}: Today Path still picks a practice late in the course`);
 }
 
+// Apprentice ladder: new items climb 4h, 8h, 1d, 2d before FSRS; misses drop a rung.
+{
+  const H = 3600 * 1000, t0 = Date.UTC(2026, 10, 2, 8);
+  let it = { stage: 1, next: t0 + 4 * H, ladder: 0 };
+  let t = t0 + 4 * H;
+  const waits = [];
+  for (let k = 0; k < 4; k += 1) {
+    it = T.scheduleItem(it, { read: 3, second: 3 }, t, { ladder: true });
+    waits.push(Math.round((it.next - t) / H));
+    if (k < 3) { check(it.stage === 1, `ladder rung ${k + 1}: still Lotus Seed (got ${it.stage})`); t = it.next; }
+  }
+  eq(waits.slice(0, 3), [8, 24, 48], "ladder waits 8h, 1d, 2d after each right answer");
+  check(it.ladder === null && it.grad && it.stage >= 2, `climbing off the top rung earns Novice Monk (stage ${it.stage})`);
+  // A miss after graduating comes back in 10 minutes, then on the 8-hour rung.
+  const miss = T.scheduleItem(it, { read: 1, second: 3 }, t + 5 * 24 * H, { ladder: true });
+  check(miss.stage === 1 && miss.ladder === 1 && miss.next - (t + 5 * 24 * H) === 10 * 60 * 1000 && miss.lastMiss, "a miss drops a graduated item to the 8h rung with a 10-minute relearn");
+  const relearned = T.scheduleItem(miss, { read: 3, second: 3 }, miss.next, { ladder: true });
+  check(relearned.ladder === 1 && relearned.next - miss.next === 8 * H, "the relearn answer doesn't climb; the item waits 8 hours");
+  const onLadder = T.scheduleItem({ stage: 1, next: 0, ladder: 2 }, { read: 1 }, t0, { ladder: true });
+  eq(onLadder.ladder, 1, "a miss on the ladder drops one rung");
+  const practice = T.scheduleItem({ stage: 1, next: t0 + 9 * H, ladder: 2 }, { spell: 3 }, t0);
+  check(practice.ladder === 2 && practice.next === t0 + 9 * H, "practice outside reviews leaves the ladder and due time alone");
+  const legacy = T.scheduleItem({ stage: 1, next: 0 }, { read: 3 }, t0, { ladder: true });
+  check(legacy.ladder === null, "items from before the ladder stay on FSRS until a miss");
+  const sentence = T.scheduleItem({ stage: 1, next: 0 }, { read: 3 }, t0);
+  check(sentence.ladder === null, "the sentence deck doesn't use the ladder");
+  // Review order: recent misses and leeches first.
+  const q = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  for (let k = 0; k < 10; k += 1) {
+    const o = T.reviewOrder(q, { c: { stage: 1, lastMiss: t0 - H } }, t0).map((i) => i.id);
+    check(o[0] === "c" && o.length === 4, `recent miss goes first (got ${o})`);
+  }
+  eq(T.reviewOrder(q, { c: { stage: 1, lastMiss: t0 - 30 * H } }, t0).length, 4, "old misses shuffle with the rest");
+}
+
+// Unlock chain: syllables and words wait for their letters to reach Novice Monk.
+for (const mode of ["th", "lo", "dual"]) {
+  const course = T.courseItems(mode);
+  const none = T.unlockChain({}, mode);
+  const glyphs = course.filter((i) => i.tier === "glyph");
+  check(glyphs.every((g) => none.ready(g)), `${mode}: letters never wait`);
+  const words = course.filter((i) => i.tier !== "glyph" && i.level === 1);
+  check(words.some((w) => !none.ready(w)), `${mode}: Level 1 words wait for their letters`);
+  const allGlyphs = Object.fromEntries(glyphs.map((g) => [g.id, { stage: 2 }]));
+  const full = T.unlockChain(allGlyphs, mode);
+  check(course.every((i) => full.ready(i)), `${mode}: with every letter at Novice Monk nothing waits`);
+  check(T.unlockChain({}, mode, true).ready(words[0]), `${mode}: sandbox skips the chain`);
+  const started = words.find((w) => !none.ready(w));
+  check(T.unlockChain({ [started.id]: { stage: 1 } }, mode).ready(started), `${mode}: an item already started never waits`);
+  // Levels: 90% of the level's letters opens the next one, and every level can open.
+  const l1 = glyphs.filter((g) => g.level === 1);
+  const most = Object.fromEntries(l1.slice(0, Math.max(1, Math.floor(l1.length * 0.9))).map((g) => [g.id, { stage: 2 }]));
+  check(T.levelPassed(1, course, most, T.unlockChain(most, mode)), `${mode}: 90% of Level 1 letters passes it`);
+  const few = Object.fromEntries(l1.slice(0, Math.max(1, Math.floor(l1.length * 0.9)) - 1).map((g) => [g.id, { stage: 2 }]));
+  check(!T.levelPassed(1, course, few, T.unlockChain(few, mode)), `${mode}: fewer letters doesn't`);
+  // Simulate a learner who takes every open lesson and gets each item to Novice Monk: the whole course opens.
+  let srs = {};
+  for (let round = 0; round < 60; round += 1) {
+    const ch = T.unlockChain(srs, mode);
+    let open = 1;
+    for (let n = 2; n <= 9; n += 1) { if (T.levelPassed(n - 1, course, srs, ch)) open = n; else break; }
+    const fresh = course.filter((i) => !i.garden && i.level <= open && !srs[i.id] && ch.ready(i));
+    if (!fresh.length) break;
+    fresh.forEach((i) => { srs[i.id] = { stage: 2 }; });
+  }
+  const core = course.filter((i) => !i.garden);
+  eq(core.filter((i) => !srs[i.id]).map((i) => i.th), [], `${mode}: a steady learner reaches every core item`);
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
