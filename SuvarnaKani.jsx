@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.25.0";
+const APP_VERSION = "0.26.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -1413,6 +1413,38 @@ function courseItems(mode) {
   return out;
 }
 
+/* ---------------------------------------------------------------------------
+ * Letter gate: practice modes only show text made of letters you have met.
+ * A letter counts as met once you have started (done the lesson for) any
+ * course item that contains it, in either script. Letters the course never
+ * teaches never block anything, so every gated item opens eventually.
+ * ------------------------------------------------------------------------- */
+const SCRIPT_CHAR = /[\u0E00-\u0EFF]/;
+const taughtCache = {};
+function taughtLetters(mode) {
+  const key = mode === "lo" ? "lo" : "th";
+  if (taughtCache[key]) return taughtCache[key];
+  const set = new Set();
+  courseItems(mode).forEach((it) => [it.th, it.lo].forEach((s) => [...(s || "")].forEach((c) => { if (SCRIPT_CHAR.test(c)) set.add(c); })));
+  return (taughtCache[key] = set);
+}
+function knownLetters(srs, mode) {
+  const set = new Set();
+  courseItems(mode).forEach((it) => { if ((srs[it.id]?.stage || 0) >= 1) [it.th, it.lo].forEach((s) => [...(s || "")].forEach((c) => set.add(c))); });
+  return set;
+}
+/**
+ * The gate for one learner. `missing(text)` lists the taught letters in `text`
+ * you have not met yet; `ready(text)` is true when there are none. Sandbox mode
+ * (all levels unlocked) opens everything.
+ */
+function letterGate(srs = {}, mode = "th", sandbox = false) {
+  const taught = taughtLetters(mode);
+  const known = knownLetters(srs, mode);
+  const missing = (...texts) => (sandbox ? [] : [...new Set(texts.flatMap((t) => [...(t || "")]).filter((c) => taught.has(c) && !known.has(c)))]);
+  return { known, missing, ready: (...texts) => missing(...texts).length === 0, open: !!sandbox };
+}
+
 const FSRS_FACTOR = 19 / 81;
 const TARGET_RETENTION = 0.9;
 const BURN_STABILITY_DAYS = 120;
@@ -1797,7 +1829,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false };
+const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 const usePrefs = () => React.useContext(PrefsContext);
 const runtimePrefs = { haptics: true, roman: "learner" };
@@ -1831,6 +1863,11 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.26.0", title: "Only letters you know", points: [
+    "Practice modes now only show letters you've had lessons on. Locked items open as your course reaches their letters, and Unlock all levels still opens everything.",
+    "Mekong Predictor opens with Level 3 and only uses words you can read. It starts with a short explainer and an example, and each Lao tile shows the Thai letter it sounds like.",
+    "Script Slicer topics, Street Reader signs, Ride the line stops and the Classifier Corral open the same way. The Today Path only sends you to Mekong laws or street signs once they're open.",
+  ] },
   { v: "0.25.0", title: "Hand and look", points: [
     "Daylight theme for reading in the sun, and true black for night on an OLED screen. Both follow your phone unless you pick one in Settings.",
     "The Shrine is now a journey down the Mekong: each level is a stop that fills with gold as its items burn, with the next gate in view.",
@@ -2429,13 +2466,16 @@ const PRACTICE_GOALS = { trace: 3, mekong: 4, sign: 1, shadow: 5 };
  * speaking each come round. What is due wins the day: write reviews first, then Mekong laws.
  * Once picked, today's activity stays put even after its due list empties.
  */
-function todayPractice({ srs, mode, bridgeSched, log, now = Date.now() }) {
+function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Date.now() }) {
   const today = log[todayKey(now)] || {};
   const writes = writeDue(srs, mode, now);
-  const laws = lawsDue(bridgeSched, now);
+  // Mekong laws and street signs only come round once you have letters for them.
+  const bridgeOpen = bridgeAccess(srs, mode, sandbox).open;
+  const laws = lawsDue(bridgeSched, now, bridgeOpen);
   const startedGlyphs = traceTargets(mode).some((t) => srs[t.id]);
+  const signsOpen = streetPacks(mode).some((p) => packReady(p, letterGate(srs, mode, sandbox)));
   const dayNo = Math.floor(new Date(todayKey(now)).getTime() / DAY);
-  const rotation = ["trace", "mekong", "sign", "shadow"].filter((k) => k !== "trace" || startedGlyphs);
+  const rotation = ["trace", "mekong", "sign", "shadow"].filter((k) => (k !== "trace" || startedGlyphs) && (k !== "mekong" || bridgeOpen.size) && (k !== "sign" || signsOpen));
   let kind = rotation[dayNo % rotation.length];
   // Keep whatever was already started today.
   const begun = ["trace", "mekong", "sign", "shadow"].find((k) => (today[{ trace: "traces", mekong: "bridge", sign: "signs", shadow: "shadow" }[k]] || 0) > 0);
@@ -2450,7 +2490,7 @@ function todayPractice({ srs, mode, bridgeSched, log, now = Date.now() }) {
     return { kind, label: show ? `Trace 3 letters: ${show}` : "Trace 3 letters", thai: !!show, done, note: `${Math.min(count, goal)} / ${goal} traced${writes.length ? ` · ${writes.length} due` : ""}` };
   }
   if (kind === "mekong") {
-    const law = laws[0] || nextNewLaw(bridgeSched);
+    const law = laws[0] || nextNewLaw(bridgeSched, bridgeOpen);
     return { kind, label: `Mekong law: ${law ? law.name : "review"}`, done, note: `${Math.min(count, goal)} / ${goal} words${laws.length ? ` · ${laws.length} law${laws.length > 1 ? "s" : ""} due` : law ? " · new law" : ""}` };
   }
   if (kind === "sign") return { kind, label: "Read a street sign against the clock", done, note: done ? "Read today" : "Street Reader" };
@@ -2843,7 +2883,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         onLessons={() => setLessonOpen(true)}
         onEar={onOpenEar}
         onLeech={() => setLeechOpen(true)}
-        practice={todayPractice({ srs, mode, bridgeSched, log })}
+        practice={todayPractice({ srs, mode, bridgeSched, log, sandbox })}
         onPractice={onPractice}
       />
       <Card className="overflow-hidden">
@@ -6182,18 +6222,28 @@ const SLICE_TOPICS = [
   ["eat", "Eating"], ["meet", "Greeting"], ["toilet", "Toilet"], ["price", "Price"], ["coffee", "Coffee"], ["name", "Names"], ["hungry", "Hungry"],
   ["understand", "Not understanding"], ["spicy", "Not spicy"], ["market", "Market hours"], ["weather", "Weather"], ["taxi", "Taxi"], ["family", "Family"], ["speak", "Speaking"], ["trip", "A trip"],
 ];
-function Slicer({ mode, font }) {
-  const [sid, setSid] = useState("eat");
-  const list = SENTENCES.filter((s) => s.id === sid && (mode === "dual" || s.script === mode));
-  const idx = SLICE_TOPICS.findIndex(([k]) => k === sid);
+function Slicer({ mode, font, srs = {}, sandbox = false }) {
+  const gate = useMemo(() => letterGate(srs, mode, sandbox), [srs, mode, sandbox]);
+  // A line opens once you have met every letter in it.
+  const lines = SENTENCES.filter((s) => (mode === "dual" || s.script === mode) && gate.ready(s.words.map((w) => w.w).join("")));
+  const openTopics = SLICE_TOPICS.filter(([k]) => lines.some((s) => s.id === k));
+  const [sid, setSid] = useState(() => openTopics[0]?.[0] || "eat");
+  const title = "Zero-Space Script Slicer";
+  if (!openTopics.length) return <LetterLock icon={Scissors} title={title} sub="Thai and Lao write words with no spaces. Find the word boundaries with golden laser cuts." color={COLORS.gold} why="Every line still has letters you haven't had lessons on. The first lines open around Level 3." progress={`0 of ${SLICE_TOPICS.length} topics open`} />;
+  const cur = openTopics.some(([k]) => k === sid) ? sid : openTopics[0][0];
+  const list = lines.filter((s) => s.id === cur);
+  const idx = openTopics.findIndex(([k]) => k === cur);
   return (
     <div className="space-y-4">
-      <SectionTitle icon={Scissors} title="Zero-Space Script Slicer" sub="Thai and Lao write words with no spaces. Find the word boundaries with golden laser cuts. Lines get longer as you go." color={COLORS.gold} />
+      <SectionTitle icon={Scissors} title={title} sub="Thai and Lao write words with no spaces. Find the word boundaries with golden laser cuts. Lines get longer as you go." color={COLORS.gold} />
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
-        {SLICE_TOPICS.map(([k, l], i) => <Chip key={k} active={sid === k} onClick={() => setSid(k)}>{i + 1} · {l}</Chip>)}
+        {/* Open topics first, then the locked ones. */}
+        {[...openTopics, ...SLICE_TOPICS.filter((t) => !openTopics.includes(t))].map(([k, l]) => openTopics.some(([o]) => o === k)
+          ? <Chip key={k} active={cur === k} onClick={() => setSid(k)}>{SLICE_TOPICS.findIndex(([x]) => x === k) + 1} · {l}</Chip>
+          : <span key={k} data-topic-locked title="Has letters you haven't studied yet" className="shrink-0 whitespace-nowrap rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-500"><Lock size={11} className="mr-1 inline" />{SLICE_TOPICS.findIndex(([x]) => x === k) + 1} · {l}</span>)}
       </div>
       {list.map((s) => <SliceSentence key={`${s.id}-${s.script}`} sentence={s} font={font} mode={mode} />)}
-      {idx < SLICE_TOPICS.length - 1 && <button onClick={() => setSid(SLICE_TOPICS[idx + 1][0])} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white">Next line <ChevronRight size={14} className="inline" /></button>}
+      {idx < openTopics.length - 1 && <button onClick={() => setSid(openTopics[idx + 1][0])} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white">Next line <ChevronRight size={14} className="inline" /></button>}
     </div>
   );
 }
@@ -6274,32 +6324,111 @@ function buildTiles(target, naive, fillers) {
   const pool = shuffle(fillers.filter((f) => !need.includes(f) && !extra.has(f))).slice(0, Math.max(2, 6 - extra.size));
   return shuffle([...need, ...extra, ...pool].map((ch, i) => ({ ch, key: `${i}-${ch}` })));
 }
+/** The Thai letter that sounds like a Lao tile, shown under it as a hint. */
+const laoTileHint = (ch) => {
+  const th = LAO_TO_THAI[ch];
+  if (!th || th === ch) return null;
+  return isMark(ch) ? `◌${th}` : th;
+};
 
 const emptyBridge = () => Object.fromEntries(BRIDGE_LAWS.map((l) => [l.id, [0, 0]]));
 // Each law gets an FSRS track once you first try it; due laws come back like any review.
 const lawDueAt = (t) => t.last + fsrsInterval(t.S) * DAY;
-const lawsDue = (sched, now = Date.now()) => BRIDGE_LAWS.filter((l) => sched[l.id] && lawDueAt(sched[l.id]) <= now).sort((a, b) => lawDueAt(sched[a.id]) - lawDueAt(sched[b.id]));
-const nextNewLaw = (sched) => BRIDGE_LAWS.find((l) => !sched[l.id]) || null;
+const lawsDue = (sched, now = Date.now(), open = null) => BRIDGE_LAWS.filter((l) => sched[l.id] && lawDueAt(sched[l.id]) <= now && (!open || open.has(l.id))).sort((a, b) => lawDueAt(sched[a.id]) - lawDueAt(sched[b.id]));
+const nextNewLaw = (sched, open = null) => BRIDGE_LAWS.find((l) => !sched[l.id] && (!open || open.has(l.id))) || null;
 
-function MekongPredictor({ mode, font, bridge, setBridge, sched = {}, setSched, logActivity }) {
+/**
+ * Which bridge words you can do yet. The Predictor opens with Level 3 (The
+ * Mekong Bridge), and a word opens once you have met every letter of both its
+ * spellings. A law is open when at least one of its words is.
+ */
+function bridgeAccess(srs = {}, mode = "th", sandbox = false) {
+  const gate = letterGate(srs, mode, sandbox);
+  const started = sandbox || courseItems(mode).some((i) => i.level === 3 && (srs[i.id]?.stage || 0) >= 1);
+  const words = {};
+  BRIDGE_LAWS.forEach((l) => { words[l.id] = started ? l.words.filter((w) => gate.ready(w.th, w.lo)) : []; });
+  const open = new Set(BRIDGE_LAWS.filter((l) => words[l.id].length).map((l) => l.id));
+  return { gate, started, words, open };
+}
+
+function MekongIntro({ font, onClose }) {
+  return (
+    <Card className="p-5" glow={COLORS.purple}>
+      <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">How the Mekong Predictor works</div>
+      <p className="mt-2 text-sm text-slate-200">Thai and Lao are close cousins. Most words are the same word on both banks of the Mekong, and the spelling changes follow a handful of regular <b>laws</b>. Learn a law once and you can predict hundreds of Lao spellings from Thai, or the other way round.</p>
+      <div className="mt-3 rounded-2xl bg-white/[0.04] p-3 text-sm">
+        <div className="text-slate-400">Example · law: ร becomes ຮ</div>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <Glyph text="รัก" script="th" font={font} className="text-4xl leading-[1.6] text-white" />
+          <span className="text-purple-300">→</span>
+          <Glyph text="ຮັກ" script="lo" font={font} className="text-4xl leading-[1.6] text-white" />
+          <span className="text-slate-300">rák → hak · love</span>
+        </div>
+        <p className="mt-1 text-slate-300">Swap Thai ร for Lao ຮ and copy the rest letter for letter.</p>
+      </div>
+      <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-slate-200">
+        <li>Read the law at the top of the card and the word in the first script.</li>
+        <li>Tap the tiles in reading order to spell it in the other script. Under each Lao tile is the Thai letter it sounds like.</li>
+        <li>Press Check. If you fell for the obvious mistake, you'll be told which part of the law you missed.</li>
+      </ol>
+      <p className="mt-2 text-xs text-slate-400">Only words made of letters you've already had lessons on appear. More laws open as your course goes on, and each law you try comes back for review on its own schedule.</p>
+      <button onClick={onClose} className="mt-4 w-full rounded-xl bg-purple-500 py-2.5 text-sm font-bold text-white">Got it</button>
+    </Card>
+  );
+}
+
+/** A locked practice mode: what it is for and what opens it. */
+function LetterLock({ icon: Icon = Lock, title, sub, color, why, progress }) {
+  return (
+    <div className="space-y-4" data-letter-lock>
+      <SectionTitle icon={Icon} title={title} sub={sub} color={color} />
+      <Card className="p-5 text-center">
+        <Lock size={22} className="mx-auto text-slate-400" />
+        <p className="mt-2 text-sm text-slate-200">{why}</p>
+        {progress && <p className="mt-1 text-xs text-slate-400">{progress}</p>}
+        <p className="mt-3 text-xs text-slate-500">Keep going with your lessons in the Shrine. Turning on "Unlock all levels" in Settings opens everything.</p>
+      </Card>
+    </div>
+  );
+}
+
+function MekongPredictor({ mode, font, bridge, setBridge, sched = {}, setSched, logActivity, srs = {}, sandbox = false, introSeen = true, onIntroSeen }) {
+  const access = useMemo(() => bridgeAccess(srs, mode, sandbox), [srs, mode, sandbox]);
+  const firstLaw = () => (lawsDue(sched, Date.now(), access.open)[0] || nextNewLaw(sched, access.open) || BRIDGE_LAWS.find((l) => access.open.has(l.id)) || BRIDGE_LAWS[0]).id;
   const [dir, setDir] = useState(mode === "lo" ? "lo2th" : "th2lo");
-  const [lawId, setLawId] = useState(() => (lawsDue(sched)[0] || nextNewLaw(sched) || BRIDGE_LAWS[0]).id);
+  const [lawId, setLawId] = useState(firstLaw);
   const [wi, setWi] = useState(0);
   const [built, setBuilt] = useState([]);
   const [result, setResult] = useState(null);
+  const [showIntro, setShowIntro] = useState(!introSeen);
   const law = BRIDGE_LAWS.find((l) => l.id === lawId);
-  const word = law.words[wi % law.words.length];
+  const words = access.words[law.id].length ? access.words[law.id] : law.words;
+  const word = words[wi % words.length];
   const toLao = dir === "th2lo";
   const source = toLao ? word.th : word.lo;
   const target = toLao ? word.lo : word.th;
+  const naive = toLao ? word.naive.filter(([w]) => access.gate.ready(w)) : [];
   const tiles = useMemo(
-    () => buildTiles(target, toLao ? word.naive : [], toLao ? LAO_FILLERS : THAI_FILLERS),
+    () => buildTiles(target, naive, (toLao ? LAO_FILLERS : THAI_FILLERS).filter((f) => access.gate.ready(f))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [lawId, wi, dir]
   );
   const audio = getAudio();
 
   useEffect(() => { setBuilt([]); setResult(null); }, [lawId, wi, dir]);
+  // If the law on screen isn't open (say, after a reset), move to one that is.
+  useEffect(() => { if (access.open.size && !access.open.has(lawId)) { setLawId(firstLaw()); setWi(0); } }, [access]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const title = "Mekong Predictor";
+  const sub = "Spell a word on the other side of the river by applying a Thai ↔ Lao spelling law.";
+  if (!access.started) {
+    return <LetterLock icon={Languages} title={title} sub={sub} color={COLORS.purple} why="This opens with Level 3, The Mekong Bridge, where the course starts pairing Thai letters with their Lao twins." />;
+  }
+  if (!access.open.size) {
+    return <LetterLock icon={Languages} title={title} sub={sub} color={COLORS.purple} why="None of the practice words are made only of letters you've studied yet. Finish a few more Level 3 lessons and the first laws open." />;
+  }
+  const totalWords = BRIDGE_LAWS.reduce((n, l) => n + l.words.length, 0);
+  const readyWords = BRIDGE_LAWS.reduce((n, l) => n + access.words[l.id].length, 0);
 
   const answer = built.map((t) => t.ch).join("");
   const check = () => {
@@ -6317,26 +6446,31 @@ function MekongPredictor({ mode, font, bridge, setBridge, sched = {}, setSched, 
   };
   const next = () => {
     const nextIdx = wi + 1;
-    if (nextIdx >= law.words.length) {
-      const li = BRIDGE_LAWS.findIndex((l) => l.id === law.id);
-      const due = lawsDue(sched).find((l) => l.id !== law.id);
-      setLawId((due || BRIDGE_LAWS[(li + 1) % BRIDGE_LAWS.length]).id);
+    if (nextIdx >= words.length) {
+      const openLaws = BRIDGE_LAWS.filter((l) => access.open.has(l.id));
+      const li = openLaws.findIndex((l) => l.id === law.id);
+      const due = lawsDue(sched, Date.now(), access.open).find((l) => l.id !== law.id);
+      setLawId((due || openLaws[(li + 1) % openLaws.length]).id);
       setWi(0);
     } else setWi(nextIdx);
   };
+  const closeIntro = () => { setShowIntro(false); onIntroSeen?.(); };
 
   return (
     <div className="space-y-4">
-      <SectionTitle icon={Languages} title="Mekong Predictor" sub="Apply the bridge laws to spell a word on the other side of the river. Building the answer yourself makes the rule stick." color={COLORS.purple} />
+      <SectionTitle icon={Languages} title={title} sub={sub} color={COLORS.purple} />
       <div className="flex flex-wrap items-center gap-2">
         <Chip active={dir === "th2lo"} color={COLORS.purple} onClick={() => setDir("th2lo")}>ไทย → ລາວ</Chip>
         <Chip active={dir === "lo2th"} color={COLORS.purple} onClick={() => setDir("lo2th")}>ລາວ → ไทย</Chip>
+        {!showIntro && <button onClick={() => setShowIntro(true)} className="ml-auto flex items-center gap-1 rounded-xl border border-white/10 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/5"><Info size={13} />How it works</button>}
       </div>
+      {showIntro && <MekongIntro font={font} onClose={closeIntro} />}
       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <Card className="p-5" glow={COLORS.purple}>
           <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300">Law {BRIDGE_LAWS.findIndex((l) => l.id === law.id) + 1} · {law.name}</div>
+          <p className="mt-1 text-xs text-slate-300">{law.rule}</p>
           <div className="mt-3 text-center">
-            <div className="text-xs text-slate-400">{toLao ? "Thai" : "Lao"}</div>
+            <div className="text-xs text-slate-400">{toLao ? "Thai" : "Lao"} · spell it in {toLao ? "Lao" : "Thai"}</div>
             <Glyph text={source} script={toLao ? "th" : "lo"} font={font} className="text-6xl leading-[1.5] text-white" />
             <div className="text-sm text-slate-300">{word.m}</div>
           </div>
@@ -6351,15 +6485,17 @@ function MekongPredictor({ mode, font, bridge, setBridge, sched = {}, setSched, 
           <div className="mt-4 flex flex-wrap justify-center gap-2">
             {tiles.map((t) => {
               const used = built.some((b) => b.key === t.key);
+              const hint = toLao ? laoTileHint(t.ch) : null;
               return (
                 <button
                   key={t.key}
+                  data-bridge-tile
                   disabled={used || !!result}
                   onClick={() => setBuilt([...built, t])}
-                  className="min-w-[48px] rounded-xl border border-purple-400/40 bg-purple-500/15 px-2 py-1 text-3xl leading-[1.5] text-white transition active:scale-95 disabled:opacity-25"
-                  style={{ fontFamily: FONT_STACKS[font][toLao ? "lo" : "th"] }}
+                  className="flex min-w-[48px] flex-col items-center rounded-xl border border-purple-400/40 bg-purple-500/15 px-2 py-1 text-white transition active:scale-95 disabled:opacity-25"
                 >
-                  {showTile(t.ch)}
+                  <span className="text-3xl leading-[1.5]" style={{ fontFamily: FONT_STACKS[font][toLao ? "lo" : "th"] }}>{showTile(t.ch)}</span>
+                  {hint && <span data-tile-hint className="text-base leading-tight text-slate-400" style={{ fontFamily: FONT_STACKS[font].th }}>{hint}</span>}
                 </button>
               );
             })}
@@ -6390,20 +6526,22 @@ function MekongPredictor({ mode, font, bridge, setBridge, sched = {}, setSched, 
         </Card>
         <Card className="p-4">
           <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">The ten laws</div>
-          <p className="mb-2 text-[11px] text-slate-400">Each law you try comes back on its own schedule. Due laws open first and show up on the Today Path.</p>
+          <p className="mb-2 text-[11px] text-slate-400">{readyWords} of {totalWords} words use only letters you've studied. Locked laws open as your lessons cover their letters. Each law you try comes back on its own schedule.</p>
           <div className="space-y-1.5">
             {BRIDGE_LAWS.map((l, i) => {
               const [r, n] = bridge[l.id] || [0, 0];
               const acc = n ? r / n : 0;
               const t = sched[l.id];
-              const isDue = t && lawDueAt(t) <= Date.now();
+              const isOpen = access.open.has(l.id);
+              const isDue = isOpen && t && lawDueAt(t) <= Date.now();
+              const ready = access.words[l.id].length;
               return (
-                <button key={l.id} onClick={() => { setLawId(l.id); setWi(0); }} className={`w-full rounded-xl px-2.5 py-1.5 text-left transition ${l.id === law.id ? "bg-purple-500/20" : "hover:bg-white/5"}`}>
+                <button key={l.id} data-law={l.id} data-law-open={isOpen ? "1" : "0"} disabled={!isOpen} onClick={() => { setLawId(l.id); setWi(0); }} className={`w-full rounded-xl px-2.5 py-1.5 text-left transition disabled:opacity-45 ${l.id === law.id ? "bg-purple-500/20" : "hover:bg-white/5"}`}>
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-100">{i + 1}. {l.name}</span>
+                    <span className="font-semibold text-slate-100">{!isOpen && <Lock size={11} className="mr-1 inline" />}{i + 1}. {l.name}</span>
                     <span className="flex items-center gap-1.5 tabular-nums text-slate-400">
                       {isDue && <span data-law-due className="rounded-full bg-amber-400/20 px-1.5 text-[10px] font-bold text-amber-300">due</span>}
-                      {n ? `${Math.round(acc * 100)}%` : "–"}
+                      {isOpen ? (ready < l.words.length ? `${ready}/${l.words.length} words · ` : "") + (n ? `${Math.round(acc * 100)}%` : "–") : "locked"}
                     </span>
                   </div>
                   <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-purple-400" style={{ width: `${acc * 100}%` }} /></div>
@@ -6657,15 +6795,23 @@ function resolveToken(tok, script) {
   };
 }
 
-function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
+/** Every sign and exchange for this mode, with today's café menu. */
+function streetPacks(mode, seed = Math.floor(Date.now() / DAY)) {
+  return [...STREET_PACKS, dailyMenu(seed), ...SIGN_PACKS()].filter((p) => mode === "dual" || p.script === mode);
+}
+const tokensText = (line, script) => line.map((t) => resolveToken(t, script).t).join("");
+/** A sign opens once you have met every letter on it (unknown words are fine: tap them). */
+const packReady = (pack, gate) => gate.ready(...pack.lines.map((l) => tokensText(l, pack.script)));
+
+function StreetReader({ mode, srs, setSrs, best, setBest, logActivity, sandbox = false }) {
   const [menuSeed, setMenuSeed] = useState(() => Math.floor(Date.now() / DAY));
-  const signPacks = useMemo(() => SIGN_PACKS(), []);
-  const menu = useMemo(() => dailyMenu(menuSeed), [menuSeed]);
-  const packs = [...STREET_PACKS, menu, ...signPacks].filter((p) => mode === "dual" || p.script === mode);
-  const [pid, setPid] = useState(packs[0]?.id);
+  const gate = useMemo(() => letterGate(srs, mode, sandbox), [srs, mode, sandbox]);
+  const packs = useMemo(() => streetPacks(mode, menuSeed), [mode, menuSeed]);
+  const readyIds = useMemo(() => new Set(packs.filter((p) => packReady(p, gate)).map((p) => p.id)), [packs, gate]);
+  const [pid, setPid] = useState(() => packs.find((p) => readyIds.has(p.id))?.id);
   const prefs = usePrefs();
   const { particle } = prefs;
-  const pack = politePack(packs.find((p) => p.id === pid) || packs[0], particle);
+  const pack = politePack(packs.find((p) => p.id === pid && readyIds.has(p.id)) || packs.find((p) => readyIds.has(p.id)) || packs[0], particle);
   const [sel, setSel] = useState(null);
   const [timer, setTimer] = useState({ start: null, last: null });
   const [, tick] = useState(0);
@@ -6675,6 +6821,9 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
     const id = setInterval(() => tick((n) => n + 1), 200);
     return () => clearInterval(id);
   }, [timer.start]);
+  if (!readyIds.size) {
+    return <LetterLock icon={BookOpen} title="Street Reader" sub="Real signs and short exchanges in the loopless type you meet on the street." color="#FFB86B" why="Every sign here still has letters you haven't had lessons on. The first signs open around Level 4." progress={`0 of ${packs.length} signs open`} />;
+  }
   if (!pack) return null;
   const style = STREET_STYLES[pack.style];
   const tokens = pack.lines.flat().map((t) => resolveToken(t, pack.script));
@@ -6704,10 +6853,12 @@ function StreetReader({ mode, srs, setSrs, best, setBest, logActivity }) {
       <SectionTitle icon={BookOpen} title="Street Reader" sub="Real signs and short exchanges in the loopless type you meet on the street. Green words you know; tap the rest." color="#FFB86B" />
       {/* One scrolling row on the phone: 23 signs would otherwise fill the screen. */}
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 [&>*]:shrink-0">
-        {packs.map((p) => (
+        {[...packs.filter((p) => readyIds.has(p.id)), ...packs.filter((p) => !readyIds.has(p.id))].map((p) => readyIds.has(p.id) ? (
           <Chip key={p.id} active={p.id === pack.id} color="#FFB86B" onClick={() => setPid(p.id)}>
             {p.title} <span className="text-xs opacity-70">{p.place}</span>
           </Chip>
+        ) : (
+          <span key={p.id} data-pack-locked title="Has letters you haven't studied yet" className="whitespace-nowrap rounded-full border border-white/10 px-3 py-1.5 text-sm text-slate-500"><Lock size={11} className="mr-1 inline" />{p.title}</span>
         ))}
       </div>
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
@@ -7928,9 +8079,19 @@ const CORRAL = {
   },
 };
 
-function ClassifierCorral({ mode, drills = {}, setDrills, logActivity }) {
+/** Corral nouns you can read; the game opens once every pen label and a handful of nouns are readable. */
+const CORRAL_MIN_ITEMS = 6;
+function corralFor(script, gate = null) {
+  const all = CORRAL[script];
+  if (!gate) return { ...all, open: true };
+  const items = all.items.filter((it) => gate.ready(it[1], it[3]));
+  const pensReady = all.pens.every((p) => gate.ready(p[0])) && gate.ready(...[2, 3, 4, 5].map((n) => NUM_WORDS[script].digits[n]));
+  return { ...all, items, open: pensReady && items.length >= CORRAL_MIN_ITEMS };
+}
+function ClassifierCorral({ mode, drills = {}, setDrills, logActivity, srs = {}, sandbox = false }) {
   const script = mode === "lo" ? "lo" : "th";
-  const data = CORRAL[script];
+  const gate = useMemo(() => letterGate(srs, mode, sandbox), [srs, mode, sandbox]);
+  const data = useMemo(() => corralFor(script, gate), [script, gate]);
   const fontFam = script === "lo" ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th;
   const [game, setGame] = useState("sort");
   const [round, setRound] = useState(null);
@@ -7949,7 +8110,10 @@ function ClassifierCorral({ mode, drills = {}, setDrills, logActivity }) {
     return { g, it, n, answer: right, opts, emoji, en };
   }, [data, script]);
   const next = (g = game) => { setRound(make(g)); setPick(null); };
-  useEffect(() => { next(game); }, [game, script]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (data.open) next(game); }, [game, script, data.open]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!data.open) {
+    return <LetterLock icon={Layers} title="Classifier Corral" sub="Thai and Lao count things with a classifier word: two dogs is 'dog two animal'." color="#FCD34D" why={`This opens when you've had lessons on every letter in the classifier words, the numbers two to five, and at least ${CORRAL_MIN_ITEMS} of the nouns.`} progress={`${data.items.length} of ${CORRAL[script].items.length} nouns ready`} />;
+  }
   if (!round) return null;
   const [emoji, noun, en, cls] = round.it;
   const choose = (o) => {
@@ -8283,21 +8447,31 @@ const RIDE_ROUTES = {
   th: { name: "Bangkok, stop to stop", stops: ["busstop", "road", "pier", "hospital", "pharmacy", "parking", "massage", "sale", "nightmarket", "cart"] },
   lo: { name: "Vientiane to Luang Prabang", stops: ["lo-bus", "lo-road", "lo-pharmacy", "lo-noodle"] },
 };
-function rideRun(script) {
+/** The route's stops that have at least one line you can read (all of them without a gate). */
+function rideStops(script, gate = null) {
   const packs = SIGN_PACKS().filter((p) => p.script === script);
-  const route = RIDE_ROUTES[script];
-  const allGloss = packs.flatMap((p) => p.glosses.filter(Boolean));
-  return route.stops.map((id) => {
+  return RIDE_ROUTES[script].stops.map((id) => {
     const pack = packs.find((p) => p.id === id);
-    const k = Math.floor(Math.random() * pack.lines.length);
+    const lines = pack.lines.map((_, k) => k).filter((k) => !gate || gate.ready(tokensText(pack.lines[k], script)));
+    return { pack, lines };
+  }).filter((s) => s.lines.length);
+}
+const RIDE_MIN_STOPS = 3;
+function rideRun(script, gate = null) {
+  const packs = SIGN_PACKS().filter((p) => p.script === script);
+  const allGloss = packs.flatMap((p) => p.glosses.filter(Boolean));
+  return rideStops(script, gate).map(({ pack, lines }) => {
+    const k = lines[Math.floor(Math.random() * lines.length)];
     const gloss = pack.glosses[k];
     return { pack, line: pack.lines[k].map((tk) => resolveToken(tk, script)), answer: gloss, opts: shuffle([gloss, ...shuffle(allGloss.filter((g) => g !== gloss)).slice(0, 3)]) };
   });
 }
 
-function RideTheLine({ mode, drills = {}, setDrills, logActivity }) {
+function RideTheLine({ mode, drills = {}, setDrills, logActivity, srs = {}, sandbox = false }) {
   const script = mode === "lo" ? "lo" : "th";
   const route = RIDE_ROUTES[script];
+  const gate = useMemo(() => letterGate(srs, mode, sandbox), [srs, mode, sandbox]);
+  const openStops = useMemo(() => rideStops(script, gate).length, [script, gate]);
   const [run, setRun] = useState(null); // { stops, i, picks: [], start, stopStart, done }
   const [, tick] = useState(0);
   const limit = (i) => Math.max(6, 14 - i) * 1000;
@@ -8310,7 +8484,7 @@ function RideTheLine({ mode, drills = {}, setDrills, logActivity }) {
     return () => clearInterval(id);
   }, [run]);
   const best = drills.ride?.[script];
-  const start = () => setRun({ stops: rideRun(script), i: 0, picks: [], start: Date.now(), stopStart: Date.now(), done: false });
+  const start = () => setRun({ stops: rideRun(script, gate), i: 0, picks: [], start: Date.now(), stopStart: Date.now(), done: false });
   const choose = (o) => {
     if (!run || run.picks[run.i] !== undefined) return;
     const ok = o === run.stops[run.i].answer;
@@ -8329,12 +8503,16 @@ function RideTheLine({ mode, drills = {}, setDrills, logActivity }) {
     setRun({ ...run, i: run.i + 1, stopStart: Date.now() });
   };
   const fontFor = (style) => (script === "lo" ? '"Noto Sans Lao", "Phetsarath OT", sans-serif' : style.font || '"Kanit", "Noto Sans Thai", sans-serif');
+  if (!run && openStops < RIDE_MIN_STOPS) {
+    return <LetterLock icon={Train} title="Ride the line" sub={`${route.name}: timed sign reading.`} color="#7CF0B0" why={`The ride opens when at least ${RIDE_MIN_STOPS} stops have a sign made only of letters you've had lessons on.`} progress={`${openStops} of ${route.stops.length} stops ready`} />;
+  }
   if (!run) {
     return (
       <div className="space-y-4">
-        <SectionTitle icon={Train} title="Ride the line" sub={`${route.name}: ${route.stops.length} signs in the order you meet them. Each stop gives you a few seconds less.`} color="#7CF0B0" />
+        <SectionTitle icon={Train} title="Ride the line" sub={`${route.name}: ${openStops} signs in the order you meet them. Each stop gives you a few seconds less.`} color="#7CF0B0" />
         <Card className="p-5 text-center">
-          <div className="flex items-center justify-center gap-1.5">{route.stops.map((s) => <span key={s} className="h-2.5 w-2.5 rounded-full bg-emerald-400/40" />)}</div>
+          <div className="flex items-center justify-center gap-1.5">{route.stops.map((s, k) => <span key={s} className={`h-2.5 w-2.5 rounded-full ${k < openStops ? "bg-emerald-400/40" : "bg-white/10"}`} />)}</div>
+          {openStops < route.stops.length && <p className="mt-2 text-xs text-slate-400">{route.stops.length - openStops} more stops join as your lessons cover their letters.</p>}
           {best && <p className="mt-3 text-sm text-slate-300">Best: {best.right}/{best.of} in {best.secs.toFixed(1)} s</p>}
           <button onClick={start} className="mt-4 w-full rounded-2xl bg-emerald-500 py-3 font-bold text-black">Board the train</button>
         </Card>
@@ -9320,19 +9498,19 @@ export default function SuvarnaKani() {
             {labTab === "reactor" && <Reactor mode={mode} font={font} />}
             {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
             {labTab === "clock" && <MarketClock mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
-            {labTab === "corral" && <ClassifierCorral mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
-            {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} />}
+            {labTab === "corral" && <ClassifierCorral mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} srs={srs} sandbox={sandbox} />}
+            {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} srs={srs} sandbox={sandbox} introSeen={prefs.mekongIntro} onIntroSeen={() => setPrefs((p) => ({ ...p, mekongIntro: true }))} />}
           </>
         )}
         {tab === "read" && (
           <>
             <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
-            {readTab === "slicer" && <Slicer mode={mode} font={font} />}
+            {readTab === "slicer" && <Slicer mode={mode} font={font} srs={srs} sandbox={sandbox} />}
             {readTab === "decoder" && <Decoder srs={srs} initialText={sharedText} onInspect={setInspect} saved={decoderSaved} setSaved={setDecoderSaved} />}
-            {readTab === "ride" && <RideTheLine mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
+            {readTab === "ride" && <RideTheLine mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} srs={srs} sandbox={sandbox} />}
             {readTab === "library" && <LanternLibrary mode={mode} font={font} srs={srs} sandbox={sandbox} library={library} setLibrary={setLibrary} logActivity={logActivity} />}
             {readTab === "fonts" && <FontGauntlet mode={mode} srs={srs} stats={gauntlet} setStats={setGauntlet} />}
-            {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} />}
+            {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} sandbox={sandbox} />}
           </>
         )}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
@@ -9374,4 +9552,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
