@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.27.0";
+const APP_VERSION = "0.28.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -860,11 +860,12 @@ const LEVELS = [
 ];
 
 /* ============================================================================
- * Word Garden: about 280 everyday words in seven beds (levels 10 to 16). Each
+ * Word Garden: about 460 everyday words in thirteen beds (levels 10 to 22),
+ * each bed split into small topic boxes (GARDEN_LAYOUT below). Each word
  * line is th|lo|reading|meaning|example|example meaning. Tones come from the
  * reading's marks; the Lao reading is spelled out from the Lao letters.
  * ========================================================================== */
-const GARDEN_SRC = `#food|Food and ordering|อาหารและการสั่ง|ອາຫານແລະການສັ່ງ|#F59E0B
+const GARDEN_SRC = `#food
 หมู|ໝູ|mǔu|pork / pig|ข้าวผัดหมู|fried rice with pork
 เนื้อ|ຊີ້ນ|nʉ́a|meat / beef|ไม่กินเนื้อ|I don't eat beef
 กุ้ง|ກຸ້ງ|kûng|shrimp|ต้มยำกุ้ง|spicy shrimp soup
@@ -909,7 +910,10 @@ const GARDEN_SRC = `#food|Food and ordering|อาหารและการส
 ส้มตำ|ຕຳໝາກຫຸ່ງ|sôm-tam|papaya salad|ส้มตำไม่เผ็ด|papaya salad, not spicy
 ลาบ|ລາບ|lâap|minced meat salad|ลาบหมู|pork larb
 กาแฟ|ກາເຟ|kaa-fɛɛ|coffee|กาแฟร้อน|hot coffee
-#travel|Getting around|การเดินทาง|ການເດີນທາງ|#22D3EE
+ผัด|ຂົ້ວ|phàt|stir-fry|ผัดไทย|pad thai
+น้ำเปล่า|ນ້ຳເປົ່າ|nám-plàao|plain water|ขอน้ำเปล่า|water, please
+น้ำส้ม|ນ້ຳໝາກກ້ຽງ|nám-sôm|orange juice|น้ำส้มเย็น|cold orange juice
+#travel
 ไป|ໄປ|pai|go|ไปไหน|where are you going?
 ซ้าย|ຊ້າຍ|sáai|left|เลี้ยวซ้าย|turn left
 ตรงไป|ກົງໄປ|trong-pai|go straight|ตรงไปเลย|go straight on
@@ -951,7 +955,9 @@ const GARDEN_SRC = `#food|Food and ordering|อาหารและการส
 แม่น้ำ|ແມ່ນ້ຳ|mɛ̂ɛ-náam|river|แม่น้ำโขง|the Mekong River
 ภูเขา|ພູເຂົາ|phuu-khǎo|mountain|ภูเขาสูง|a high mountain
 เมือง|ເມືອງ|mʉang|town / city|ในเมือง|in town
-#time|Numbers and time|ตัวเลขและเวลา|ຕົວເລກແລະເວລາ|#FFD166
+เที่ยว|ທ່ຽວ|thîaw|go out / travel for fun|ไปเที่ยว|go on a trip
+ตำรวจ|ຕຳຫຼວດ|tam-rùat|police|เรียกตำรวจ|call the police
+#time
 หนึ่ง|ໜຶ່ງ|nʉ̀ng|one|หนึ่งคน|one person
 สอง|ສອງ|sɔ̌ɔng|two|สองคน|two people
 สาม|ສາມ|sǎam|three|สามวัน|three days
@@ -992,7 +998,26 @@ const GARDEN_SRC = `#food|Food and ordering|อาหารและการส
 กี่โมง|ຈັກໂມງ|kìi-moong|what time?|เปิดกี่โมง|what time does it open?
 ครึ่ง|ເຄິ່ງ|khrʉ̂ng|half|สองโมงครึ่ง|half past two
 เที่ยง|ທ່ຽງ|thîang|noon|เที่ยงตรง|exactly noon
-#people|People and family|คนและครอบครัว|ຄົນແລະຄອບຄົວ|#F472B6
+ศูนย์|ສູນ|sǔun|zero|ศูนย์แปด|zero eight (in phone numbers)
+เอ็ด|ເອັດ|èt|one (in 11, 21…)|สิบเอ็ด|eleven
+ตอนบ่าย|ຕອນບ່າຍ|tɔɔn-bàai|in the afternoon|ตอนบ่ายว่าง|free in the afternoon
+วันอังคาร|ວັນອັງຄານ|wan-ang-khaan|Tuesday|วันอังคารนี้|this Tuesday
+วันพุธ|ວັນພຸດ|wan-phút|Wednesday|ทุกวันพุธ|every Wednesday
+วันพฤหัส|ວັນພະຫັດ|wan-phá-rʉ́-hàt|Thursday|วันพฤหัสว่าง|free on Thursday
+วันเสาร์|ວັນເສົາ|wan-sǎo|Saturday|วันเสาร์ไปตลาด|go to the market on Saturday
+มกราคม|ມັງກອນ|mók-kà-raa-khom|January|เดือนมกราคม|the month of January
+กุมภาพันธ์|ກຸມພາ|kum-phaa-phan|February|ต้นกุมภาพันธ์|early February
+มีนาคม|ມີນາ|mii-naa-khom|March|มีนาคมร้อนมาก|March is very hot
+เมษายน|ເມສາ|mee-sǎa-yon|April|สงกรานต์เดือนเมษายน|Songkran is in April
+พฤษภาคม|ພຶດສະພາ|phrʉ́t-sà-phaa-khom|May|ฝนตกเดือนพฤษภาคม|it rains in May
+มิถุนายน|ມິຖຸນາ|mí-thù-naa-yon|June|มิถุนายนนี้|this June
+กรกฎาคม|ກໍລະກົດ|ka-rá-kà-daa-khom|July|ปลายกรกฎาคม|late July
+สิงหาคม|ສິງຫາ|sǐng-hǎa-khom|August|วันแม่เดือนสิงหาคม|Mother's Day is in August
+กันยายน|ກັນຍາ|kan-yaa-yon|September|กันยายนปีหน้า|September next year
+ตุลาคม|ຕຸລາ|tù-laa-khom|October|ตุลาคมนี้|this October
+พฤศจิกายน|ພະຈິກ|phrʉ́t-sà-jì-kaa-yon|November|อากาศเย็นเดือนพฤศจิกายน|cool weather in November
+ธันวาคม|ທັນວາ|than-waa-khom|December|ปลายธันวาคม|late December
+#people
 พ่อ|ພໍ່|phɔ̂ɔ|father|พ่อของฉัน|my father
 พี่|ອ້າຍ|phîi|older sibling (Lao ອ້າຍ = older brother)|พี่สาว|older sister
 น้อง|ນ້ອງ|nɔ́ɔng|younger sibling|น้องชาย|younger brother
@@ -1027,7 +1052,18 @@ const GARDEN_SRC = `#food|Food and ordering|อาหารและการส
 สวย|ງາມ|sǔay|beautiful|สวยมาก|very beautiful
 หล่อ|ຫຼໍ່|lɔ̀ɔ|handsome|หล่อมาก|very handsome
 ใจดี|ໃຈດີ|jai-dii|kind|คนใจดี|a kind person
-#body|Body and health|ร่างกายและสุขภาพ|ຮ່າງກາຍແລະສຸຂະພາບ|#34D399
+ภรรยา|ເມຍ|phan-rá-yaa|wife|ภรรยาของผม|my wife
+ลูกสาว|ລູກສາວ|lûuk-sǎaw|daughter|ลูกสาวสองคน|two daughters
+ลูกชาย|ລູກຊາຍ|lûuk-chaai|son|ลูกชายของฉัน|my son
+พี่ชาย|ອ້າຍ|phîi-chaai|older brother|พี่ชายของฉัน|my older brother
+พี่สาว|ເອື້ອຍ|phîi-sǎaw|older sister|พี่สาวใจดี|my older sister is kind
+ครอบครัว|ຄອບຄົວ|khrɔ̂ɔp-khrua|family|ครอบครัวของฉัน|my family
+ฝรั่ง|ຝະລັ່ງ|fà-ràng|Westerner / guava|ฝรั่งพูดไทย|a Westerner speaking Thai
+เพื่อนบ้าน|ເພື່ອນບ້ານ|phʉ̂an-bâan|neighbour|เพื่อนบ้านใจดี|a kind neighbour
+อา|ອາ|aa|aunt or uncle (father's younger sibling)|อากับป้า|my aunts
+หลาน|ຫຼານ|lǎan|grandchild / niece / nephew|หลานสาว|granddaughter, niece
+ญาติ|ຍາດ|yâat|relative|ญาติเยอะ|lots of relatives
+#body
 หัว|ຫົວ|hǔa|head|ปวดหัว|headache
 หู|ຫູ|hǔu|ear|เจ็บหู|earache
 จมูก|ດັງ|jà-mùuk|nose|จมูกใหญ่|a big nose
@@ -1069,7 +1105,7 @@ const GARDEN_SRC = `#food|Food and ordering|อาหารและการส
 คอ|ຄໍ|khɔɔ|neck / throat|เจ็บคอ|sore throat
 ผิว|ຜິວ|phǐw|skin|ผิวขาว|fair skin
 ฝัน|ຝັນ|fǎn|dream|ฝันดี|sweet dreams
-#feel|Feelings and describing|ความรู้สึก|ຄວາມຮູ້ສຶກ|#A78BFA
+#feel
 ใหญ่|ໃຫຍ່|yài|big|บ้านใหญ่|a big house
 เล็ก|ນ້ອຍ|lék|small|ห้องเล็ก|a small room
 ใหม่|ໃໝ່|mài|new|รถใหม่|a new car
@@ -1109,7 +1145,13 @@ const GARDEN_SRC = `#food|Food and ordering|อาหารและการส
 ตกใจ|ຕົກໃຈ|tòk-jai|startled|ตกใจหมด|really startled
 เหงา|ເຫງົາ|ngǎo|lonely|เหงาจัง|so lonely
 ภูมิใจ|ພູມໃຈ|phuum-jai|proud|ภูมิใจมาก|very proud
-#verbs|Everyday verbs|คำกริยา|ຄຳກິລິຍາ|#FB923C
+รู้จัก|ຮູ້ຈັກ|rúu-jàk|know (a person or place)|รู้จักไหม|do you know them?
+รู้สึก|ຮູ້ສຶກ|rúu-sʉ̀k|feel|รู้สึกดี|I feel good
+อาย|ອາຍ|aai|shy / embarrassed|อายมาก|so embarrassed
+ห่วง|ຫ່ວງ|hùang|worry about|ไม่ต้องห่วง|don't worry
+ผิดหวัง|ຜິດຫວັງ|phìt-wǎng|disappointed|ผิดหวังนิดหน่อย|a bit disappointed
+ตื่นเต้น|ຕື່ນເຕັ້ນ|tʉ̀ʉn-tên|excited|ตื่นเต้นมาก|so excited
+#verbs
 ทำ|ເຮັດ|tham|do / make|ทำอะไร|what are you doing?
 ให้|ໃຫ້|hâi|give / let|ให้คุณ|for you
 เอา|ເອົາ|ao|take / want|เอาอันนี้|I'll take this one
@@ -1151,7 +1193,218 @@ const GARDEN_SRC = `#food|Food and ordering|อาหารและการส
 ร้องเพลง|ຮ້ອງເພງ|rɔ́ɔng-phleeng|sing|ร้องเพลงเก่ง|a good singer
 เต้น|ເຕັ້ນ|tên|dance|เต้นรำ|dance
 ขับ|ຂັບ|khàp|drive|ขับรถ|drive a car
-จอด|ຈອດ|jɔ̀ɔt|park / stop|จอดตรงนี้|park here`;
+จอด|ຈອດ|jɔ̀ɔt|park / stop|จอดตรงนี้|park here
+รับ|ຮັບ|ráp|receive / pick up|มารับ|come and pick (someone) up
+เรียก|ເອີ້ນ|rîak|call (someone)|เรียกแท็กซี่|call a taxi
+#grammar
+ดิฉัน|ຂ້ານ້ອຍ|dì-chǎn|I (formal, female)|ดิฉันชื่อมาลี|my name is Malee
+เธอ|ເຈົ້າ|thəə|you (friendly) / she|เธอสวยมาก|she is very pretty
+มัน|ມັນ|man|it|มันแพงมาก|it's very expensive
+นี่|ອັນນີ້|nîi|this (here)|นี่อะไร|what's this?
+นี้|ນີ້|níi|this (after a noun)|คนนี้|this person
+นั่น|ອັນນັ້ນ|nân|that (there)|นั่นใคร|who's that?
+นั้น|ນັ້ນ|nán|that (after a noun)|วันนั้น|that day
+ไม่|ບໍ່|mâi|not / no|ไม่เผ็ด|not spicy
+จะ|ຈະ|jà|will (future)|พรุ่งนี้จะไป|I'll go tomorrow
+แล้ว|ແລ້ວ|lɛ́ɛw|already / then|กินแล้ว|I've eaten already
+ยัง|ຍັງ|yang|still / not yet|ยังไม่กิน|I haven't eaten yet
+กำลัง|ກຳລັງ|kam-lang|in the middle of (-ing)|กำลังกิน|eating right now
+เคย|ເຄີຍ|khəəy|have ever|เคยไปไหม|have you ever been?
+ต้อง|ຕ້ອງ|tɔ̂ng|must / have to|ต้องไปแล้ว|I have to go now
+อาจจะ|ອາດຈະ|àat-jà|maybe / might|อาจจะฝนตก|it might rain
+ควร|ຄວນ|khuan|should|ควรพัก|you should rest
+อะไร|ຫຍັງ|à-rai|what|ชื่ออะไร|what's your name?
+ที่ไหน|ໃສ|thîi-nǎi|where|ห้องน้ำอยู่ที่ไหน|where's the toilet?
+ทำไม|ເປັນຫຍັງ|tham-mai|why|ทำไมไม่มา|why didn't you come?
+ยังไง|ແນວໃດ|yang-ngai|how|ไปยังไง|how do I get there?
+เมื่อไร|ເມື່ອໃດ|mʉ̂a-rai|when|มาเมื่อไร|when are you coming?
+ไหน|ໃດ|nǎi|which|อันไหน|which one?
+กี่|ຈັກ|kìi|how many|กี่คน|how many people?
+หรือเปล่า|ຫຼືບໍ່|rʉ̌ʉ-plàao|…or not?|ไปหรือเปล่า|are you going or not?
+และ|ແລະ|lɛ́|and|ชาและกาแฟ|tea and coffee
+แต่|ແຕ່|tɛ̀ɛ|but|ถูกแต่อร่อย|cheap but tasty
+เพราะ|ເພາະ|phrɔ́|because|เพราะเหนื่อย|because I'm tired
+ถ้า|ຖ້າ|thâa|if|ถ้าว่าง|if you're free
+หรือ|ຫຼື|rʉ̌ʉ|or|ชาหรือกาแฟ|tea or coffee?
+ของ|ຂອງ|khɔ̌ɔng|of / belonging to / thing|ของฉัน|mine
+ที่|ທີ່|thîi|at / that (which)|ที่บ้าน|at home
+ก็|ກໍ|kɔ̂ɔ|also / so / then|ฉันก็ไป|I'm going too
+ด้วย|ນຳ|dûay|too / along / please|ไปด้วย|come along too
+จาก|ຈາກ|jàak|from|มาจากไหน|where are you from?
+ใน|ໃນ|nai|in|ในห้อง|in the room
+บน|ເທິງ|bon|on|บนโต๊ะ|on the table
+ใต้|ກ້ອງ|tâi|under|ใต้โต๊ะ|under the table
+#shop
+ลด|ຫຼຸດ|lót|reduce / discount|ลดได้ไหม|can you give a discount?
+ทอน|ທອນ|thɔɔn|give change|เงินทอน|change (money back)
+ถุง|ຖົງ|thǔng|bag (plastic)|ไม่เอาถุง|no bag, thanks
+ห้าง|ຫ້າງ|hâang|shopping mall|ไปห้าง|go to the mall
+เงินสด|ເງິນສົດ|ngən-sòt|cash|จ่ายเงินสด|pay cash
+บัตร|ບັດ|bàt|card|จ่ายด้วยบัตร|pay by card
+ขนาด|ຂະໜາດ|khà-nàat|size|ขนาดใหญ่|large size
+ใส่|ໃສ່|sài|wear / put in|ใส่เสื้อ|put on a shirt
+สี|ສີ|sǐi|colour|สีอะไร|what colour?
+แดง|ແດງ|dɛɛng|red|เสื้อสีแดง|a red shirt
+ขาว|ຂາວ|khǎaw|white|สีขาว|white
+ดำ|ດຳ|dam|black|กาแฟดำ|black coffee
+เขียว|ຂຽວ|khǐaw|green|ชาเขียว|green tea
+น้ำเงิน|ສີຟ້າເຂັ້ມ|nám-ngən|dark blue|กางเกงสีน้ำเงิน|blue trousers
+เหลือง|ເຫຼືອງ|lʉ̌ang|yellow|เสื้อสีเหลือง|a yellow shirt
+ชมพู|ສີບົວ|chom-phuu|pink|สีชมพู|pink
+ส้ม|ໝາກກ້ຽງ|sôm|orange (fruit and colour)|สีส้ม|orange (colour)
+ฟ้า|ຟ້າ|fáa|sky / light blue|ท้องฟ้า|the sky
+เทา|ເທົາ|thao|grey|สีเทา|grey
+เสื้อ|ເສື້ອ|sʉ̂a|shirt / top|เสื้อตัวนี้|this shirt
+เสื้อผ้า|ເຄື່ອງນຸ່ງ|sʉ̂a-phâa|clothes|ซื้อเสื้อผ้า|buy clothes
+กางเกง|ໂສ້ງ|kaang-keeng|trousers|กางเกงขาสั้น|shorts
+กระโปรง|ກະໂປ່ງ|krà-proong|skirt|กระโปรงยาว|a long skirt
+รองเท้า|ເກີບ|rɔɔng-tháaw|shoes|ถอดรองเท้า|take off your shoes
+หมวก|ໝວກ|mùak|hat|ใส่หมวก|wear a hat
+กระเป๋า|ກະເປົາ|krà-pǎo|bag / wallet|กระเป๋าเงิน|wallet
+แว่นตา|ແວ່ນຕາ|wɛ̂n-taa|glasses|ใส่แว่นตา|wear glasses
+อัน|ອັນ|an|thing (counting word for objects)|อันนี้|this one
+ใบ|ໃບ|bai|counting word: bags, tickets, plates|ตั๋วสองใบ|two tickets
+ชิ้น|ຕ່ອນ|chín|piece|ชิ้นนี้|this piece
+คู่|ຄູ່|khûu|pair / couple|รองเท้าคู่นี้|this pair of shoes
+แผ่น|ແຜ່ນ|phɛ̀n|sheet (counting word)|กระดาษสองแผ่น|two sheets of paper
+เล่ม|ຫົວ|lêm|counting word: books|หนังสือเล่มนี้|this book
+ขวด|ຂວດ|khùat|bottle|เบียร์สองขวด|two bottles of beer
+#home
+หน้าต่าง|ປ່ອງຢ້ຽມ|nâa-tàang|window|เปิดหน้าต่าง|open the window
+ห้องนอน|ຫ້ອງນອນ|hɔ̂ng-nɔɔn|bedroom|ห้องนอนเล็ก|a small bedroom
+ห้องครัว|ເຮືອນຄົວ|hɔ̂ng-khrua|kitchen|ในห้องครัว|in the kitchen
+เตียง|ຕຽງ|tiang|bed|เตียงใหญ่|a big bed
+เก้าอี้|ຕັ່ງ|kâo-îi|chair|นั่งเก้าอี้|sit on a chair
+ไฟ|ໄຟ|fai|light / fire / power|ปิดไฟ|turn off the light
+แอร์|ແອ|ɛɛ|air conditioning|เปิดแอร์|turn on the aircon
+ตู้เย็น|ຕູ້ເຢັນ|tûu-yen|fridge|ในตู้เย็น|in the fridge
+ทีวี|ໂທລະທັດ|thii-wii|TV|ดูทีวี|watch TV
+กุญแจ|ກະແຈ|kun-jɛɛ|key|ลืมกุญแจ|I forgot the key
+แปรงฟัน|ຖູແຂ້ວ|prɛɛng-fan|brush your teeth|แปรงฟันก่อนนอน|brush your teeth before bed
+ทำความสะอาด|ອະນາໄມ|tham-khwaam-sà-àat|clean (up)|ทำความสะอาดห้อง|clean the room
+โทรศัพท์|ໂທລະສັບ|thoo-rá-sàp|telephone|เบอร์โทรศัพท์|phone number
+หนังสือ|ປຶ້ມ|nǎng-sʉ̌ʉ|book|อ่านหนังสือ|read a book
+กระดาษ|ເຈ້ຍ|krà-dàat|paper|กระดาษแผ่นหนึ่ง|a sheet of paper
+ปากกา|ບິກ|pàak-kaa|pen|ปากกาสีดำ|a black pen
+สบู่|ສະບູ|sà-bùu|soap|สบู่หมด|out of soap
+ผ้าเช็ดตัว|ຜ້າເຊັດໂຕ|phâa-chét-tua|towel|ผ้าเช็ดตัวสะอาด|a clean towel
+กระจก|ແວ່ນ|krà-jòk|mirror / glass|ดูกระจก|look in the mirror
+ร่ม|ຄັນຮົ່ມ|rôm|umbrella / shade|เอาร่มไป|take an umbrella
+#describe
+สกปรก|ເປື້ອນ|sòk-kà-pròk|dirty|ห้องสกปรก|a dirty room
+ยาว|ຍາວ|yaaw|long|ผมยาว|long hair
+สั้น|ສັ້ນ|sân|short (length)|ผมสั้น|short hair
+หนัก|ໜັກ|nàk|heavy|กระเป๋าหนัก|a heavy bag
+เบา|ເບົາ|bao|light (weight) / soft|เสียงเบา|a soft voice
+เยอะ|ຫຼາຍ|yə́|a lot (casual)|คนเยอะ|lots of people
+ผิด|ຜິດ|phìt|wrong|ผิดทาง|the wrong way
+ใจร้าย|ໃຈຮ້າຍ|jai-ráai|mean, unkind|เขาใจร้าย|he's mean
+#nature
+อากาศ|ອາກາດ|aa-kàat|weather / air|อากาศดี|nice weather
+ฝน|ຝົນ|fǒn|rain|ฝนหนัก|heavy rain
+ฝนตก|ຝົນຕົກ|fǒn-tòk|it's raining|ฝนตกแล้ว|it's started raining
+แดด|ແດດ|dɛ̀ɛt|sunshine|แดดร้อน|hot sun
+ลม|ລົມ|lom|wind|ลมแรง|strong wind
+เมฆ|ເມກ|mêek|cloud|เมฆเยอะ|lots of clouds
+ต้นไม้|ຕົ້ນໄມ້|tôn-máai|tree|ใต้ต้นไม้|under a tree
+ดอกไม้|ດອກໄມ້|dɔ̀ɔk-máai|flower|ดอกไม้สวย|pretty flowers
+ป่า|ປ່າ|pàa|forest / jungle|ในป่า|in the forest
+เกาะ|ເກາະ|kɔ̀|island|ไปเกาะ|go to an island
+หาด|ຫາດ|hàat|beach|หาดทราย|a sandy beach
+น้ำตก|ນ້ຳຕົກ|nám-tòk|waterfall|น้ำตกสวย|a beautiful waterfall
+ดวงอาทิตย์|ຕາເວັນ|duang-aa-thít|the sun|ดวงอาทิตย์ขึ้น|the sun comes up
+ดวงจันทร์|ເດືອນ|duang-jan|the moon|ดวงจันทร์สวย|a lovely moon
+ดาว|ດາວ|daaw|star|ดาวเยอะ|lots of stars
+สัตว์|ສັດ|sàt|animal|สัตว์อะไร|what animal?
+แมว|ແມວ|mɛɛw|cat|แมวน่ารัก|a cute cat
+วัว|ງົວ|wua|cow|นมวัว|cow's milk
+ควาย|ຄວາຍ|khwaai|water buffalo|ควายตัวใหญ่|a big buffalo
+ลิง|ລິງ|ling|monkey|ลิงกินกล้วย|the monkey eats a banana
+งู|ງູ|nguu|snake|ระวังงู|watch out for snakes
+ยุง|ຍຸງ|yung|mosquito|ยุงเยอะ|lots of mosquitoes
+มด|ມົດ|mót|ant|มดเยอะ|lots of ants
+เป็ด|ເປັດ|pèt|duck|เป็ดย่าง|roast duck
+#work
+งาน|ວຽກ|ngaan|work / job / party|งานเยอะ|lots of work
+ที่ทำงาน|ບ່ອນເຮັດວຽກ|thîi-tham-ngaan|workplace|ไปที่ทำงาน|go to work
+บริษัท|ບໍລິສັດ|bɔɔ-rí-sàt|company|บริษัทใหญ่|a big company
+เจ้านาย|ນາຍ|jâo-naai|boss|เจ้านายใจดี|a kind boss
+ลูกค้า|ລູກຄ້າ|lûuk-kháa|customer|ลูกค้าเยอะ|lots of customers
+เงินเดือน|ເງິນເດືອນ|ngən-dʉan|salary|เงินเดือนน้อย|a small salary
+ประชุม|ປະຊຸມ|prà-chum|meeting / meet|ประชุมกี่โมง|what time is the meeting?
+โรงเรียน|ໂຮງຮຽນ|roong-rian|school|ไปโรงเรียน|go to school
+ห้องเรียน|ຫ້ອງຮຽນ|hɔ̂ng-rian|classroom|ในห้องเรียน|in the classroom
+การบ้าน|ວຽກບ້ານ|kaan-bâan|homework|ทำการบ้าน|do homework
+สอบ|ສອບເສັງ|sɔ̀ɔp|exam / take a test|สอบยาก|a hard exam
+ภาษา|ພາສາ|phaa-sǎa|language|ภาษาลาว|the Lao language
+ภาษาไทย|ພາສາໄທ|phaa-sǎa-thai|Thai (language)|พูดภาษาไทย|speak Thai
+ภาษาอังกฤษ|ພາສາອັງກິດ|phaa-sǎa-ang-krìt|English (language)|พูดภาษาอังกฤษได้ไหม|can you speak English?
+คำ|ຄຳ|kham|word|คำนี้|this word
+ประโยค|ປະໂຫຍກ|prà-yòok|sentence|ประโยคยาว|a long sentence
+ความหมาย|ຄວາມໝາຍ|khwaam-mǎai|meaning|ความหมายคืออะไร|what does it mean?
+แปล|ແປ|plɛɛ|translate|แปลว่าอะไร|what does it mean?
+ฝึก|ຝຶກ|fʉ̀k|practise|ฝึกทุกวัน|practise every day`;
+
+/* The beds you see, each split into boxes of about 8 to 15 words on one topic,
+ * most useful words first. `#bed|title|Thai|Lao|colour`, then `+Box title|words`;
+ * `+*` marks a box that goes beyond A1. Words are looked up in GARDEN_SRC, whose
+ * section and position fix each word's id, so regrouping never loses progress. */
+const GARDEN_LAYOUT = `#grammar|Little words|คำพื้นฐาน|ຄຳພື້ນຖານ|#60A5FA
++I, you, this, that|ฉัน ผม ดิฉัน เรา เธอ พวกเขา มัน ทุกคน นี่ นี้ นั่น นั้น
++Not, will, already|ไม่ มี เป็น คือ จะ แล้ว ยัง ต้อง กำลัง เคย อาจจะ ควร
++Questions|อะไร ที่ไหน ใคร ทำไม ยังไง เมื่อไร ไหน กี่ หรือเปล่า
++Joining words|และ แต่ หรือ ของ ที่ ใน บน ใต้ จาก เพราะ ถ้า ก็ ด้วย
+#food|Food and ordering|อาหารและการสั่ง|ອາຫານແລະການສັ່ງ|#F59E0B
++Hungry? Order!|หิว อิ่ม ร้านอาหาร เมนู สั่ง ดื่ม อร่อย เผ็ด หวาน เค็ม เปรี้ยว เช็คบิล
++On the plate|หมู เนื้อ กุ้ง ไข่ ผัก ข้าวเหนียว ก๋วยเตี๋ยว ส้มตำ ลาบ ผัด ทอด ต้ม ย่าง อาหารเช้า
++Drinks and fruit|น้ำเปล่า น้ำแข็ง กาแฟ ชา นม เบียร์ น้ำส้ม ผลไม้ มะม่วง กล้วย มะพร้าว
++On the table|จาน ชาม แก้ว ช้อน ส้อม ตะเกียบ น้ำปลา น้ำตาล เกลือ พริก
+#people|People and family|คนและครอบครัว|ຄົນແລະຄອບຄົວ|#F472B6
++Close family|ครอบครัว พ่อ พี่ น้อง พี่ชาย พี่สาว สามี ภรรยา แฟน ลูกชาย ลูกสาว
++Who's who|คน ผู้ชาย ผู้หญิง เพื่อน ชื่อ อายุ คนไทย คนลาว ฝรั่ง เพื่อนบ้าน ครู นักเรียน หมอ
++Grandparents and relatives|ปู่ ย่า ยาย ป้า น้า อา หลาน ญาติ แต่งงาน
+#time|Numbers and time|ตัวเลขและเวลา|ຕົວເລກແລະເວລາ|#FFD166
++Count to nine|ศูนย์ หนึ่ง สอง สาม สี่ ห้า หก เจ็ด แปด เก้า
++Big numbers|เอ็ด ยี่สิบ ร้อย พัน หมื่น แสน ล้าน ครึ่ง
++Today and tomorrow|วัน วันนี้ พรุ่งนี้ เมื่อวาน ตอนนี้ เวลา กี่โมง ตอนเช้า เที่ยง ตอนบ่าย ตอนเย็น กลางคืน
++Clock and calendar|ชั่วโมง นาที สัปดาห์ เดือน ปี ก่อน หลัง เร็ว ช้า สาย
++Days of the week|วันจันทร์ วันอังคาร วันพุธ วันพฤหัส วันศุกร์ วันเสาร์ วันอาทิตย์
++*Months|มกราคม กุมภาพันธ์ มีนาคม เมษายน พฤษภาคม มิถุนายน กรกฎาคม สิงหาคม กันยายน ตุลาคม พฤศจิกายน ธันวาคม
+#travel|Getting around|การเดินทาง|ການເດີນທາງ|#22D3EE
++Which way?|ไป ซ้าย ตรงไป เลี้ยว หยุด ที่นี่ ที่นั่น ใกล้ ไกล ข้างหน้า ข้างหลัง ทาง แผนที่ เดิน วิ่ง
++Getting a ride|รถเมล์ แท็กซี่ มอเตอร์ไซค์ รถไฟ เครื่องบิน เรือ ตั๋ว ขึ้น ลง ถนน สถานี สนามบิน
++Around town|โรงแรม ร้าน ธนาคาร โรงพยาบาล วัด สะพาน เมือง เข้า ออก ตำรวจ เที่ยว
+#shop|Shopping and colours|การซื้อของ|ການຊື້ເຄື່ອງ|#F87171
++At the shop|ซื้อ ขาย จ่าย แพง ลด ทอน ถุง เงินสด บัตร ขนาด ใส่ ห้าง
++Colours|สี แดง ขาว ดำ เขียว น้ำเงิน เหลือง ชมพู ส้ม ฟ้า เทา
++Clothes|เสื้อ เสื้อผ้า กางเกง กระโปรง รองเท้า หมวก กระเป๋า แว่นตา
++Counting words|อัน ใบ ชิ้น คู่ ขวด แผ่น เล่ม
+#home|Home and daily life|บ้านและชีวิตประจำวัน|ເຮືອນແລະຊີວິດປະຈຳວັນ|#2DD4BF
++Around the house|ห้อง ประตู หน้าต่าง ห้องนอน ห้องครัว เตียง เก้าอี้ ไฟ แอร์ ตู้เย็น ทีวี กุญแจ
++My day|ตื่น อาบน้ำ แปรงฟัน ล้าง ทำอาหาร ซัก ทำความสะอาด ง่วง นอน ฝัน
++Things I use|โทรศัพท์ หนังสือ ปากกา กระดาษ สบู่ ผ้าเช็ดตัว กระจก ร่ม
+#body|Body and health|ร่างกายและสุขภาพ|ຮ່າງກາຍແລະສຸຂະພາບ|#34D399
++Head to toe|หัว หน้า หู จมูก ฟัน คอ มือ แขน เท้า ท้อง ตัว หัวใจ เลือด ผิว
++At the doctor|ป่วย เจ็บ ปวด ไข้ ไอ ยา ร้านขายยา แพ้ หายใจ แข็งแรง ช่วย ระวัง สบาย
+#feel|Feelings and thinking|ความรู้สึก|ຄວາມຮູ້ສຶກ|#A78BFA
++How do you feel?|ชอบ รู้สึก สนุก มีความสุข เศร้า โกรธ กลัว เบื่อ เหนื่อย เกลียด คิดถึง
++Thinking words|รู้ รู้จัก เข้าใจ คิด ต้องการ หวัง เชื่อ สงสัย
++*Deeper feelings|เหงา ตกใจ ภูมิใจ อาย ห่วง ผิดหวัง ตื่นเต้น
+#describe|Describing things|ลักษณะ|ລັກສະນະ|#E879F9
++Big and small|ใหญ่ เล็ก ใหม่ เก่า แก่ ยาว สั้น หนัก เบา มาก น้อย เยอะ
++Easy, cheap, right|ง่าย ยาก ถูก ผิด สะอาด สกปรก เงียบ ดัง เหมือน ต่าง ทั้งหมด สำคัญ
++Describing people|สวย หล่อ น่ารัก ใจดี ใจร้าย อ้วน ผอม สูง เตี้ย พร้อม ว่าง ยุ่ง
+#verbs|Everyday verbs|คำกริยา|ຄຳກິລິຍາ|#FB923C
++Talk and listen|พูด บอก ถาม ตอบ ฟัง ดู เห็น อ่าน เขียน สอน โทร
++Get things done|ทำ ให้ เอา ใช้ หา เจอ รอ ลอง เลือก รับ เรียก ส่ง ถือ วาง
++On the move|นั่ง ยืน เริ่ม จบ พัก เล่น ขับ จอด เปลี่ยน ร้องเพลง เต้น
+#nature|Weather, nature and animals|ธรรมชาติ|ທຳມະຊາດ|#4ADE80
++Weather|อากาศ ร้อน เย็น ฝน ฝนตก แดด ลม เมฆ
++Out in nature|ทะเล แม่น้ำ ภูเขา หาด เกาะ ป่า น้ำตก ต้นไม้ ดอกไม้ ดวงอาทิตย์ ดวงจันทร์ ดาว
++Animals|สัตว์ แมว วัว ควาย ลิง งู ยุง มด เป็ด
+#work|School and work|โรงเรียนและงาน|ໂຮງຮຽນແລະວຽກ|#818CF8
++Learning a language|ภาษา ภาษาไทย ภาษาอังกฤษ คำ ประโยค ความหมาย แปล ฝึก โรงเรียน ห้องเรียน การบ้าน สอบ
++At work|งาน ทำงาน ที่ทำงาน บริษัท เจ้านาย ลูกค้า เงินเดือน ประชุม`;
 
 /** Lao spelling written with Thai letters, for the Thai voice and the Thai reading engine. */
 const LAO_TO_THAI = { ກ: "ก", ຂ: "ข", ຄ: "ค", ງ: "ง", ຈ: "จ", ສ: "ส", ຊ: "ซ", ຍ: "ย", ດ: "ด", ຕ: "ต", ຖ: "ถ", ທ: "ท", ນ: "น", ບ: "บ", ປ: "ป", ຜ: "ผ", ຝ: "ฝ", ພ: "พ", ຟ: "ฟ", ມ: "ม", ຢ: "อย", ຣ: "ร", ລ: "ล", ວ: "ว", ຫ: "ห", ອ: "อ", ຮ: "ฮ", ໜ: "หน", ໝ: "หม",
@@ -1179,30 +1432,52 @@ function laoReading(lo) {
 }
 
 const GARDEN_LEVEL0 = 10;
-const { GARDEN_BEDS, GARDEN_ITEMS } = (() => {
-  const beds = [];
-  const items = [];
+/** Share of a box at Novice Monk that opens the next box in the same bed. */
+const GARDEN_BOX_PASS = 0.8;
+const { GARDEN_BEDS, GARDEN_ITEMS, GARDEN_CHECK } = (() => {
   const known = new Set(CURRICULUM.filter((i) => i.tier !== "glyph").map((i) => i.th));
+  // The word list. A word's id is its section and position there, as in 0.27, so ids never move.
+  const dict = new Map();
+  let sec = "";
+  let n = 0;
   GARDEN_SRC.split("\n").forEach((line) => {
     const f = line.trim().split("|");
+    if (line.startsWith("#")) { sec = f[0].slice(1); n = 0; return; }
+    if (f.length < 6) return;
+    n += 1;
+    const [th, lo, roman, meaning, exTh, exEn] = f;
+    if (known.has(th) || dict.has(th)) return;
+    dict.set(th, { id: `w-${sec}-${n}`, th, lo, roman, meaning, exTh, exEn });
+  });
+  // The beds and boxes you see.
+  const beds = [];
+  const items = [];
+  const missing = [];
+  GARDEN_LAYOUT.split("\n").forEach((line) => {
+    const f = line.trim().split("|");
     if (line.startsWith("#")) {
-      beds.push({ id: f[0].slice(1), title: f[1], th: f[2], lo: f[3], color: f[4], level: GARDEN_LEVEL0 + beds.length, n: 0 });
+      beds.push({ id: f[0].slice(1), title: f[1], th: f[2], lo: f[3], color: f[4], level: GARDEN_LEVEL0 + beds.length, n: 0, boxes: [] });
       return;
     }
-    if (f.length < 6) return;
+    if (!line.startsWith("+") || f.length < 2) return;
     const bed = beds[beds.length - 1];
-    const [th, lo, roman, meaning, exTh, exEn] = f;
-    bed.n += 1;
-    if (known.has(th)) return;
-    known.add(th);
-    const plain = roman.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zɛɔʉə]/g, "");
-    items.push({
-      id: `w-${bed.id}-${bed.n}`, level: bed.level, tier: "vocab", garden: bed.id, th, lo, thRoman: roman, loRoman: laoReading(lo), meaning,
-      accept: [plain, romanize(roman, "rtgs").replace(/-/g, "")], ttsTh: th, ttsLo: laoToThai(lo), tone: roman.split("-").map(toneOfRoman),
-      example: { th: exTh, en: exEn }, mnemonic: `In a phrase: ${exTh}, "${exEn}".`,
+    const box = { n: bed.boxes.length, title: f[0].replace(/^\+\*?/, ""), beyond: f[0].startsWith("+*"), size: 0 };
+    bed.boxes.push(box);
+    f[1].trim().split(/\s+/).forEach((th) => {
+      const d = dict.get(th);
+      if (!d) { missing.push(th); return; }
+      dict.delete(th);
+      bed.n += 1;
+      box.size += 1;
+      const plain = d.roman.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zɛɔʉə]/g, "");
+      items.push({
+        id: d.id, level: bed.level, tier: "vocab", garden: bed.id, box: box.n, th, lo: d.lo, thRoman: d.roman, loRoman: laoReading(d.lo), meaning: d.meaning,
+        accept: [plain, romanize(d.roman, "rtgs").replace(/-/g, "")], ttsTh: th, ttsLo: laoToThai(d.lo), tone: d.roman.split("-").map(toneOfRoman),
+        example: { th: d.exTh, en: d.exEn }, mnemonic: `In a phrase: ${d.exTh}, "${d.exEn}".`,
+      });
     });
   });
-  return { GARDEN_BEDS: beds, GARDEN_ITEMS: items };
+  return { GARDEN_BEDS: beds, GARDEN_ITEMS: items, GARDEN_CHECK: { missing, unplaced: [...dict.keys()] } };
 })();
 GARDEN_BEDS.forEach((b) => LEVELS.push({ n: b.level, title: b.title, sub: `Word Garden · ${b.th}`, accent: b.color, bg: `linear-gradient(160deg, ${b.color}22, transparent 70%)`, garden: b.id }));
 const COURSE_LEVELS = LEVELS.filter((l) => !l.garden);
@@ -1498,6 +1773,31 @@ function levelGoal(n, course, srs, chain) {
 function levelPassed(n, course, srs, chain) {
   const g = levelGoal(n, course, srs, chain);
   return g.done >= g.need;
+}
+/**
+ * Word Garden boxes open one after another inside a bed: the first box at once,
+ * the next when 80% of the one before is at Novice Monk (rounded down, at least
+ * one). Words still waiting on letters don't count against a box (a box whose
+ * words all wait never passes), and a box you have already started stays open. Returns a Set of "bed:box" keys.
+ */
+function gardenBoxGoal(bedId, box, course, srs, chain) {
+  const key = course.filter((i) => i.garden === bedId && i.box === box && ((srs[i.id]?.stage || 0) > 0 || chain.ready(i)));
+  const done = key.filter((i) => (srs[i.id]?.stage || 0) >= 2).length;
+  return { done, total: key.length, need: Math.max(key.length ? 1 : 0, Math.floor(key.length * GARDEN_BOX_PASS)) };
+}
+function gardenBoxes(course, srs = {}, chain, sandbox = false) {
+  const open = new Set();
+  GARDEN_BEDS.forEach((b) => {
+    let prevPassed = true;
+    b.boxes.forEach((x) => {
+      const started = course.some((i) => i.garden === b.id && i.box === x.n && (srs[i.id]?.stage || 0) > 0);
+      const isOpen = sandbox || prevPassed || started;
+      if (isOpen) open.add(`${b.id}:${x.n}`);
+      const g = gardenBoxGoal(b.id, x.n, course, srs, chain);
+      prevPassed = isOpen && g.total > 0 && g.done >= g.need;
+    });
+  });
+  return open;
 }
 
 const FSRS_FACTOR = 19 / 81;
@@ -2849,6 +3149,8 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const stageOf = (id) => srs[id]?.stage || 0;
   const chain = useMemo(() => unlockChain(srs, mode, sandbox), [srs, mode, sandbox]);
   const gardenOpen = sandbox || levelPassed(4, course, srs, chain);
+  const boxes = useMemo(() => gardenBoxes(course, srs, chain, sandbox), [course, srs, chain, sandbox]);
+  const boxOpen = (i) => !i.garden || boxes.has(`${i.garden}:${i.box}`);
 
   const unlockedLevels = useMemo(() => {
     const set = new Set([1]);
@@ -2885,14 +3187,14 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   }, [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
   const currentLevel = Math.max(...COURSE_LEVELS.filter((l) => unlockedLevels.has(l.n)).map((l) => l.n));
   const lessonQueue = useMemo(() => {
-    const fresh = course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && chain.ready(i));
+    const fresh = course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && chain.ready(i) && boxOpen(i));
     const core = fresh.filter((i) => !i.garden).sort((a, b) => a.level - b.level);
     const order = (i) => { const k = garden.indexOf(i.garden); return k < 0 ? 99 : k; };
     const words = fresh.filter((i) => i.garden).sort((a, b) => order(a) - order(b));
     return interleave(core, words, 3, 2);
-  }, [srs, unlockedLevels, course, garden, chain]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [srs, unlockedLevels, course, garden, chain, boxes]); // eslint-disable-line react-hooks/exhaustive-deps
   // Unstarted items in open levels still waiting on letters (shown under Lessons).
-  const waitingCount = useMemo(() => course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && !chain.ready(i) && (!i.garden || garden.includes(i.garden))).length, [course, unlockedLevels, chain, garden]); // eslint-disable-line react-hooks/exhaustive-deps
+  const waitingCount = useMemo(() => course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && !chain.ready(i) && boxOpen(i) && (!i.garden || garden.includes(i.garden))).length, [course, unlockedLevels, chain, garden, boxes]); // eslint-disable-line react-hooks/exhaustive-deps
   const reviewQueue = useMemo(
     () => course.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
     [srs, now, sandbox, course]
@@ -3134,7 +3436,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         })}
       </div>
 
-      <WordGarden open={gardenOpen} course={course} planted={garden} setPlanted={setGarden} stageOf={stageOf} mode={mode} font={font} onInspect={onInspect} />
+      <WordGarden open={gardenOpen} boxes={boxes} goal={(bed, box) => gardenBoxGoal(bed, box, course, srs, chain)} course={course} planted={garden} setPlanted={setGarden} stageOf={stageOf} mode={mode} font={font} onInspect={onInspect} />
 
       <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
       <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} order={(q) => reviewOrder(q, srs)} />
@@ -3312,8 +3614,13 @@ const SENTENCE_NEW_PER_DAY = 5;
 function sentenceCards({ mode, saved = [], course = [], stageOf = () => 0, mined = [] }) {
   const script = mode === "lo" ? "lo" : "th";
   const join = (ws) => ws.join(script === "lo" ? " " : "");
+  // A line joins as a new card once every course or garden word in it is at Novice Monk.
+  const itemOf = new Map();
+  course.forEach((i) => { const k = script === "lo" ? i.lo : i.th; if (i.tier !== "glyph" && k && !itemOf.has(k)) itemOf.set(k, i); });
+  const known = (ws) => ws.every((w) => { const i = itemOf.get(w); return !i || stageOf(i.id) >= 2; });
   const cards = SENTENCES.filter((s) => s.script === script).map((s) => ({
     id: `sen-${s.id}-${script}`, script, words: s.words.map((w) => w.w), text: join(s.words.map((w) => w.w)), tts: s.words.map((w) => w.tts || w.w).join(" "), en: s.gloss,
+    ready: known(s.words.map((w) => w.w)),
   }));
   if (script === "th") {
     course.filter((i) => i.example && stageOf(i.id) >= 2 && i.example.th.includes(i.th)).forEach((i) => {
@@ -3341,7 +3648,7 @@ function sentenceSession(cards, deck, now, sandbox) {
   const day = todayKey(now);
   const newToday = deck.__new?.day === day ? deck.__new.n : 0;
   const due = cards.filter((c) => deck[c.id] && deck[c.id].stage < 5 && (sandbox || deck[c.id].next <= now));
-  const fresh = cards.filter((c) => !deck[c.id]).slice(0, Math.max(0, SENTENCE_NEW_PER_DAY - newToday));
+  const fresh = cards.filter((c) => !deck[c.id] && (sandbox || c.ready !== false)).slice(0, Math.max(0, SENTENCE_NEW_PER_DAY - newToday));
   return { due, fresh };
 }
 
@@ -3610,16 +3917,16 @@ function interleave(xs, ys, a = 3, b = 2) {
   return out;
 }
 
-function WordGarden({ open, course, planted, setPlanted, stageOf, mode, font, onInspect }) {
+function WordGarden({ open, boxes = new Set(), goal, course, planted, setPlanted, stageOf, mode, font, onInspect }) {
   const [shown, setShown] = useState(null);
   const toggle = (id) => setPlanted?.((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
   return (
     <Card className="p-4 sm:p-5" style={{ backgroundImage: "radial-gradient(ellipse at 10% 0%, #34D39922, transparent 60%)" }}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300">{open ? <Unlock size={13} /> : <Lock size={13} />} Word Garden · Levels 10–16</div>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300">{open ? <Unlock size={13} /> : <Lock size={13} />} Word Garden · Levels {GARDEN_LEVEL0}–{GARDEN_LEVEL0 + GARDEN_BEDS.length - 1}</div>
           <h3 className="text-base font-bold text-white">Everyday words, one bed at a time</h3>
-          <p className="text-xs text-slate-400">{open ? "Plant a bed and its words join your lessons, mixed in with the course. Each word comes with a short phrase to hear it in." : "Opens when 90% of the Level 4 letters reach Novice Monk."}</p>
+          <p className="text-xs text-slate-400">{open ? "Plant a bed and its words join your lessons, one small box at a time: the next box opens when 80% of the one before reaches Novice Monk. Each word comes with a short phrase to hear it in." : "Opens when 90% of the Level 4 letters reach Novice Monk."}</p>
         </div>
       </div>
       <div className="mt-3 space-y-2">
@@ -3638,7 +3945,7 @@ function WordGarden({ open, course, planted, setPlanted, stageOf, mode, font, on
                     <span className="truncate text-xs text-slate-400" style={{ fontFamily: mode === "lo" ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th }}>{mode === "lo" ? b.lo : b.th}</span>
                   </div>
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${(done / Math.max(1, items.length)) * 100}%`, background: b.color }} /></div>
-                  <div className="mt-1 text-[11px] text-slate-400">{done}/{items.length} at Novice Monk+{started > done ? ` · ${started - done} growing` : ""}</div>
+                  <div className="mt-1 text-[11px] text-slate-400">{done}/{items.length} at Novice Monk+{started > done ? ` · ${started - done} growing` : ""} · {b.boxes.filter((x) => boxes.has(`${b.id}:${x.n}`)).length}/{b.boxes.length} boxes open</div>
                 </button>
                 <button
                   disabled={!open}
@@ -3649,13 +3956,31 @@ function WordGarden({ open, course, planted, setPlanted, stageOf, mode, font, on
                 </button>
               </div>
               {shown === b.id && (
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {items.map((it) => (
-                    <button key={it.id} onClick={() => onInspect(it)} className="relative rounded-lg px-2 py-1 text-white" style={{ background: `${b.color}33` }} title={it.meaning}>
-                      <DualText th={it.th} lo={it.lo} mode={mode} font={font} className="text-lg leading-tight" gapClass="gap-1" divider={false} />
-                      <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-sk-bg" style={{ background: SRS_STAGES[stageOf(it.id)].color }} />
-                    </button>
-                  ))}
+                <div className="mt-3 space-y-3">
+                  {b.boxes.map((x) => {
+                    const boxItems = items.filter((i) => i.box === x.n);
+                    const isOpen = boxes.has(`${b.id}:${x.n}`);
+                    const g = goal?.(b.id, x.n);
+                    return (
+                      <div key={x.n} className={isOpen ? "" : "opacity-60"}>
+                        <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-slate-300">
+                          {isOpen ? <Unlock size={11} style={{ color: b.color }} /> : <Lock size={11} className="text-slate-500" />}
+                          <span className="truncate">{x.n + 1}. {x.title}</span>
+                          {x.beyond && <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-300">Beyond A1</span>}
+                          <span className="ml-auto shrink-0 font-normal text-slate-400">{boxItems.filter((i) => stageOf(i.id) >= 2).length}/{boxItems.length}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {boxItems.map((it) => (
+                            <button key={it.id} onClick={() => onInspect(it)} className="relative rounded-lg px-2 py-1 text-white" style={{ background: `${b.color}33` }} title={it.meaning}>
+                              <DualText th={it.th} lo={it.lo} mode={mode} font={font} className="text-lg leading-tight" gapClass="gap-1" divider={false} />
+                              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-sk-bg" style={{ background: SRS_STAGES[stageOf(it.id)].color }} />
+                            </button>
+                          ))}
+                        </div>
+                        {!isOpen && x.n > 0 && <div className="mt-1 text-[11px] text-slate-500">Opens when 80% of box {x.n} is at Novice Monk.</div>}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -6214,6 +6539,160 @@ const SENTENCES = [
     ],
   },
 ];
+
+/* Garden lines: short everyday sentences built only from course and Word Garden
+ * words, so the deck can wait until you know every word in a line. Thai words
+ * are separated by spaces; the Lao line is the same words, each in its Lao form
+ * (word order is the same for these lines; a native check is still pending). */
+const GARDEN_LINES_SRC = `ฉัน หิว แล้ว|I'm hungry now.
+ฉัน ไม่ กิน หมู|I don't eat pork.
+ขอ น้ำเปล่า สอง ขวด|Two bottles of water, please.
+ไม่ ใส่ น้ำแข็ง|No ice, please.
+อาหาร นี้ อร่อย มาก|This food is very tasty.
+เผ็ด ไหม|Is it spicy?
+เช็คบิล ด้วย|The bill, please.
+ขอ เมนู ด้วย|The menu, please.
+ฉัน อิ่ม แล้ว|I'm full.
+กาแฟ หรือ ชา|Coffee or tea?
+ขอ ข้าวเหนียว มะม่วง|Mango sticky rice, please.
+ส้มตำ เผ็ด มาก|The papaya salad is very spicy.
+ฉัน ชอบ ผลไม้|I like fruit.
+ขอ ช้อน กับ ส้อม|A spoon and fork, please.
+ร้านอาหาร นี้ แพง|This restaurant is expensive.
+ไก่ ทอด อร่อย|Fried chicken is tasty.
+เขา ดื่ม เบียร์ เย็น|He drinks cold beer.
+ฉัน สั่ง ก๋วยเตี๋ยว หมู|I ordered pork noodle soup.
+ไม่ ใส่ น้ำตาล|No sugar, please.
+คุณ อายุ เท่าไร|How old are you?
+คุณ มา จาก ไหน|Where are you from?
+ฉัน เป็น คนไทย|I'm Thai.
+เขา เป็น คนลาว|He is Lao.
+นี่ คือ ภรรยา ของ ผม|This is my wife.
+นี่ คือ สามี ของ ฉัน|This is my husband.
+ฉัน มี พี่ชาย สอง คน|I have two older brothers.
+ลูกสาว ของ เขา น่ารัก|His daughter is cute.
+เพื่อน ของ ฉัน เป็น หมอ|My friend is a doctor.
+ครอบครัว ของ ฉัน อยู่ ที่ บ้าน|My family is at home.
+แม่ ของ ฉัน ใจดี|My mother is kind.
+ตอนนี้ กี่โมง|What time is it now?
+พรุ่งนี้ ฉัน ว่าง|I'm free tomorrow.
+วันนี้ วัน อะไร|What day is it today?
+วันเสาร์ ฉัน ไป ตลาด|On Saturday I go to the market.
+ฉัน ฝึก ภาษาไทย ตอนเช้า|I practise Thai in the morning.
+รอ ห้า นาที|Wait five minutes.
+ฉัน มา สาย|I'm late.
+ไป ก่อน นะ|I'm off now.
+พรุ่งนี้ เจอ ที่ ร้าน|See you at the shop tomorrow.
+เมื่อวาน ฝนตก|It rained yesterday.
+รถไฟ ออก กี่โมง|What time does the train leave?
+ใช้ เวลา สอง ชั่วโมง|It takes two hours.
+โรงแรม อยู่ ไกล ไหม|Is the hotel far?
+ไป สนามบิน ยังไง|How do I get to the airport?
+เลี้ยว ซ้าย|Turn left.
+ตรงไป แล้ว เลี้ยว ขวา|Go straight, then turn right.
+หยุด ที่นี่ ได้ ไหม|Can you stop here?
+ขึ้น รถเมล์ ที่ไหน|Where do I get on the bus?
+ฉัน อยาก ไป วัด|I want to go to the temple.
+ตั๋ว ราคา เท่าไร|How much is the ticket?
+โรงพยาบาล อยู่ ใกล้ ไหม|Is the hospital near?
+เรา ไป เที่ยว ทะเล|We're going on a trip to the sea.
+สถานี รถไฟ อยู่ ข้างหน้า|The train station is up ahead.
+อัน นี้ เท่าไร|How much is this one?
+ลด ได้ ไหม|Can you give a discount?
+มี สี แดง ไหม|Do you have it in red?
+ฉัน ชอบ เสื้อ สี ขาว|I like the white shirt.
+ไม่ เอา ถุง|I don't need a bag.
+จ่าย ด้วย บัตร ได้ ไหม|Can I pay by card?
+ขอ ลอง ได้ ไหม|May I try it on?
+รองเท้า คู่ นี้ ใหญ่ มาก|These shoes are very big.
+ซื้อ สอง ใบ|I'll buy two.
+กระเป๋า ใบ นี้ สวย|This bag is pretty.
+ฉัน ไม่ มี เงินสด|I don't have cash.
+ปิด ไฟ ด้วย|Please turn off the light.
+เปิด แอร์ ได้ ไหม|Can you turn on the aircon?
+ฉัน ลืม กุญแจ|I forgot my key.
+หนังสือ อยู่ บน โต๊ะ|The book is on the table.
+แมว อยู่ ใต้ เตียง|The cat is under the bed.
+อาบน้ำ แล้ว ไป นอน|Shower, then go to bed.
+ฉัน ง่วง มาก|I'm very sleepy.
+ใน ตู้เย็น มี นม|There's milk in the fridge.
+ห้องนอน สะอาด|The bedroom is clean.
+ฉัน ไม่ สบาย|I'm not well.
+ฉัน ปวด หัว|I have a headache.
+เขา เป็น ไข้|She has a fever.
+ร้านขายยา อยู่ ที่ไหน|Where is the pharmacy?
+ฉัน แพ้ กุ้ง|I'm allergic to shrimp.
+ช่วย ด้วย|Help!
+ระวัง รถ|Watch out for cars.
+ฉัน เจ็บ มือ|My hand hurts.
+กิน ยา แล้ว หรือ ยัง|Have you taken the medicine yet?
+ฉัน คิดถึง คุณ|I miss you.
+คุณ รู้จัก เขา ไหม|Do you know him?
+ฉัน เหนื่อย มาก|I'm very tired.
+ไม่ ต้อง ห่วง|Don't worry.
+ฉัน ดีใจ มาก|I'm very glad.
+เขา โกรธ ฉัน|He's angry with me.
+ฉัน กลัว งู|I'm afraid of snakes.
+ฉัน ไม่ รู้|I don't know.
+ภาษาไทย ยาก ไหม|Is Thai difficult?
+ไม่ ยาก|It's not hard.
+บ้าน ของ เขา ใหญ่ มาก|His house is very big.
+กระเป๋า หนัก มาก|The bag is very heavy.
+ห้อง นี้ เงียบ|This room is quiet.
+เขา สูง และ ผอม|He's tall and thin.
+อัน นี้ ถูก แต่ ไม่ ดี|This one is cheap but not good.
+คุณ พร้อม ไหม|Are you ready?
+วันนี้ ฉัน ยุ่ง มาก|I'm very busy today.
+พูด ช้า ได้ ไหม|Can you speak slowly?
+รอ ที่นี่ นะ|Wait here, OK?
+ช่วย ถือ ได้ ไหม|Can you help me carry it?
+ฉัน กำลัง หา โรงแรม|I'm looking for a hotel.
+ใคร ขับ รถ|Who's driving?
+จอด ที่นี่ ได้ ไหม|Can I park here?
+คุณ เคย กิน ลาบ ไหม|Have you ever eaten laap?
+ฉัน จะ โทร หา คุณ|I'll call you.
+ฉัน กำลัง เรียน ภาษาไทย|I'm studying Thai.
+วันนี้ อากาศ ดี|The weather is nice today.
+ฝนตก มาก|It's raining a lot.
+พรุ่งนี้ อาจจะ ฝนตก|It might rain tomorrow.
+แดด ร้อน มาก|The sun is very hot.
+มี ยุง เยอะ|There are lots of mosquitoes.
+ลิง กิน กล้วย|The monkey eats a banana.
+ทะเล สวย มาก|The sea is beautiful.
+ฉัน ชอบ แมว แต่ ไม่ ชอบ หมา|I like cats but not dogs.
+คุณ ทำงาน ที่ไหน|Where do you work?
+ฉัน ทำงาน ที่ บริษัท|I work at a company.
+คำ นี้ ยาก|This word is hard.
+คุณ พูด ภาษาอังกฤษ ได้ ไหม|Can you speak English?
+พรุ่งนี้ มี ประชุม|There's a meeting tomorrow.
+เด็ก ไป โรงเรียน|The children go to school.
+ฉัน ต้อง ทำ การบ้าน|I have to do homework.
+นั่น ใคร|Who's that?
+นี่ อะไร|What's this?
+อัน ไหน|Which one?
+ทำไม ไม่ มา|Why didn't you come?
+คุณ จะ ไป ไหน|Where are you going?
+เขา ยัง ไม่ มา|He hasn't come yet.
+ฉัน ก็ ไป|I'm going too.
+ถ้า ว่าง มา ด้วย|If you're free, come along.
+เขา มา เมื่อไร|When is he coming?
+กี่ คน|How many people?
+ไป หรือเปล่า|Are you going or not?
+ฉัน ไม่ ไป เพราะ ฝนตก|I'm not going because it's raining.`;
+const SENTENCE_GAPS = [];
+(() => {
+  const byTh = new Map();
+  [...CURRICULUM.filter((i) => i.tier !== "glyph"), ...GARDEN_ITEMS].forEach((i) => { if (!byTh.has(i.th)) byTh.set(i.th, i); });
+  const short = (m) => m.split(" / ")[0].replace(/\s*\([^)]*\)/g, "").trim();
+  GARDEN_LINES_SRC.split("\n").forEach((line, k) => {
+    const [text, gloss] = line.split("|");
+    const its = text.trim().split(/\s+/).map((w) => byTh.get(w));
+    if (!gloss || its.some((x) => !x)) { SENTENCE_GAPS.push(line); return; }
+    const id = `gl${k + 1}`;
+    SENTENCES.push({ id, script: "th", gloss, garden: true, words: its.map((i) => ({ w: i.th, r: (i.thRoman || "").split(" ·")[0], m: short(i.meaning), tts: i.ttsTh || i.th, tone: i.tone })) });
+    SENTENCES.push({ id, script: "lo", gloss, garden: true, words: its.map((i) => ({ w: i.lo, r: i.loRoman, m: short(i.meaning), tts: i.ttsLo })) });
+  });
+})();
 
 function SliceSentence({ sentence, font, mode }) {
   const prefsS = usePrefs();
@@ -9653,4 +10132,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
