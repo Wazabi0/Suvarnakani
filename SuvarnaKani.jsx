@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.28.0";
+const APP_VERSION = "0.29.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
