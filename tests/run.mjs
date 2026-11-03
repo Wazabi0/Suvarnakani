@@ -373,5 +373,67 @@ for (const mode of ["th", "lo", "dual"]) {
   eq(core.filter((i) => !srs[i.id]).map((i) => i.th), [], `${mode}: a steady learner reaches every core item`);
 }
 
+// Guardian Trials: levels open by passing the previous level's trial.
+for (const mode of ["th", "lo"]) {
+  const course = T.courseItems(mode);
+  const H = 3600 * 1000;
+  const lv = (n) => course.filter((i) => i.level === n && !i.garden);
+  const learned = (levels, stage = 2) => Object.fromEntries(course.filter((i) => levels.includes(i.level) && !i.garden).map((i) => [i.id, { stage, fsrs: { read: { S: 3, D: 5, last: 0 } } }]));
+  eq([...T.openLevels({}, mode)], [1], `${mode}: a new learner has Level 1 only`);
+  const l1 = learned([1]);
+  eq([...T.openLevels(l1, mode)], [1], `${mode}: meeting the letter goal alone doesn't open Level 2`);
+  const chain = T.unlockChain(l1, mode);
+  eq(T.trialState(1, mode, l1, {}, chain).status, "ready", `${mode}: the Level 1 trial is ready at the letter goal`);
+  eq(T.trialState(1, mode, {}, {}, T.unlockChain({}, mode)).status, "learning", `${mode}: no trial before the goal`);
+  const passed = { [T.trialKey(mode, 1)]: { passed: 1 } };
+  check(T.openLevels(l1, mode, false, passed).has(2), `${mode}: passing the Level 1 trial opens Level 2`);
+  check(T.openLevels({}, mode, true).size >= 9, `${mode}: sandbox opens everything`);
+  // Failing: the trial is owed until each missed item is right in a real review again.
+  const miss = lv(1)[0];
+  const failedAt = 10 * 24 * H;
+  const trials = { [T.trialKey(mode, 1)]: { failed: failedAt, owed: [miss.id] } };
+  const relearned = { ...l1, [miss.id]: { stage: 1, lastMiss: failedAt, fsrs: { read: { S: 1, D: 5, last: failedAt + 10 * 60 * 1000 } } } };
+  eq(T.trialState(1, mode, relearned, trials, chain).status, "owed", `${mode}: the 10-minute relearn doesn't bring the guardian back`);
+  const reviewed = { ...l1, [miss.id]: { stage: 1, lastMiss: failedAt, fsrs: { read: { S: 1, D: 5, last: failedAt + 8 * H } } } };
+  eq(T.trialState(1, mode, reviewed, trials, chain).status, "ready", `${mode}: a right review after the 8-hour rung brings the guardian back`);
+  const missedAgain = { ...l1, [miss.id]: { stage: 1, lastMiss: failedAt + 8 * H, fsrs: { read: { S: 1, D: 5, last: failedAt + 8 * H } } } };
+  eq(T.trialState(1, mode, missedAgain, trials, chain).status, "owed", `${mode}: missing it again keeps the trial owed`);
+  // Prompts: 12, four rounds, only started items from the level, tone answers valid.
+  for (let n = 1; n <= 9; n += 1) {
+    const srs = learned([n], 1);
+    if (!lv(n).length) continue;
+    for (let k = 0; k < 3; k += 1) {
+      const ps = T.buildTrial([n], mode, srs);
+      eq(ps.length, T.TRIAL_SIZE, `${mode} L${n}: a trial has ${T.TRIAL_SIZE} prompts`);
+      check(ps.every((p) => p.item.level === n && srs[p.item.id]), `${mode} L${n}: prompts use only started items of the level`);
+      check(["recognise", "listen", "read"].every((r) => ps.some((p) => p.round === r)), `${mode} L${n}: recognise, listen and read rounds are there`);
+      for (const p of ps) {
+        if (p.options) check(p.options.length >= 2 && p.options.some((o) => o.id === p.item.id) && new Set(p.options.map((o) => o.id)).size === p.options.length, `${mode} L${n}: ${p.round} options include the answer once`);
+        if (p.round === "tone") check(p.kind === "class" ? ["high", "mid", "low"].includes(p.answer) : !!T.TONES[p.answer], `${mode} L${n}: tone prompt for ${p.item.th} has a valid answer (${p.answer})`);
+        if (p.round === "read") check(p.meanings.some((o) => o.id === p.item.id), `${mode} L${n}: read prompt offers the right meaning`);
+      }
+      check(ps.slice(-3).every((p) => p.round === "read"), `${mode} L${n}: the trial ends on the read round`);
+    }
+  }
+  eq(T.buildTrial([2], mode, {}).length, 0, `${mode}: no prompts from items you haven't started`);
+  const river = T.buildTrial([1, 2, 3], mode, {}, { size: T.RIVER_SIZE, onlyStarted: false });
+  eq(river.length, T.RIVER_SIZE, `${mode}: a river run has ${T.RIVER_SIZE} prompts`);
+  check(river.every((p) => [1, 2, 3].includes(p.item.level)), `${mode}: river prompts come from the skipped levels`);
+  eq(T.riverLevels(5, new Set([1, 2])), [2, 3, 4], `${mode}: a river run to 5 from Level 2 covers 2 to 4`);
+  // Legacy: levels opened under 0.27 stay open.
+  const old = learned([1, 2]);
+  const leg = T.legacyTrials(old);
+  check(T.openLevels(old, mode, false, leg).has(3), `${mode}: a learner from 0.27 keeps Level 3`);
+  check(!T.openLevels(old, mode, false, leg).has(4), `${mode}: but not levels the old rule hadn't opened`);
+}
+for (const it of T.courseItems("th").concat(T.courseItems("lo"))) check(!/[\u0E00-\u0EFF]/.test(T.trialCue(it)) && T.trialCue(it).length > 0, `trial cue for ${it.id} has no Thai or Lao text: ${T.trialCue(it)}`);
+// Scoring: 3 lanterns, no relighting.
+const runOf = (n, miss) => Array.from({ length: n }, (_, i) => ({ ok: !miss.includes(i) }));
+check(T.trialOutcome(runOf(12, []), 3, 12).gold, "12 right is gold");
+check(T.trialOutcome(runOf(12, [2, 7]), 3, 12).passed && !T.trialOutcome(runOf(12, [2, 7]), 3, 12).gold, "two misses pass without gold");
+check(!T.trialOutcome(runOf(9, [1, 4, 8]), 3, 12).passed, "a third miss fails, even with right answers in between");
+check(!T.trialOutcome(runOf(5, [4]), 1, 20).passed, "one miss ends a river run");
+check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't pass");
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

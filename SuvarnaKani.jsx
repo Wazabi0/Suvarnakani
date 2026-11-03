@@ -1800,6 +1800,144 @@ function gardenBoxes(course, srs = {}, chain, sandbox = false) {
   return open;
 }
 
+/* ---------------------------------------------------------------------------
+ * Guardian Trials. Reaching the 90% letter goal no longer opens the next level
+ * by itself: it calls the level's guardian, and passing the trial opens the
+ * next level. A trial is 12 prompts in four rounds (recognise, tone or class
+ * with colours hidden, listen, read it) with 3 lanterns and no relighting.
+ * "Run the river" skips ahead: about 20 prompts from every level skipped, one
+ * lantern. Trials are kept per course ("th" also covers Thai + Lao, "lo").
+ * ------------------------------------------------------------------------- */
+const TRIAL_LANTERNS = 3;
+const RIVER_LANTERNS = 1;
+const TRIAL_SIZE = 12;
+const RIVER_SIZE = 20;
+const TRIAL_ROUNDS = [
+  { id: "recognise", name: "Recognise" },
+  { id: "tone", name: "Tone" },
+  { id: "listen", name: "Listen" },
+  { id: "read", name: "Read it" },
+];
+const trialKey = (mode, n) => `${mode === "lo" ? "lo" : "th"}:${n}`;
+const trialOf = (trials, mode, n) => trials?.[trialKey(mode, n)] || null;
+const trialPassed = (trials, mode, n) => !!trialOf(trials, mode, n)?.passed;
+
+/** Levels open for one learner: Level 1, then each level whose previous trial is passed (or that you have already started). */
+function openLevels(srs = {}, mode = "th", sandbox = false, trials = {}, garden = []) {
+  const course = courseItems(mode);
+  const set = new Set([1]);
+  if (sandbox) COURSE_LEVELS.forEach((l) => set.add(l.n));
+  else {
+    for (let n = 2; n <= COURSE_LEVELS.length; n += 1) {
+      // A level you have already started stays open when new items join the level before it.
+      const started = course.some((i) => i.level === n && (srs[i.id]?.stage || 0) > 0);
+      if (started || trialPassed(trials, mode, n - 1)) set.add(n);
+      else break;
+    }
+  }
+  // Word Garden beds open with the Level 4 trial, and feed lessons once planted.
+  const gardenOpen = sandbox || trialPassed(trials, mode, 4);
+  GARDEN_BEDS.forEach((b) => { if (gardenOpen && (garden.includes(b.id) || course.some((i) => i.garden === b.id && (srs[i.id]?.stage || 0) > 0))) set.add(b.level); });
+  return set;
+}
+
+/**
+ * Learners from before the trials keep every level the 0.27 rule had opened:
+ * each level whose letter goal was met counts as passed (no stamp yet).
+ */
+function legacyTrials(srs = {}) {
+  const out = { __v: 1 };
+  ["th", "lo"].forEach((mode) => {
+    const course = courseItems(mode);
+    const chain = unlockChain(srs, mode);
+    for (let n = 2; n <= COURSE_LEVELS.length; n += 1) {
+      const passed = levelPassed(n - 1, course, srs, chain);
+      const started = course.some((i) => i.level === n && (srs[i.id]?.stage || 0) > 0);
+      if (passed) out[trialKey(mode, n - 1)] = { passed: Date.now(), legacy: true };
+      if (!passed && !started) break;
+    }
+    if (levelPassed(4, course, srs, chain) && course.some((i) => i.level === 4 && (srs[i.id]?.stage || 0) > 0)) out[trialKey(mode, 4)] = out[trialKey(mode, 4)] || { passed: Date.now(), legacy: true };
+  });
+  return out;
+}
+
+/** True once an item has been answered right in a real review (not the 10-minute relearn) since `since`. */
+function reviewedRightSince(s, since) {
+  if (!s?.fsrs) return false;
+  const last = Math.max(...Object.values(s.fsrs).map((t) => t.last || 0));
+  return last >= since + 4 * HOUR && !(s.lastMiss >= last);
+}
+
+/**
+ * Where a level's trial stands: "learning" (letter goal not met yet), "owed"
+ * (failed; waiting for the missed items to be right in reviews again),
+ * "ready", or "passed". `owedLeft` lists the items still owed.
+ */
+function trialState(n, mode, srs, trials, chain) {
+  const course = courseItems(mode);
+  const t = trialOf(trials, mode, n);
+  const goal = levelGoal(n, course, srs, chain);
+  const met = goal.done >= goal.need;
+  if (t?.passed) return { status: "passed", goal, met, trial: t, owedLeft: [] };
+  // After a fail, only the missed items matter: the misses may have dropped letters below the goal for a while.
+  if (t?.failed) {
+    const owedLeft = (t.owed || []).filter((id) => srs[id] && !reviewedRightSince(srs[id], t.failed));
+    return { status: owedLeft.length ? "owed" : "ready", goal, met, trial: t, owedLeft };
+  }
+  return { status: met ? "ready" : "learning", goal, met, trial: t, owedLeft: [] };
+}
+
+/**
+ * Build a trial's prompts. `levels` are the levels it covers; `onlyStarted`
+ * keeps it to items you have had lessons on (a river run tests unstarted ones).
+ * Letters weigh most in the first two rounds and words in the last.
+ */
+function buildTrial(levels, mode, srs = {}, { size = TRIAL_SIZE, onlyStarted = true, rng = Math.random } = {}) {
+  const course = courseItems(mode);
+  const pool = course.filter((i) => !i.garden && levels.includes(i.level) && (!onlyStarted || (srs[i.id]?.stage || 0) >= 1));
+  if (!pool.length) return [];
+  const mix = (arr) => arr.map((x) => [rng(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+  const used = new Set();
+  const per = Math.max(1, Math.round(size / TRIAL_ROUNDS.length));
+  const pick = (cands, n, prefer) => {
+    const ranked = mix(cands).sort((a, b) => (used.has(a.id) - used.has(b.id)) || (prefer(b) - prefer(a)));
+    const out = [];
+    for (const it of ranked) { if (out.length >= n) break; if (!out.includes(it)) out.push(it); }
+    while (out.length < n && cands.length) out.push(cands[out.length % cands.length]);
+    out.forEach((it) => used.add(it.id));
+    return out;
+  };
+  const isGlyph = (i) => (i.tier === "glyph" ? 1 : 0);
+  const toneable = pool.filter((i) => (i.tier === "glyph" ? !!i.cls : i.tone?.length === 1));
+  const optionsFor = (it) => mix([it, ...confusables(it, mode)]);
+  const prompts = [];
+  pick(pool, per, isGlyph).forEach((item) => prompts.push({ round: "recognise", item, options: optionsFor(item) }));
+  (toneable.length ? pick(toneable, per, isGlyph) : pick(pool, per, isGlyph)).forEach((item) => {
+    if (item.tier === "glyph" ? item.cls : item.tone?.length === 1) prompts.push({ round: "tone", item, kind: item.tier === "glyph" ? "class" : "tone", answer: item.tier === "glyph" ? item.cls : item.tone[0] });
+    else prompts.push({ round: "recognise", item, options: optionsFor(item) });
+  });
+  pick(pool, per, () => 0).forEach((item) => prompts.push({ round: "listen", item, options: optionsFor(item) }));
+  const reads = size - prompts.length;
+  pick(pool, Math.max(1, reads), (i) => (i.tier === "vocab" ? 2 : i.tier === "syllable" ? 1 : 0)).forEach((item) => prompts.push({ round: "read", item, meanings: optionsFor(item) }));
+  return prompts.slice(0, size);
+}
+
+/** The levels a river run to `target` covers: from the highest open level up to the one before `target`. */
+function riverLevels(target, open) {
+  const top = Math.max(...COURSE_LEVELS.filter((l) => open.has(l.n)).map((l) => l.n));
+  const out = [];
+  for (let n = top; n < target; n += 1) out.push(n);
+  return out;
+}
+
+/** Score a finished run. Pass = reached the end with a lantern lit; gold = lost none. */
+function trialOutcome(results, lanterns, total) {
+  const misses = results.filter((r) => !r.ok).length;
+  const left = Math.max(0, lanterns - misses);
+  const passed = left > 0 && results.length >= total;
+  return { misses, left, passed, gold: passed && misses === 0, right: results.length - misses };
+}
+
 const FSRS_FACTOR = 19 / 81;
 const TARGET_RETENTION = 0.9;
 const BURN_STABILITY_DAYS = 120;
@@ -2249,6 +2387,22 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.29.0", title: "A fuller Word Garden", points: [
+    "The Word Garden now has 465 words in 13 beds, each with its Lao word. New beds: Little words (ไม่, จะ, แล้ว, question words), Shopping and colours, Home, Describing things, Weather, nature and animals, and School and work.",
+    "Every bed is split into small topic boxes, most useful words first. A planted bed starts with its first box; the next opens when 80% of the box before it reaches Novice Monk.",
+    "Words that were in the wrong bed have moved to their topic. Your progress moved with them.",
+    "150 sentence lines in each language. A line joins your sentence deck once you know every word in it.",
+  ] },
+  { v: "0.28.0", title: "Guardian Trials", points: [
+    "Each level's guardian now tests you before the next level opens. When 90% of a level's letters reach Novice Monk, Face the guardian appears on the gate and in the Today Path.",
+    "Twelve prompts in four rounds: recognise, tone (colours hidden), listen, and read a word yourself. You have 3 lanterns and nothing relights them.",
+    "Pass to stamp your river passport and open the next level. A flawless run earns gold, and you can go back for it. Misses go back into your reviews, and the guardian returns once they're right there again.",
+    "Run the river skips ahead to any locked level with one lantern. Street Reader and Ride the line open with Level 7, Talk Paths with Level 8, and the Word Garden with the Level 4 trial. Levels you already had open stay open.",
+  ] },
+  { v: "0.27.0", title: "Letters first", points: [
+    "Words and syllables now wait until their letters reach Novice Monk, the way WaniKani waits on radicals.",
+    "New and missed items come back after 4 hours, 8 hours, 1 day and 2 days before the usual schedule takes over. Recent misses and leeches come first in reviews.",
+  ] },
   { v: "0.26.0", title: "Only letters you know", points: [
     "Practice modes now only show letters you've had lessons on. Locked items open as your course reaches their letters, and Unlock all levels still opens everything.",
     "Mekong Predictor opens with Level 3 and only uses words you can read. It starts with a short explainer and an example, and each Lao tile shows the Thai letter it sounds like.",
@@ -2681,6 +2835,223 @@ function AudioButtons({ ttsTh, ttsLo, loRaw, tones, mode, compact }) {
   );
 }
 
+/* ---------------------------------------------------------------------------
+ * Guardian Trial screen. Prompts come from buildTrial(); the screen only runs
+ * them: lanterns, the round label, one prompt at a time, then the stamp or the
+ * guardian's notes. onFinish fires once with the results when the run ends.
+ * ------------------------------------------------------------------------- */
+/** The cue for a recognise prompt, with any Thai or Lao text taken out so it can't give the answer away. */
+function trialCue(item) {
+  const parts = item.meaning.split(/\s*·\s*/).map((x) => x.replace(/\s*\([^)]*[\u0E00-\u0EFF][^)]*\)/g, "").trim()).filter((x) => x && !/[\u0E00-\u0EFF]/.test(x));
+  return (item.tier === "glyph" ? parts.slice(0, 2) : parts).join(" · ") || item.meaning;
+}
+const THAI_DIGITS = "๐๑๒๓๔๕๖๗๘๙";
+function Lantern({ lit, size = 22 }) {
+  return (
+    <svg width={size * 0.75} height={size} viewBox="0 0 18 24" aria-hidden="true" className={lit ? "sk-lantern-lit" : ""}>
+      <path d="M9 1 L12 4 H6 Z" fill="#8a6a2a" />
+      <rect x="4" y="4" width="10" height="2" rx="1" fill="#8a6a2a" />
+      <path d="M3 7 Q9 5 15 7 Q17 14 13 20 H5 Q1 14 3 7 Z" fill={lit ? "#FFD54F" : "rgb(var(--sk-slate-600))"} />
+      <rect x="5" y="20" width="8" height="3" rx="1" fill="#8a6a2a" />
+    </svg>
+  );
+}
+function GreyToneChoice({ options, onPick, picked, correct, disabled }) {
+  return (
+    <div className="grid grid-cols-5 gap-1.5" data-trial-tones>
+      {options.map((k, i) => {
+        const t = TONES[k];
+        const digits = t.chao.split("").map(Number);
+        const y = (d) => 3 + ((5 - d) / 4) * 18;
+        const pts = digits.map((d, j) => [6 + (j / (digits.length - 1)) * 48, y(d)]);
+        const d = digits.length === 3 ? `M ${pts[0][0]} ${pts[0][1]} Q ${pts[1][0]} ${pts[1][1] + 8} ${pts[2][0]} ${pts[2][1]}` : `M ${pts[0][0]} ${pts[0][1]} L ${pts[1][0]} ${pts[1][1]}`;
+        const state = picked == null ? "idle" : k === correct ? "right" : k === picked ? "wrong" : "idle";
+        return (
+          <button key={k} type="button" disabled={disabled} onClick={() => onPick(k)}
+            className={`rounded-xl border px-1 py-2 text-center transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"}`}>
+            <svg viewBox="0 0 60 24" className="mx-auto block h-6 w-full" aria-hidden="true"><path d={d} stroke="rgb(var(--sk-slate-400))" strokeWidth="3" fill="none" strokeLinecap="round" /></svg>
+            <div className="text-[11px] font-semibold text-slate-200">{t.name}</div>
+            <div className="text-[10px] text-slate-500">{i + 1}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function GuardianTrial({ run, mode, font, onClose, onFinish }) {
+  const [idx, setIdx] = useState(0);
+  const [results, setResults] = useState([]);
+  const [answer, setAnswer] = useState(null); // { ok, pick, typed, meaning }
+  const [typed, setTyped] = useState("");
+  const [meaning, setMeaning] = useState(null);
+  const finished = useRef(false);
+  const inputRef = useRef(null);
+  const prompts = run?.prompts || [];
+  const total = prompts.length;
+  const misses = results.filter((r) => !r.ok).length;
+  const left = Math.max(0, (run?.lanterns || TRIAL_LANTERNS) - misses);
+  const over = !!run && (left === 0 || (results.length >= total && !answer));
+  const p = prompts[idx];
+  const script = mode === "lo" ? "lo" : "th";
+  const fam = FONT_STACKS[font]?.[script] || FONT_STACKS.loop[script];
+  const text = (it) => (script === "lo" ? it.lo : it.th);
+  const audio = getAudio();
+  const canHear = script !== "lo" || !!audio.laoVoice();
+  const say = (it) => { if (script === "lo") audio.speakHumanVoice(it.ttsLo || it.ttsTh, it.lo); else audio.speakHumanVoice(it.ttsTh); };
+
+  useEffect(() => { setIdx(0); setResults([]); setAnswer(null); setTyped(""); setMeaning(null); finished.current = false; }, [run]);
+  useEffect(() => {
+    if (p?.round === "listen" && canHear && !answer) { const id = setTimeout(() => say(p.item), 350); return () => clearTimeout(id); }
+    if (p?.round === "read" && !answer) inputRef.current?.focus();
+    return undefined;
+  }, [idx, run]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!over || finished.current || !run) return;
+    finished.current = true;
+    onFinish?.({ ...trialOutcome(results, run.lanterns, total), results, run });
+  }, [over]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!run) return null;
+  const outcome = trialOutcome(results, run.lanterns, total);
+
+  const commit = (ok, extra = {}) => {
+    if (answer) return;
+    haptic(ok ? "ok" : "miss");
+    setAnswer({ ok, ...extra });
+    setResults((r) => [...r, { id: p.item.id, round: p.round, ok }]);
+    if (p.round !== "listen") say(p.item);
+  };
+  const next = () => {
+    if (!answer) return;
+    setAnswer(null); setTyped(""); setMeaning(null);
+    setIdx((i) => i + 1);
+  };
+  const roundName = TRIAL_ROUNDS.find((r) => r.id === p?.round)?.name;
+  const correctLine = (it) => `${text(it)} · ${(script === "lo" ? it.loRoman : it.thRoman) || ""} · ${it.meaning}`;
+  const missed = results.filter((r) => !r.ok).map((r) => prompts.find((q) => q.item.id === r.id && q.round === r.round));
+  const listenAsRead = p?.round === "listen" && !canHear;
+
+  return (
+    <Modal open onClose={onClose} title={run.title} accent={run.accent || COLORS.gold}>
+      {over && !answer ? (
+        outcome.passed ? (
+          <div className="grid gap-4 text-center" data-trial-result="pass">
+            <svg viewBox="0 0 150 150" className="mx-auto h-36 w-36" role="img" aria-label="Stamp">
+              <circle cx="75" cy="75" r="66" fill="none" stroke={outcome.gold ? "#FFD54F" : COLORS.gold} strokeWidth="4" />
+              <circle cx="75" cy="75" r="56" fill="none" stroke={outcome.gold ? "#FFD54F" : COLORS.gold} strokeWidth="1.5" strokeDasharray="3 4" />
+              <text x="75" y="72" textAnchor="middle" fontFamily={FONT_STACKS.loop.th} fontSize="34" fill={outcome.gold ? "#FFD54F" : COLORS.gold}>{String(run.stampLevel).split("").map((d) => THAI_DIGITS[d]).join("")}</text>
+              <text x="75" y="96" textAnchor="middle" fontSize="9.5" letterSpacing="1.5" fill={outcome.gold ? "#FFD54F" : COLORS.gold}>{(run.stampName || "").toUpperCase().slice(0, 22)}</text>
+              <text x="75" y="111" textAnchor="middle" fontSize="8.5" letterSpacing="1.2" fill="rgb(var(--sk-slate-400))">{new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }).toUpperCase()}</text>
+            </svg>
+            <div>
+              <div className="text-xl font-black text-white">{outcome.gold ? "Gold stamp" : "Trial passed"}</div>
+              <div className="mt-1 text-sm text-slate-400">{outcome.right} / {total} right · {outcome.left} lantern{outcome.left === 1 ? "" : "s"} left</div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-sm text-slate-200">{run.passNote}</div>
+            <button onClick={onClose} className="rounded-xl bg-amber-500 px-5 py-2.5 font-bold text-black">Back to the Shrine</button>
+          </div>
+        ) : (
+          <div className="grid gap-3" data-trial-result="fail">
+            <div className="flex gap-1.5">{Array.from({ length: run.lanterns }, (_, i) => <Lantern key={i} lit={false} />)}</div>
+            <div className="text-lg font-black text-white">{run.kind === "river" ? "The river turns you back" : "The guardian holds the gate"}</div>
+            <p className="text-sm text-slate-400">{run.kind === "river" ? "Nothing is lost. You can run the river again tomorrow." : `${missed.length === 1 ? "This one needs" : "These need"} more work. ${missed.length === 1 ? "It's" : "They're"} back on the 8-hour rung in your reviews, and the guardian returns once ${missed.length === 1 ? "it is" : "they are"} right there again.`}</p>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3">
+              {missed.filter(Boolean).map((q, k) => (
+                <div key={k} className="grid grid-cols-[56px_1fr] items-center gap-3 border-t border-white/5 py-2 first:border-t-0">
+                  <div className="text-center text-2xl text-white" style={{ fontFamily: fam }}>{text(q.item)}</div>
+                  <div className="text-sm text-slate-200">{(script === "lo" ? q.item.loRoman : q.item.thRoman) || ""} · {q.item.meaning}
+                    <div className="text-xs text-slate-400">{q.round === "tone" ? (q.kind === "class" ? `${CLASSES[q.answer]?.name} class` : `${TONES[q.answer]?.name} tone`) : TRIAL_ROUNDS.find((r) => r.id === q.round)?.name}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={onClose} className="rounded-xl bg-amber-500 px-5 py-2.5 font-bold text-black">Back to the Shrine</button>
+          </div>
+        )
+      ) : p ? (
+        <div className="grid gap-4" data-trial-round={p.round}>
+          <div className="flex items-center justify-between">
+            <div className="flex gap-1.5" data-lanterns={left}>{Array.from({ length: run.lanterns }, (_, i) => <Lantern key={i} lit={i < left} />)}</div>
+            <div className="text-xs tabular-nums text-slate-400">{Math.min(idx + 1, total)} / {total}</div>
+          </div>
+          <div className="flex gap-[3px]">{prompts.map((_, i) => <i key={i} className={`h-1 flex-1 rounded-full ${i < results.length ? (results[i].ok ? "bg-emerald-400" : "bg-rose-400") : i === idx ? "bg-slate-200" : "bg-white/10"}`} />)}</div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-400">{p.round === "read" ? "Final round" : `Round ${TRIAL_ROUNDS.findIndex((r) => r.id === p.round) + 1}`} · {roundName}</div>
+
+          {p.round === "recognise" && (
+            <>
+              <div className="text-center font-semibold text-white">Which one is <span className="text-amber-300">{trialCue(p.item)}</span>?</div>
+              <div className="grid grid-cols-2 gap-2">
+                {p.options.map((o) => {
+                  const state = !answer ? "idle" : o.id === p.item.id ? "right" : o.id === answer.pick ? "wrong" : "idle";
+                  return <button key={o.id} type="button" disabled={!!answer} onClick={() => commit(o.id === p.item.id, { pick: o.id })} className={`rounded-2xl border py-2 text-3xl text-white transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03]"}`} style={{ fontFamily: fam, lineHeight: 1.6 }}>{text(o)}</button>;
+                })}
+              </div>
+            </>
+          )}
+
+          {p.round === "tone" && (
+            <>
+              <div className="text-center text-6xl text-white" style={{ fontFamily: fam, lineHeight: 1.5 }}>{text(p.item)}</div>
+              <div className="text-center font-semibold text-white">{p.kind === "class" ? "Which consonant class?" : "What tone is it? Work it out from the spelling."}</div>
+              {p.kind === "class"
+                ? <ClassChoice onPick={(k) => commit(k === p.answer, { pick: k })} picked={answer?.pick ?? null} correct={answer ? p.answer : null} disabled={!!answer} />
+                : <GreyToneChoice options={p.item.toneSet === "lo" ? LAO_TONE_ORDER : TONE_ORDER} onPick={(k) => commit(k === p.answer, { pick: k })} picked={answer?.pick ?? null} correct={answer ? p.answer : null} disabled={!!answer} />}
+            </>
+          )}
+
+          {p.round === "listen" && (
+            <>
+              {listenAsRead ? (
+                <>
+                  <div className="text-center text-6xl text-white" style={{ fontFamily: fam, lineHeight: 1.5 }}>{text(p.item)}</div>
+                  <div className="text-center font-semibold text-white">No voice for this script here, so: what does it mean?</div>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => say(p.item)} aria-label="Play again" className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-amber-400 bg-amber-400/10 text-amber-300 active:scale-95"><Volume2 size={30} /></button>
+                  <div className="text-center font-semibold text-white">Which one did you hear?</div>
+                </>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {p.options.map((o) => {
+                  const state = !answer ? "idle" : o.id === p.item.id ? "right" : o.id === answer.pick ? "wrong" : "idle";
+                  return <button key={o.id} type="button" disabled={!!answer} onClick={() => commit(o.id === p.item.id, { pick: o.id })} className={`rounded-2xl border py-2 text-white transition active:scale-95 ${listenAsRead ? "px-2 text-sm" : "text-3xl"} ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03]"}`} style={listenAsRead ? undefined : { fontFamily: fam, lineHeight: 1.6 }}>{listenAsRead ? o.meaning : text(o)}</button>;
+                })}
+              </div>
+            </>
+          )}
+
+          {p.round === "read" && (
+            <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); if (!answer && typed.trim() && meaning) commit(isCorrect(p.item, typed) && meaning === p.item.id, { typed, pick: meaning }); }}>
+              <div className="rounded-2xl bg-[#f4efe2] py-3 text-center text-5xl text-[#1b1b1b]" style={{ fontFamily: fam, lineHeight: 1.6 }}>{text(p.item)}</div>
+              <label className="grid gap-1 text-sm font-semibold text-white" htmlFor="trial-reading">How is it read?
+                <input id="trial-reading" ref={inputRef} value={typed} disabled={!!answer} onChange={(e) => setTyped(e.target.value)} autoComplete="off" autoCapitalize="off" spellCheck={false} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 font-mono text-lg text-white outline-none focus:border-amber-400" placeholder="type the reading" />
+              </label>
+              <div className="text-sm font-semibold text-white">What does it mean?</div>
+              <div className="grid grid-cols-2 gap-2">
+                {p.meanings.map((o) => {
+                  const state = answer ? (o.id === p.item.id ? "right" : o.id === answer.pick ? "wrong" : "idle") : o.id === meaning ? "sel" : "idle";
+                  return <button key={o.id} type="button" disabled={!!answer} onClick={() => setMeaning(o.id)} className={`rounded-xl border px-2 py-2 text-sm text-white ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : state === "sel" ? "border-amber-400 bg-amber-400/10" : "border-white/10 bg-white/[0.03]"}`}>{o.meaning}</button>;
+                })}
+              </div>
+              {!answer && <button type="submit" disabled={!typed.trim() || !meaning} className="rounded-xl bg-amber-500 px-5 py-2.5 font-bold text-black disabled:opacity-40">Check</button>}
+            </form>
+          )}
+
+          {answer && (
+            <div className={`grid gap-2 rounded-2xl border p-3 ${answer.ok ? "border-emerald-400/40 bg-emerald-500/10" : "border-rose-400/40 bg-rose-500/10"}`} data-trial-feedback={answer.ok ? "ok" : "miss"}>
+              <div className="font-bold text-white">{answer.ok ? "Right" : left === 0 ? "Missed, and the last lantern goes out" : "Missed · a lantern goes out"}</div>
+              <div className="text-sm text-slate-200" style={{ fontFamily: `${fam}, ${UI_FONT}` }}>{correctLine(p.item)}{p.round === "tone" ? ` · ${p.kind === "class" ? `${CLASSES[p.answer]?.name} class` : `${TONES[p.answer]?.name} tone`}` : ""}</div>
+              <button type="button" onClick={next} autoFocus className="rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">{left === 0 || idx + 1 >= total ? "See the result" : "Next"}</button>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
 function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
   useBackClose(open, onClose);
   useWakeLock(open);
@@ -2852,14 +3223,15 @@ const PRACTICE_GOALS = { trace: 3, mekong: 4, sign: 1, shadow: 5 };
  * speaking each come round. What is due wins the day: write reviews first, then Mekong laws.
  * Once picked, today's activity stays put even after its due list empties.
  */
-function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Date.now() }) {
+function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Date.now(), streetOpen = true }) {
   const today = log[todayKey(now)] || {};
   const writes = writeDue(srs, mode, now);
   // Mekong laws and street signs only come round once you have letters for them.
   const bridgeOpen = bridgeAccess(srs, mode, sandbox).open;
   const laws = lawsDue(bridgeSched, now, bridgeOpen);
   const startedGlyphs = traceTargets(mode).some((t) => srs[t.id]);
-  const signsOpen = streetPacks(mode).some((p) => packReady(p, letterGate(srs, mode, sandbox)));
+  // Street Reader itself opens with Level 7 (Guardian Trials).
+  const signsOpen = streetOpen && streetPacks(mode).some((p) => packReady(p, letterGate(srs, mode, sandbox)));
   const dayNo = Math.floor(new Date(todayKey(now)).getTime() / DAY);
   const rotation = ["trace", "mekong", "sign", "shadow"].filter((k) => (k !== "trace" || startedGlyphs) && (k !== "mekong" || bridgeOpen.size) && (k !== "sign" || signsOpen));
   let kind = rotation[dayNo % rotation.length];
@@ -2883,7 +3255,7 @@ function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Dat
   return { kind, label: "Shadow 5 syllables", done, note: `${Math.min(count, goal)} / ${goal} attempts` };
 }
 
-function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech, practice, onPractice }) {
+function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech, practice, onPractice, trial }) {
   const today = log[todayKey()] || {};
   const acc = weekAccuracy(log);
   const streak = computeStreak(log);
@@ -2893,6 +3265,8 @@ function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinu
     { id: "reviews", label: reviewCount ? `${reviewCount} review${reviewCount > 1 ? "s" : ""}` : "Reviews", min: Math.max(1, Math.ceil((reviewCount * 10) / 60)), done: reviewCount === 0, note: reviewCount === 0 ? (today.reviews ? `${today.reviews} done today` : "Nothing due") : null, onClick: onReviews, disabled: !reviewCount },
     { id: "ear", label: "Ear set", min: 3, done: (today.ear || 0) >= EAR_DAILY_TRIALS, note: `${Math.min(today.ear || 0, EAR_DAILY_TRIALS)} / ${EAR_DAILY_TRIALS} trials`, onClick: onEar },
   ];
+  // A ready Guardian Trial comes straight after reviews.
+  if (trial) steps.splice(1, 0, { id: "trial", label: trial.label, min: 4, done: false, onClick: trial.onClick });
   if (leeches.length) steps.push({ id: "leech", label: `Leech drill: ${leeches.slice(0, 3).map((l) => l.th).join(" ")}`, thai: true, min: 2, done: (today.drills || 0) > 0, onClick: onLeech });
   if (lessonQueue.length) {
     steps.push({
@@ -2907,7 +3281,7 @@ function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinu
   }
   if (practice) steps.push({ id: `practice-${practice.kind}`, label: practice.label, thai: practice.thai, min: 3, done: practice.done, note: practice.note, onClick: () => onPractice?.(practice.kind) });
   let budget = dailyMinutes;
-  const planned = steps.filter((s) => { const keep = s.id === "reviews" || budget - s.min >= 0; if (keep) budget -= s.min; return keep; });
+  const planned = steps.filter((s) => { const keep = s.id === "reviews" || s.id === "trial" || budget - s.min >= 0; if (keep) budget -= s.min; return keep; });
   const total = planned.reduce((n, s) => n + s.min, 0);
   const doneMin = planned.filter((s) => s.done).reduce((n, s) => n + s.min, 0);
   const nextStep = planned.find((s) => !s.done && !s.disabled);
@@ -3132,9 +3506,33 @@ function Onboarding({ onDone }) {
 /* ============================================================================
  * Module 1: SRS Shrine
  * ========================================================================== */
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [] }) {
+/** A tool that opens with a course level (Guardian Trials). */
+function ZoneLock({ tool, level }) {
+  const lvl = COURSE_LEVELS.find((l) => l.n === level);
+  const prev = COURSE_LEVELS.find((l) => l.n === level - 1);
+  return (
+    <Card className="p-6 text-center" data-zone-lock={tool}>
+      <Lock size={26} className="mx-auto text-slate-400" />
+      <h2 className="mt-3 text-lg font-bold text-white">{tool} opens with Level {level}</h2>
+      <p className="mx-auto mt-1 max-w-sm text-sm text-slate-400">{lvl.title}: {lvl.sub}. Pass the Level {prev.n} Guardian Trial ({prev.title}) in the Shrine, or run the river there, to get here.</p>
+    </Card>
+  );
+}
+
+/** Skip ahead: a one-lantern run covering every level before `n`. Once a day per level. */
+function RiverButton({ n, tried, onRun, compact }) {
+  if (tried) return <span className={`${compact ? "" : "mt-2 block"} text-[11px] text-slate-500`} data-river-tried={n}>River run tried today</span>;
+  return (
+    <button type="button" data-river-run={n} onClick={() => onRun(n)} className={`${compact ? "px-2.5 py-1 text-[11px]" : "mt-2 w-full px-3 py-1.5 text-xs"} rounded-full border border-cyan-400/40 font-semibold text-cyan-200 hover:bg-cyan-400/10`}>
+      Run the river to Level {n}{compact ? "" : " · 1 lantern"}
+    </button>
+  );
+}
+
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [], trials = {}, setTrials }) {
   const prefs = usePrefs();
   const course = useMemo(() => courseItems(mode), [mode]);
+  const [trialRun, setTrialRun] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [lessonOpen, setLessonOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -3148,24 +3546,11 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
 
   const stageOf = (id) => srs[id]?.stage || 0;
   const chain = useMemo(() => unlockChain(srs, mode, sandbox), [srs, mode, sandbox]);
-  const gardenOpen = sandbox || levelPassed(4, course, srs, chain);
+  const gardenOpen = sandbox || trialPassed(trials, mode, 4);
   const boxes = useMemo(() => gardenBoxes(course, srs, chain, sandbox), [course, srs, chain, sandbox]);
   const boxOpen = (i) => !i.garden || boxes.has(`${i.garden}:${i.box}`);
-
-  const unlockedLevels = useMemo(() => {
-    const set = new Set([1]);
-    for (let n = 2; n <= COURSE_LEVELS.length; n += 1) {
-      // A level you have already started stays open when new items join the level before it.
-      const started = course.some((i) => i.level === n && stageOf(i.id) > 0);
-      if (sandbox || started || levelPassed(n - 1, course, srs, chain)) set.add(n);
-      else break;
-    }
-    if (sandbox) COURSE_LEVELS.forEach((l) => set.add(l.n));
-    // Word Garden beds open once Level 4 is at Novice Monk, and feed lessons once planted.
-    GARDEN_BEDS.forEach((b) => { if (gardenOpen && (garden.includes(b.id) || course.some((i) => i.garden === b.id && stageOf(i.id) > 0))) set.add(b.level); });
-    return set;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [srs, sandbox, garden, course, chain]);
+  const unlockedLevels = useMemo(() => openLevels(srs, mode, sandbox, trials, garden), [srs, mode, sandbox, trials, garden]);
+  const trialStates = useMemo(() => Object.fromEntries(COURSE_LEVELS.map((l) => [l.n, trialState(l.n, mode, srs, trials, chain)])), [srs, mode, trials, chain]);
 
   // Moments: a burn or a newly opened level since this screen opened (V5).
   const seenRef = useRef(null);
@@ -3259,9 +3644,67 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     return `${Math.round(m / 1440)} d`;
   };
 
+  // Guardian Trials: start a level's trial, or a river run down to a locked level.
+  const startTrial = (n) => {
+    const lvl = COURSE_LEVELS.find((l) => l.n === n);
+    const nextLvl = COURSE_LEVELS.find((l) => l.n === n + 1);
+    const prompts = buildTrial([n], mode, srs);
+    if (!prompts.length) return;
+    const replay = trialPassed(trials, mode, n);
+    setTrialRun({ kind: "trial", level: n, prompts, lanterns: TRIAL_LANTERNS, accent: lvl.accent, title: `Guardian Trial · Level ${n} · ${lvl.title}`, stampLevel: n, stampName: lvl.title,
+      passNote: replay ? "Stamp updated in your river passport." : nextLvl ? `Level ${nextLvl.n} is open: ${nextLvl.title}. ${nextLvl.sub}.` : "The last gate on the river is stamped." });
+  };
+  const startRiver = (target) => {
+    const levels = riverLevels(target, unlockedLevels);
+    const lvl = COURSE_LEVELS.find((l) => l.n === target);
+    const prompts = buildTrial(levels, mode, srs, { size: RIVER_SIZE, onlyStarted: false });
+    if (!prompts.length) return;
+    setTrialRun({ kind: "river", level: target, levels, prompts, lanterns: RIVER_LANTERNS, accent: lvl.accent, title: `Run the river · to Level ${target}`, stampLevel: target, stampName: lvl.title,
+      passNote: `Level ${target} is open. Everything you skipped is in your reviews on the 1-day rung.` });
+  };
+  const riverTriedToday = (n) => trials.__river?.[trialKey(mode, n)] === todayKey();
+  const finishTrial = ({ passed, gold, results, run }) => {
+    const now = Date.now();
+    const missIds = [...new Set(results.filter((r) => !r.ok).map((r) => r.id))];
+    logActivity({ drills: 1 });
+    if (run.kind === "trial") {
+      // A miss in a trial counts like a miss in reviews; right answers don't move the ladder.
+      if (missIds.length) setSrs((prev) => { const next = { ...prev }; missIds.forEach((id) => { if (next[id]?.stage > 0) next[id] = scheduleItem(next[id], { read: 1 }, now, { ladder: true }); }); return next; });
+      setTrials((prev) => {
+        const key = trialKey(mode, run.level);
+        const cur = prev[key] || {};
+        const right = results.filter((r) => r.ok).length;
+        const best = Math.max(cur.best || 0, right);
+        if (passed) return { ...prev, [key]: { ...cur, passed: cur.passed || now, legacy: false, gold: !!(cur.gold || gold), best, failed: undefined, owed: undefined } };
+        if (cur.passed) return { ...prev, [key]: { ...cur, best } };
+        return { ...prev, [key]: { ...cur, best, failed: now, owed: missIds } };
+      });
+      return;
+    }
+    // River run: pass opens every skipped level and puts unstarted items on the 1-day rung.
+    if (passed) {
+      setSrs((prev) => {
+        const next = { ...prev };
+        course.forEach((i) => { if (!i.garden && run.levels.includes(i.level) && !(next[i.id]?.stage > 0)) next[i.id] = { stage: 1, ladder: 2, next: now + LADDER_HOURS[2] * HOUR }; });
+        return next;
+      });
+      setTrials((prev) => {
+        const out = { ...prev };
+        for (let n = 1; n < run.level; n += 1) { const k = trialKey(mode, n); if (!out[k]?.passed) out[k] = { ...(out[k] || {}), passed: now, river: true }; }
+        return out;
+      });
+    } else {
+      setTrials((prev) => ({ ...prev, __river: { ...(prev.__river || {}), [trialKey(mode, run.level)]: todayKey() } }));
+    }
+  };
+  const gateLevel = COURSE_LEVELS.find((l) => !unlockedLevels.has(l.n));
+  const readyTrial = gateLevel && gateLevel.n > 1 && trialStates[gateLevel.n - 1]?.status === "ready" ? gateLevel.n - 1 : null;
+
   return (
     <div className="space-y-5">
+      <GuardianTrial run={trialRun} mode={mode} font={font} onClose={() => setTrialRun(null)} onFinish={finishTrial} />
       <TodayPath
+        trial={readyTrial ? { label: `Guardian Trial · Level ${readyTrial}`, onClick: () => startTrial(readyTrial) } : null}
         srs={srs}
         now={now}
         reviewCount={reviewQueue.length}
@@ -3273,7 +3716,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         onLessons={() => setLessonOpen(true)}
         onEar={onOpenEar}
         onLeech={() => setLeechOpen(true)}
-        practice={todayPractice({ srs, mode, bridgeSched, log, sandbox })}
+        practice={todayPractice({ srs, mode, bridgeSched, log, sandbox, streetOpen: unlockedLevels.has(7) })}
         onPractice={onPractice}
       />
       <Card className="overflow-hidden">
@@ -3355,6 +3798,20 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
 
       <SentenceDeck mode={mode} font={font} deck={sentSrs} setDeck={setSentSrs} saved={decoderSaved} mined={mined} sandbox={sandbox} logActivity={logActivity} course={course} stageOf={stageOf} />
 
+      {/* River passport: one stamp per Guardian Trial. */}
+      <div className="flex flex-wrap items-center gap-1.5 px-1" data-passport>
+        <span className="mr-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Passport</span>
+        {COURSE_LEVELS.map((l) => {
+          const t = trialOf(trials, mode, l.n);
+          const stamped = t?.passed && !t.legacy && !t.river;
+          return (
+            <span key={l.n} title={t?.gold ? `Level ${l.n}: gold stamp` : stamped ? `Level ${l.n}: stamped` : t?.river ? `Level ${l.n}: skipped by the river` : t?.passed ? `Level ${l.n}: open, no stamp yet` : `Level ${l.n}`}
+              data-stamp={t?.gold ? "gold" : stamped ? "got" : t?.passed ? "open" : "none"}
+              className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black ${t?.gold ? "bg-[#FFD54F] text-black" : stamped ? "border-2 border-amber-400 text-amber-300" : t?.passed ? "border border-amber-400/50 text-amber-300/70" : "border border-dashed border-slate-600 text-slate-500"}`}>{l.n}</span>
+          );
+        })}
+      </div>
+
       {/* The levels as stops down the Mekong (V3): each stop fills with gold as its items burn. */}
       <div className="relative" data-river>
         <div aria-hidden="true" className="pointer-events-none absolute bottom-8 left-[10px] top-8 w-4 opacity-40" style={{ backgroundColor: "var(--sk-river)", WebkitMaskImage: RIVER_MASK, maskImage: RIVER_MASK, WebkitMaskSize: "16px 120px", maskSize: "16px 120px", WebkitMaskRepeat: "repeat-y", maskRepeat: "repeat-y" }} />
@@ -3385,6 +3842,10 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
                     <div className="text-right text-xs text-slate-400">
                       <div className="font-bold text-slate-200">{burned ? `${burned}/${items.length} burned` : `${done}/${items.length}`}</div>
                       {burned ? `${done} at Novice Monk+` : "at Novice Monk+"}
+                      {trialStates[lvl.n]?.status === "passed" && trialStates[lvl.n].met && !trialStates[lvl.n].trial.gold && (
+                        <button type="button" data-trial-replay={lvl.n} onClick={() => startTrial(lvl.n)} className="mt-1 block w-full rounded-full border border-amber-400/50 px-2 py-0.5 text-[11px] font-semibold text-amber-300">{trialStates[lvl.n].trial.legacy || trialStates[lvl.n].trial.river ? "Take the trial" : "Go for gold"}</button>
+                      )}
+                      {trialStates[lvl.n]?.trial?.gold && <div className="mt-1 font-bold text-[#FFD54F]">Gold stamp</div>}
                     </div>
                   </div>
                   {["glyph", "syllable", "vocab"].map((tier) => {
@@ -3421,15 +3882,39 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
                   <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400"><Lock size={13} /> Level {lvl.n} · next gate</div>
                   <h3 className="text-base font-bold text-white">{lvl.title}</h3>
                   <p className="text-xs text-slate-400">{lvl.sub}</p>
-                  {goal && (
-                    <>
-                      <p className="mt-2 text-xs text-slate-300" data-gate-goal>Opens when {goal.need} of the {goal.total} Level {lvl.n - 1} {goal.letters ? "letters" : "items"} reach Novice Monk: {Math.min(goal.done, goal.need)} so far.</p>
-                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${(Math.min(goal.done, goal.need) / Math.max(1, goal.need)) * 100}%`, background: lvl.accent }} /></div>
-                    </>
-                  )}
+                  {goal && (() => {
+                    const ts = trialStates[lvl.n - 1];
+                    const prevLvl = COURSE_LEVELS.find((l) => l.n === lvl.n - 1);
+                    if (ts.status === "ready") {
+                      return (
+                        <div className="mt-3 grid gap-2" data-gate-trial="ready">
+                          <p className="text-xs text-slate-300">{goal.done} of the {goal.total} Level {lvl.n - 1} {goal.letters ? "letters" : "items"} are at Novice Monk. The guardian of {prevLvl.title} will test you.</p>
+                          <button type="button" onClick={() => startTrial(lvl.n - 1)} className="rounded-xl bg-amber-500 px-4 py-2.5 font-bold text-black active:scale-[0.98]">Face the guardian</button>
+                          <p className="text-center text-[11px] text-slate-400">3 lanterns · {TRIAL_SIZE} prompts · no hints</p>
+                        </div>
+                      );
+                    }
+                    if (ts.status === "owed") {
+                      const owedItems = ts.owedLeft.map((id) => course.find((i) => i.id === id)).filter(Boolean);
+                      const total = ts.trial.owed.length;
+                      return (
+                        <div className="mt-2 grid gap-1.5" data-gate-trial="owed">
+                          <p className="text-xs text-slate-300">The guardian returns when <span style={{ fontFamily: FONT_STACKS.loop.th }}>{owedItems.map((i) => (mode === "lo" ? i.lo : i.th)).join(" ")}</span> {owedItems.length === 1 ? "is" : "are"} right in reviews again: {total - owedItems.length} of {total}.</p>
+                          <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${((total - owedItems.length) / Math.max(1, total)) * 100}%`, background: lvl.accent }} /></div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <>
+                        <p className="mt-2 text-xs text-slate-300" data-gate-goal>The guardian appears when {goal.need} of the {goal.total} Level {lvl.n - 1} {goal.letters ? "letters" : "items"} reach Novice Monk: {Math.min(goal.done, goal.need)} so far.</p>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: `${(Math.min(goal.done, goal.need) / Math.max(1, goal.need)) * 100}%`, background: lvl.accent }} /></div>
+                      </>
+                    );
+                  })()}
+                  <RiverButton n={lvl.n} tried={riverTriedToday(lvl.n)} onRun={startRiver} />
                 </Card>
               ) : (
-                <div className="flex min-h-[3.25rem] items-center gap-2 pt-4 text-sm text-slate-500"><span className="font-semibold">Level {lvl.n}</span> · {lvl.title}</div>
+                <div className="flex min-h-[3.25rem] flex-wrap items-center gap-2 pt-4 text-sm text-slate-500"><span className="font-semibold">Level {lvl.n}</span> · {lvl.title}<span className="ml-auto"><RiverButton n={lvl.n} tried={riverTriedToday(lvl.n)} onRun={startRiver} compact /></span></div>
               )}
             </div>
           );
@@ -3926,7 +4411,7 @@ function WordGarden({ open, boxes = new Set(), goal, course, planted, setPlanted
         <div>
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-emerald-300">{open ? <Unlock size={13} /> : <Lock size={13} />} Word Garden · Levels {GARDEN_LEVEL0}–{GARDEN_LEVEL0 + GARDEN_BEDS.length - 1}</div>
           <h3 className="text-base font-bold text-white">Everyday words, one bed at a time</h3>
-          <p className="text-xs text-slate-400">{open ? "Plant a bed and its words join your lessons, one small box at a time: the next box opens when 80% of the one before reaches Novice Monk. Each word comes with a short phrase to hear it in." : "Opens when 90% of the Level 4 letters reach Novice Monk."}</p>
+          <p className="text-xs text-slate-400">{open ? "Plant a bed and its words join your lessons, one small box at a time: the next box opens when 80% of the one before reaches Novice Monk. Each word comes with a short phrase to hear it in." : "Opens when you pass the Level 4 trial."}</p>
         </div>
       </div>
       <div className="mt-3 space-y-2">
@@ -9885,6 +10370,8 @@ export default function SuvarnaKani() {
   const [decoderSaved, setDecoderSaved] = useState(() => initial.decoderSaved || []);
   const [gauntlet, setGauntlet] = useState(() => initial.gauntlet || {});
   const [garden, setGarden] = useState(() => initial.garden || []);
+  // Guardian Trials; learners from before 0.28 keep the levels they had open.
+  const [trials, setTrials] = useState(() => initial.trials || legacyTrials(initial.srs || {}));
   const [sentSrs, setSentSrs] = useState(() => {
     const fixed = {};
     Object.entries(initial.sentSrs || {}).forEach(([k, v]) => { fixed[k] = k.startsWith("__") ? v : { ...v, next: v.next === null ? Infinity : v.next }; });
@@ -9994,11 +10481,12 @@ export default function SuvarnaKani() {
   }, []);
 
   const stateRef = useRef(null);
-  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb };
+  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb, trials };
   useEffect(() => {
     if (restoringState) return;
     saveState(stateRef.current);
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb]);
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb, trials]);
+  const levelsOpen = useMemo(() => openLevels(srs, mode, sandbox, trials, garden), [srs, mode, sandbox, trials, garden]);
   // A snapshot of the state as the app opens each day, before today's work changes it.
   useEffect(() => { if (stateRef.current.onboarded) snapshotToday(stateRef.current); }, []);
 
@@ -10061,13 +10549,13 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} trials={trials} setTrials={setTrials} />}
         {tab === "ear" && (
           <>
             <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
             {earTab === "dojo" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
             {earTab === "shadow" && <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />}
-            {earTab === "talk" && <TalkPaths mode={mode} shadow={shadow} logActivity={logActivity} />}
+            {earTab === "talk" && (levelsOpen.has(8) ? <TalkPaths mode={mode} shadow={shadow} logActivity={logActivity} /> : <ZoneLock tool="Talk Paths" level={8} />)}
             {earTab === "bank" && <VoiceBank mode={mode} />}
           </>
         )}
@@ -10087,10 +10575,12 @@ export default function SuvarnaKani() {
             <SubTabs tabs={READ_TABS} active={readTab} onChange={setReadTab} />
             {readTab === "slicer" && <Slicer mode={mode} font={font} srs={srs} sandbox={sandbox} />}
             {readTab === "decoder" && <Decoder srs={srs} initialText={sharedText} onInspect={setInspect} saved={decoderSaved} setSaved={setDecoderSaved} />}
-            {readTab === "ride" && <RideTheLine mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} srs={srs} sandbox={sandbox} />}
+            {readTab === "ride" && !levelsOpen.has(7) && <ZoneLock tool="Ride the line" level={7} />}
+            {readTab === "ride" && levelsOpen.has(7) && <RideTheLine mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} srs={srs} sandbox={sandbox} />}
             {readTab === "library" && <LanternLibrary mode={mode} font={font} srs={srs} sandbox={sandbox} library={library} setLibrary={setLibrary} logActivity={logActivity} />}
             {readTab === "fonts" && <FontGauntlet mode={mode} srs={srs} stats={gauntlet} setStats={setGauntlet} />}
-            {readTab === "street" && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} sandbox={sandbox} />}
+            {readTab === "street" && !levelsOpen.has(7) && <ZoneLock tool="Street Reader" level={7} />}
+            {readTab === "street" && levelsOpen.has(7) && <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} sandbox={sandbox} />}
           </>
         )}
         <footer className="mt-10 flex flex-wrap items-center justify-between gap-2 border-t border-white/5 pt-4 text-xs text-slate-400">
@@ -10132,4 +10622,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
