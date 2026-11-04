@@ -525,5 +525,33 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   for (const p of T.TALK_PATHS) for (const n of Object.values(p.nodes)) if (n.say) check(["male", "female"].includes(T.speakerGender({ who: p.who, th: n.say[0] }, "male")), `${p.id} line has a speaker`);
 }
 
+// Extra practice: only started, not-due items; weakest first; burned items get a few slots.
+{
+  const now = Date.now(), DAY = 86400000;
+  const items = Array.from({ length: 30 }, (_, k) => ({ id: `p${k}`, level: k < 15 ? 1 : 2 }));
+  const fs = (S) => ({ read: { S, D: 5, last: now - DAY, lapses: 0 } });
+  const srs = {};
+  items.forEach((it, k) => {
+    if (k < 3) return; // never started
+    if (k < 5) srs[it.id] = { stage: 3, next: now - 1000, fsrs: fs(5) }; // due now
+    else if (k < 8) srs[it.id] = { stage: 5, next: Infinity, fsrs: fs(200) }; // burned
+    else if (k === 8) srs[it.id] = { stage: 3, next: now + DAY, fsrs: fs(20), lastMiss: now - 2 * DAY }; // recent miss
+    else srs[it.id] = { stage: k < 20 ? 2 : 4, next: now + DAY, fsrs: fs(k) };
+  });
+  const before = JSON.stringify(srs);
+  const all = T.practicePool(items, srs, now, { size: Infinity });
+  eq(all.length, 25, "pool = started and not due (burned included)");
+  check(all.every((i) => srs[i.id] && !(srs[i.id].next <= now && srs[i.id].stage < 5)), "no due or unstarted items in practice");
+  const round = T.practicePool(items, srs, now);
+  eq(round.length, T.PRACTICE_SIZE, "a round is PRACTICE_SIZE");
+  check(round.some((i) => i.id === "p8"), "a recent miss is always in the round");
+  check(round.some((i) => srs[i.id].stage === 5), "burned items get a slot");
+  check(!round.some((i) => i.id === "p29"), "the strongest live item waits");
+  const l1 = T.practicePool(items, srs, now, { level: 1, size: Infinity });
+  check(l1.length > 0 && l1.every((i) => i.level === 1), "level filter");
+  eq(JSON.stringify(srs), before, "building a round never changes srs");
+  eq(T.practiceDirection({ stage: 1 }), "read", "new items practise reading");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -29,6 +29,10 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.32.0**: Extra practice.
+  - **Extra practice** on the Shrine, under Lessons and Reviews, with an All levels / Level N picker. A round (`practicePool`, up to 15) takes started items that aren't due yet: misses in the last 7 days and leeches first, then lowest FSRS stability, with about one in five slots kept for burned items. Due items stay in real reviews.
+  - **Changes nothing.** The round reuses `ReviewModal` with `practice` set and an `onAnswer` that writes nothing: no `srs` update, no ladder move, no review log, so stages, due dates, level gates, trials and Ledger stats are untouched. "I guessed" is hidden. Directions mix read and spell for items past Lotus Seed.
+  - A missed card comes back once at the end of the round. A round with at least one answer logs one drill for the day, so it keeps the streak.
 - **0.31.0**: Male and female voices.
   - **Settings → Voices.** Narrator voice: Device voice (default), Female or Male; an optional named Thai and Lao voice (`prefs.voiceTh`, `prefs.voiceLo`, stored as `voiceURI`); a "voice per speaker" toggle for dialogues (`prefs.speakerVoices`, on by default); and Female/Male test buttons.
   - **Per-speaker voices.** Dialogue shadowing ("Hear line", "From the top", the A·model button) and Talk Paths pass a speaker gender with each utterance. `speakerGender` gives your lines your particle's gender; other speakers follow their own ค่ะ/คะ/ฉัน (female) or ครับ/ผม (male), and otherwise get the voice opposite yours.
