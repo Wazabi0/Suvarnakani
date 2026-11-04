@@ -1,7 +1,7 @@
 // Tone and course checks. Run with `npm test`; the Pages workflow runs it before
 // every deploy, so a change that breaks a tone never reaches the phone.
 import { build } from "esbuild";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -116,12 +116,47 @@ for (const sen of T.SENTENCES.filter((x) => x.script === "th")) {
   }
 }
 const senIds = new Set(T.SENTENCES.map((x) => x.id));
-check(senIds.size >= 15 && T.SENTENCES.length >= 30, `30 slicer lines (got ${T.SENTENCES.length})`);
+check(senIds.size >= 150 && T.SENTENCES.length >= 300, `150 lines per script (got ${T.SENTENCES.length})`);
+eq(T.SENTENCE_GAPS, [], "every garden line is made of course or garden words");
+{
+  const course = T.courseItems("th");
+  const line = T.SENTENCES.find((s) => s.id === "gl1" && s.script === "th");
+  const ids = line.words.map((w) => course.find((i) => i.th === w.w && i.tier !== "glyph").id);
+  const fresh = (stage) => T.sentenceSession(T.sentenceCards({ mode: "th", course, stageOf: () => stage }), {}, Date.now(), false).fresh;
+  const lineCard = (stages) => T.sentenceCards({ mode: "th", course, stageOf: (id) => stages[id] || 0 }).find((c) => c.id === "sen-gl1-th");
+  check(!lineCard({}).ready && !fresh(0).some((c) => c.id.startsWith("sen-gl")), "a garden line waits until its words are known");
+  check(lineCard(Object.fromEntries(ids.map((id) => [id, 2]))).ready, "a garden line is ready once every word is at Novice Monk");
+}
+check(T.SENTENCES.filter((s) => s.script === "lo").every((s) => s.words.every((w) => w.w && w.r && /^[ก-๛]+$/.test(w.tts))), "Lao lines have Lao words, readings and Thai-script voice text");
 
 // 9. Word Garden: unique ids, no clash with the course, tones from the reading agree with the engine.
-const GARDEN_KNOWN = new Set(["มีความสุข", "ภูมิใจ"]); // read by segmentation, or against the spelling
-check(T.GARDEN_BEDS.length === 7, "seven garden beds");
-check(T.GARDEN_ITEMS.length >= 250, `at least 250 garden words (got ${T.GARDEN_ITEMS.length})`);
+// Read by segmentation, or spoken against the spelling (ตำรวจ tam-rùat, ประโยค prà-yòok).
+const GARDEN_KNOWN = new Set(["มีความสุข", "ภูมิใจ", "ตำรวจ", "ประโยค"]);
+check(T.GARDEN_BEDS.length === 13, "thirteen garden beds");
+check(T.GARDEN_ITEMS.length >= 450, `at least 450 garden words (got ${T.GARDEN_ITEMS.length})`);
+eq(T.GARDEN_CHECK, { missing: [], unplaced: [] }, "every garden word sits in exactly one box");
+for (const b of T.GARDEN_BEDS) for (const x of b.boxes) check(x.size >= 5 && x.size <= 15, `box ${b.id}/${x.title} has 5 to 15 words (${x.size})`);
+// Regrouping keeps every 0.27 word's id, so saved progress follows the word to its new box.
+const oldIds = JSON.parse(readFileSync(join(root, "tests/garden-ids-0.27.json"), "utf8"));
+const nowIds = Object.fromEntries(T.GARDEN_ITEMS.map((i) => [i.th, i.id]));
+for (const [th, id] of Object.entries(oldIds)) eq(nowIds[th], id, `garden ${th} keeps its id`);
+// Boxes open in order: the first at once, the next at 80% Novice Monk; started boxes stay open.
+{
+  const course = T.courseItems("th");
+  const chain = T.unlockChain({}, "th", true);
+  const bed = T.GARDEN_BEDS[0];
+  const box0 = course.filter((i) => i.garden === bed.id && i.box === 0);
+  let open = T.gardenBoxes(course, {}, chain);
+  check(open.has(`${bed.id}:0`) && !open.has(`${bed.id}:1`), "only the first box of a bed is open at the start");
+  const srs = Object.fromEntries(box0.slice(0, Math.floor(box0.length * 0.8)).map((i) => [i.id, { stage: 2 }]));
+  open = T.gardenBoxes(course, srs, chain);
+  check(open.has(`${bed.id}:1`) && !open.has(`${bed.id}:2`), "80% of box 1 at Novice Monk opens box 2");
+  const box2 = course.find((i) => i.garden === bed.id && i.box === 2);
+  open = T.gardenBoxes(course, { [box2.id]: { stage: 1 } }, chain);
+  check(open.has(`${bed.id}:2`), "a started box stays open");
+  check(!T.gardenBoxes(course, {}, T.unlockChain({}, "th", false)).has(`${bed.id}:1`), "a box whose words all wait on letters keeps the next box shut");
+  check(T.gardenBoxes(course, {}, chain, true).size === T.GARDEN_BEDS.reduce((a, b) => a + b.boxes.length, 0), "sandbox opens every box");
+}
 const allIds = [...T.CURRICULUM, ...T.LAO_ONLY_ITEMS, ...T.GARDEN_ITEMS].map((i) => i.id);
 eq(allIds.length, new Set(allIds).size, "item ids are unique");
 const courseTh = new Set(T.CURRICULUM.map((i) => i.th));
