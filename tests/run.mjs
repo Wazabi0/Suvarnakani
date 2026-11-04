@@ -485,5 +485,45 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   eq(T.prodNorm("ชา เย็น"), "ชาเย็น", "spaces don't matter");
 }
 
+// Male and female voices (0.31).
+{
+  const V = (name, lang = "th-TH", voiceURI = name) => ({ name, lang, voiceURI });
+  eq(T.voiceGender(V("Microsoft Premwadee Online (Natural) - Thai (Thailand)")), "female", "Premwadee is female");
+  eq(T.voiceGender(V("Microsoft Niwat Online (Natural) - Thai (Thailand)")), "male", "Niwat is male");
+  eq(T.voiceGender(V("Google ไทย")), null, "a voice that doesn't say has no gender");
+  eq(T.voiceGender(V("Thai female")), "female", "'female' isn't read as 'male'");
+  const a = new T.SuvarnaMobileAudioEngine();
+  // One unnamed voice, as on Chrome for Android: the male voice is a pitch shift.
+  a.voices = [V("th-TH-language")];
+  eq(a.resolveVoice("th", null).pitch, 1, "the narrator keeps the device voice");
+  eq(a.resolveVoice("th", "male").pitch, T.PITCH_MALE, "one voice: male is pitched down");
+  eq(a.resolveVoice("th", "female").pitch, 1, "one voice: an unnamed voice counts as female");
+  a.vp = { ...a.vp, gender: "male" };
+  eq(a.resolveVoice("th", null).pitch, T.PITCH_MALE, "a male narrator uses the shift too");
+  a.vp = { ...a.vp, gender: "auto", speakers: false };
+  eq(a.resolveVoice("th", "male").pitch, 1, "with one voice per dialogue, speakers don't change it");
+  eq(a.resolveVoice("th", "male", true).pitch, T.PITCH_MALE, "the Settings test button still forces it");
+  // Real voices for both: no pitch shift, the right voice.
+  a.vp = { gender: "auto", th: "", lo: "", speakers: true };
+  a.voices = [V("Microsoft Premwadee"), V("Microsoft Niwat"), V("Microsoft Keomany", "lo-LA"), V("Microsoft Chanthavong", "lo-LA")];
+  const m = a.resolveVoice("th", "male");
+  check(m.voice.name === "Microsoft Niwat" && m.pitch === 1, "a real male voice wins over a pitch shift");
+  eq(a.resolveVoice("lo", "male").voice.name, "Microsoft Chanthavong", "Lao picks a Lao male voice");
+  a.vp = { ...a.vp, th: "Microsoft Niwat" };
+  eq(a.thaiVoice().name, "Microsoft Niwat", "a chosen voice becomes the Thai voice");
+  eq(a.resolveVoice("th", "female").voice.name, "Microsoft Premwadee", "a female speaker still gets the female voice");
+  a.vp = { ...a.vp, th: "gone" };
+  eq(a.thaiVoice().name, "Microsoft Premwadee", "a chosen voice that's gone falls back to the first");
+  // Who speaks each dialogue line.
+  const counter = T.SHADOW_DIALOGUES[0].lines;
+  eq(T.speakerGender(counter[0], "male"), "female", "the barista's ค่ะ line is female");
+  eq(T.speakerGender(counter[1], "male"), "male", "your ครับ line is male");
+  eq(T.speakerGender(counter[1], "female"), "female", "with ค่ะ chosen your line is female");
+  eq(T.speakerGender({ who: "Driver", th: "ไปไหนครับ" }, "male"), "male", "a ครับ driver is male");
+  eq(T.speakerGender({ who: "Owner", th: "ສະບາຍດີ" }, "male"), "female", "an unmarked speaker gets the other voice");
+  eq(T.speakerGender({ who: "Owner", th: "ສະບາຍດີ" }, "female"), "male", "…whichever yours is");
+  for (const p of T.TALK_PATHS) for (const n of Object.values(p.nodes)) if (n.say) check(["male", "female"].includes(T.speakerGender({ who: p.who, th: n.say[0] }, "male")), `${p.id} line has a speaker`);
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

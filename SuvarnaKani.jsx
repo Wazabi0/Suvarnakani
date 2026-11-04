@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.30.0";
+const APP_VERSION = "0.31.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2353,7 +2353,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 /** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
 function loadPrefs(saved) {
@@ -2393,6 +2393,11 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.31.0", title: "Male and female voices", points: [
+    "Settings → Voices: pick a female or male voice for the app, or keep your device's own voice. Where a device offers several Thai or Lao voices, you can choose one by name.",
+    "Dialogues and Talk Paths now use a voice per speaker: your lines follow your particle (ครับ is male), and the vendor, barista or driver follows theirs.",
+    "Most Android phones have only one Thai voice, so the other gender is made by shifting its pitch. Tone shapes are unchanged; it just sounds more synthetic. Edge on a computer has real voices for both.",
+  ] },
   { v: "0.30.0", title: "Production track (optional)", points: [
     "A new, optional track turns reading around: see the English, then build the Thai or Lao word from letter tiles (or type it on your own keyboard), and say it out loud. Turn it on in Settings or on the Shrine.",
     "A word joins once its reading reaches Naga Adept, so you only produce words you already read easily.",
@@ -2481,6 +2486,32 @@ const WHATS_NEW = [
 const sanitizeThai = (s) => (s || "").replace(/[^฀-๿\s]/g, "").replace(/\s+/g, " ").trim();
 const sanitizeLao = (s) => (s || "").replace(/[^຀-໿\s]/g, "").replace(/\s+/g, " ").trim();
 
+const langRe = (lang) => (lang === "lo" ? /^lo(-|_|$)/i : /^th(-|_|$)/i);
+/** Pitch used to fake the missing gender when a device has only one voice. */
+const PITCH_MALE = 0.72;
+const PITCH_FEMALE = 1.25;
+const FEMALE_VOICES = /female|woman|premwadee|achara|kanya|narisa|keomany|kanokwan|wanida/i;
+const MALE_VOICES = /\bmale\b|\bman\b|niwat|pattara|chanthavong|somchai/i;
+/** "female", "male" or null when the voice name doesn't say. */
+function voiceGender(v) {
+  const n = `${v?.name || ""} ${v?.voiceURI || ""}`;
+  if (FEMALE_VOICES.test(n)) return "female";
+  if (MALE_VOICES.test(n)) return "male";
+  return null;
+}
+/**
+ * Who says a dialogue line: your lines follow your particle; other speakers
+ * follow their own particle or pronoun, and otherwise get the other voice.
+ */
+function speakerGender(line, particle) {
+  const me = particle === "female" ? "female" : "male";
+  if (!line || line.who === "You") return me;
+  const t = line.th || "";
+  if (/ค่ะ|คะ(?!แนน)|ฉัน|ดิฉัน/.test(t) && !/ครับ|ผม/.test(t)) return "female";
+  if (/ครับ|ผม/.test(t)) return "male";
+  return me === "male" ? "female" : "male";
+}
+
 class SuvarnaMobileAudioEngine {
   constructor() {
     this.ctx = null;
@@ -2490,6 +2521,8 @@ class SuvarnaMobileAudioEngine {
     this.muted = false;
     this.voices = [];
     this.primed = false;
+    // Voice choice from Settings: narrator gender, a chosen voice per language, two voices in dialogues.
+    this.vp = { gender: "auto", th: "", lo: "", speakers: true };
     this.listeners = new Set();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       const load = () => {
@@ -2505,13 +2538,38 @@ class SuvarnaMobileAudioEngine {
     return () => this.listeners.delete(fn);
   }
   thaiVoice() {
-    return this.voices.find((v) => /^th(-|_|$)/i.test(v.lang));
+    return this.chosenVoice("th") || this.voices.find((v) => /^th(-|_|$)/i.test(v.lang));
+  }
+  chosenVoice(lang) {
+    const uri = this.vp[lang];
+    return uri ? this.voices.find((v) => v.voiceURI === uri && langRe(lang).test(v.lang)) : undefined;
+  }
+  langVoices(lang) {
+    return this.voices.filter((v) => langRe(lang).test(v.lang));
+  }
+  /**
+   * The voice and pitch for one utterance. `who` is "male", "female" or null
+   * (the narrator). A real voice of the right gender wins; with only one voice
+   * (most Android phones) the other gender is made by shifting the pitch.
+   */
+  resolveVoice(lang, who, force = false) {
+    const list = this.langVoices(lang);
+    const base = this.chosenVoice(lang) || list[0];
+    const want = who && (force || this.vp.speakers) ? who : (this.vp.gender === "auto" ? null : this.vp.gender);
+    if (!want || !base) return { voice: base, pitch: 1 };
+    const g = voiceGender(base);
+    if (g === want) return { voice: base, pitch: 1 };
+    const other = list.find((v) => voiceGender(v) === want);
+    if (other) return { voice: other, pitch: 1 };
+    // Unknown voices are treated as female: phone Thai voices almost always are.
+    if ((g || "female") === want) return { voice: base, pitch: 1 };
+    return { voice: base, pitch: want === "male" ? PITCH_MALE : PITCH_FEMALE };
   }
   thaiVoices() {
     return this.voices.filter((v) => /^th(-|_|$)/i.test(v.lang));
   }
   laoVoice() {
-    return this.voices.find((v) => /^lo(-|_|$)/i.test(v.lang));
+    return this.chosenVoice("lo") || this.voices.find((v) => /^lo(-|_|$)/i.test(v.lang));
   }
   /** iOS needs a speech call inside the first user gesture. */
   prime() {
@@ -2548,7 +2606,8 @@ class SuvarnaMobileAudioEngine {
   }
   /**
    * Speak several utterances one after another (e.g. "your answer" then "the
-   * right answer"). Each entry: { th, lo?, voice?, rate? }. Starting any other
+   * right answer"). Each entry: { th, lo?, voice?, rate?, who? } where who is
+   * "male" or "female" for a dialogue speaker. Starting any other
    * sound cancels the rest of the sequence.
    */
   speakSequence(list, gapMs = 450) {
@@ -2574,10 +2633,7 @@ class SuvarnaMobileAudioEngine {
               const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
               if (!text) { res(); return; }
               const u = new SpeechSynthesisUtterance(text);
-              u.lang = lv ? "lo-LA" : "th-TH";
-              const voice = lv || e.voice || this.thaiVoice();
-              try { if (voice) u.voice = voice; } catch { /* stale voice */ }
-              u.rate = e.rate || this.rate;
+              this.dress(u, e, !!lv);
               u.onend = res;
               u.onerror = res;
               window.speechSynthesis.speak(u);
@@ -2596,10 +2652,7 @@ class SuvarnaMobileAudioEngine {
         const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
         if (!text) return null;
         const u = new SpeechSynthesisUtterance(text);
-        u.lang = lv ? "lo-LA" : "th-TH";
-        const voice = lv || e.voice || this.thaiVoice();
-        try { if (voice) u.voice = voice; } catch { /* stale voice object */ }
-        u.rate = e.rate || this.rate;
+        this.dress(u, e, !!lv);
         return u;
       })
       .filter(Boolean);
@@ -2613,6 +2666,14 @@ class SuvarnaMobileAudioEngine {
       window.speechSynthesis.speak(u);
     };
     this.speechTimer = setTimeout(() => play(0), 120);
+  }
+  /** Language, voice, pitch and rate for one utterance. An explicit e.voice (Ear Dojo rotation) wins. */
+  dress(u, e, lao) {
+    u.lang = lao ? "lo-LA" : "th-TH";
+    const r = e.voice ? { voice: e.voice, pitch: 1 } : this.resolveVoice(lao ? "lo" : "th", e.who || null, !!e.forceWho);
+    try { if (r.voice) u.voice = r.voice; } catch { /* stale voice object */ }
+    u.pitch = r.pitch;
+    u.rate = e.rate || this.rate;
   }
   /** Play Ranat Ek style chimes for one or more tones in sequence. */
   playRanatToneChime(tones) {
@@ -5451,7 +5512,7 @@ function climbLadder(ear, right, total) {
 }
 function earVoice(audio, ear) {
   const vs = audio.thaiVoices();
-  if (!vs.length || ear?.varyVoices === false) return vs[0];
+  if (!vs.length || ear?.varyVoices === false) return audio.thaiVoice();
   return vs[Math.floor(Math.random() * vs.length)];
 }
 
@@ -8620,7 +8681,11 @@ function TalkPaths({ mode, shadow, logActivity }) {
   const [err, setErr] = useState(null);
   const lao = path.script === "lo";
   const fontFam = FONT_STACKS.loop[path.script];
-  const speak = (th) => (lao ? audio.speakHumanVoice(laoToThai(th), th) : audio.speakHumanVoice(th));
+  // The other speaker's voice follows their particle (a ครับ driver is male); yours follows your particle.
+  const speak = (th, mineLine = false) => {
+    const who = speakerGender({ who: mineLine ? "You" : path.who, th }, particle);
+    return lao ? audio.speakHumanVoice(laoToThai(th), th, { who }) : audio.speakHumanVoice(th, undefined, { who });
+  };
   const begin = () => {
     const node = path.nodes[path.start];
     setState({ node: path.start, chosen: null, meter: 60, log: [], result: null });
@@ -8633,7 +8698,7 @@ function TalkPaths({ mode, shadow, logActivity }) {
   const choose = (o) => {
     const meter = Math.max(0, Math.min(100, state.meter + (o[3] > 0 ? 12 : o[3] < 0 ? -18 : 0)));
     setState({ ...state, chosen: o, meter, result: null });
-    speak(mine(o).th);
+    speak(mine(o).th, true);
   };
   const say = async () => {
     const line = mine(state.chosen);
@@ -8719,7 +8784,7 @@ function TalkPaths({ mode, shadow, logActivity }) {
               {state.result && <p className="mt-1 text-sm text-slate-200"><b className={state.result.score >= SHADOW_PASS ? "text-emerald-300" : "text-amber-300"}>{state.result.score}</b> · {state.result.tip}</p>}
               {err && <p className="mt-2 text-xs text-rose-200">{err}</p>}
               <div className="mt-3 flex flex-wrap gap-2">
-                <button onClick={() => speak(mine(state.chosen).th)} className="rounded-xl border border-white/15 px-3 py-2 text-sm text-slate-100"><Volume2 size={14} className="mr-1 inline" />Hear it</button>
+                <button onClick={() => speak(mine(state.chosen).th, true)} className="rounded-xl border border-white/15 px-3 py-2 text-sm text-slate-100"><Volume2 size={14} className="mr-1 inline" />Hear it</button>
                 {!lao && (phase === "recording" ? <button onClick={mic.stop} className="rounded-xl bg-rose-500 px-3 py-2 text-sm font-bold text-white"><Mic size={14} className="mr-1 inline animate-pulse" />Listening…</button> : <button data-talk-say onClick={say} className="rounded-xl bg-amber-500 px-3 py-2 text-sm font-bold text-black"><Mic size={14} className="mr-1 inline" />Say it</button>)}
                 <button onClick={cont} className="ml-auto rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white">Continue <ChevronRight size={14} className="inline" /></button>
               </div>
@@ -9013,7 +9078,9 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
     setPhase("idle");
   };
 
-  const playUpTo = () => audio.speakSequence(lines.slice(0, li + 1).map((l) => ({ th: l.th })), 500);
+  const whoOf = (l) => speakerGender(l, particle === "unset" ? "male" : particle);
+  const hearLine = () => audio.speakHumanVoice(line.th, undefined, { who: whoOf(line) });
+  const playUpTo = () => audio.speakSequence(lines.slice(0, li + 1).map((l) => ({ th: l.th, who: whoOf(l) })), 500);
   const busy = phase !== "idle";
 
   return (
@@ -9043,7 +9110,7 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
           <PhrasePlot line={line} result={result} live={phase === "recording" ? live : null} />
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button onClick={() => audio.speakHumanVoice(line.th)} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50"><Volume2 size={16} /> Hear line</button>
+          <button onClick={hearLine} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50"><Volume2 size={16} /> Hear line</button>
           <button onClick={playUpTo} disabled={busy} className="flex items-center gap-1.5 rounded-xl border border-white/15 px-3 py-2 text-sm text-slate-200 disabled:opacity-50"><Play size={14} /> From the top</button>
           {phase === "recording" ? (
             <button onClick={mic.stop} className="flex items-center gap-1.5 rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white"><Mic size={16} className="animate-pulse" /> Listening… tap to stop</button>
@@ -9058,7 +9125,7 @@ function DialogueShadow({ shadow, setShadow, logActivity }) {
               <span className="flex flex-wrap gap-1">{result.perSyl.map((p, k) => <span key={k} className={`rounded-md px-1.5 text-xs ${p.score >= SHADOW_PASS ? "bg-emerald-500/15 text-emerald-200" : "bg-rose-500/15 text-rose-200"}`}>{line.syl[k]} {p.score}</span>)}</span>
             </div>
             <p className="mt-1 text-slate-200">{result.tip}</p>
-            <TakeAB take={take} takeKey={`dlg:${key}`} onModel={() => audio.speakHumanVoice(line.th)} score={result.score} best={result.prevBest} />
+            <TakeAB take={take} takeKey={`dlg:${key}`} onModel={hearLine} score={result.score} best={result.prevBest} />
             {li < lines.length - 1 && <button onClick={() => setLi(li + 1)} className="mt-2 rounded-xl bg-white/10 px-3 py-1.5 text-xs font-semibold text-white">Next line <ChevronRight size={12} className="inline" /></button>}
           </div>
         )}
@@ -10442,6 +10509,55 @@ function AudioSettings({ rate, setRate, muted, setMuted }) {
   );
 }
 
+const GENDER_LABEL = { female: "female", male: "male" };
+function VoiceSelect({ lang, value, onChange }) {
+  const audio = getAudio();
+  const list = audio.langVoices(lang);
+  if (!list.length) return null;
+  return (
+    <label className="mt-2 block text-xs text-slate-400">
+      {lang === "th" ? "Thai voice" : "Lao voice"}
+      <select data-voice-select={lang} value={list.some((v) => v.voiceURI === value) ? value : ""} onChange={(e) => onChange(e.target.value)}
+        className="mt-1 block w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white">
+        <option value="">Device default ({list[0].name})</option>
+        {list.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name}{voiceGender(v) ? ` · ${GENDER_LABEL[voiceGender(v)]}` : ""}{v.localService === false ? " · online" : ""}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function VoiceSettings({ prefs, setPref }) {
+  const audio = getAudio();
+  const [, force] = useState(0);
+  useEffect(() => audio.onVoices(() => force((n) => n + 1)), [audio]);
+  const th = audio.langVoices("th");
+  const real = (g) => th.some((v) => voiceGender(v) === g);
+  const how = real("male") && real("female") ? "This device has real male and female Thai voices."
+    : th.length ? `Thai: ${th.length} voice${th.length === 1 ? "" : "s"} found. ${real("male") ? "The female voice" : "The male voice"} uses a pitch shift.` : "";
+  const test = (who) => audio.speakSequence([{ th: who === "male" ? "สวัสดีครับ ผมชื่อสมชาย" : "สวัสดีค่ะ ฉันชื่อมาลี", who, forceWho: true }]);
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {[["auto", "Device voice"], ["female", "Female"], ["male", "Male"]].map(([v, l]) => (
+          <Chip key={v} active={(prefs.voiceGender || "auto") === v} onClick={() => setPref("voiceGender", v)}>{l}</Chip>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Chip active={prefs.speakerVoices !== false} onClick={() => setPref("speakerVoices", prefs.speakerVoices === false)}>
+          {prefs.speakerVoices !== false ? "Dialogues: a voice per speaker" : "Dialogues: one voice"}
+        </Chip>
+      </div>
+      <VoiceSelect lang="th" value={prefs.voiceTh} onChange={(v) => setPref("voiceTh", v)} />
+      <VoiceSelect lang="lo" value={prefs.voiceLo} onChange={(v) => setPref("voiceLo", v)} />
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <button data-voice-test="female" onClick={() => test("female")} className="rounded-xl bg-rose-500/15 py-2 text-sm text-rose-200"><Volume2 size={14} className="mr-1 inline" />Female</button>
+        <button data-voice-test="male" onClick={() => test("male")} className="rounded-xl bg-sky-500/15 py-2 text-sm text-sky-200"><Volume2 size={14} className="mr-1 inline" />Male</button>
+      </div>
+      {how && <p className="mt-2 text-xs text-slate-400">{how}</p>}
+    </>
+  );
+}
+
 function BackupSettings({ getState }) {
   const [snaps, setSnaps] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -10569,6 +10685,9 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
       </SettingRow>
       <SettingRow label="Audio">
         <AudioSettings rate={s.rate} setRate={s.setRate} muted={s.muted} setMuted={s.setMuted} />
+      </SettingRow>
+      <SettingRow label="Voices" hint="Your phone's text-to-speech supplies the voices. Where it has only one, the other gender is made by shifting its pitch: tone shapes stay the same, it just sounds more synthetic.">
+        <VoiceSettings prefs={s.prefs} setPref={s.setPref} />
       </SettingRow>
       <SettingRow label="Backup" hint="Progress lives in this browser at this web address. Back up before changing phones, browsers or the app's address.">
         <BackupSettings getState={getState} />
@@ -10792,6 +10911,10 @@ export default function SuvarnaKani() {
   }, [rate, muted]);
 
   useEffect(() => {
+    getAudio().vp = { gender: prefs.voiceGender || "auto", th: prefs.voiceTh || "", lo: prefs.voiceLo || "", speakers: prefs.speakerVoices !== false };
+  }, [prefs.voiceGender, prefs.voiceTh, prefs.voiceLo, prefs.speakerVoices]);
+
+  useEffect(() => {
     const prime = () => getAudio().prime();
     window.addEventListener("pointerdown", prime, { once: true });
     return () => window.removeEventListener("pointerdown", prime);
@@ -10940,4 +11063,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };

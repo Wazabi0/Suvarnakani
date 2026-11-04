@@ -29,6 +29,10 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.31.0**: Male and female voices.
+  - **Settings → Voices.** Narrator voice: Device voice (default), Female or Male; an optional named Thai and Lao voice (`prefs.voiceTh`, `prefs.voiceLo`, stored as `voiceURI`); a "voice per speaker" toggle for dialogues (`prefs.speakerVoices`, on by default); and Female/Male test buttons.
+  - **Per-speaker voices.** Dialogue shadowing ("Hear line", "From the top", the A·model button) and Talk Paths pass a speaker gender with each utterance. `speakerGender` gives your lines your particle's gender; other speakers follow their own ค่ะ/คะ/ฉัน (female) or ครับ/ผม (male), and otherwise get the voice opposite yours.
+  - **How a voice is picked** (`resolveVoice`). A voice whose name gives the right gender wins (Microsoft Premwadee/Niwat, Lao Keomany/Chanthavong, Apple Kanya/Narisa). With no such voice, the device's voice is pitch-shifted (male 0.72, female 1.25). Voices whose name doesn't say are treated as female, which fits Google's Thai voice on Android. Pitch scaling keeps tone contours, and shadowing scores against your own calibrated voice, so scoring is unchanged. Voice Bank recordings still win over text-to-speech, and the Ear Dojo's voice rotation is untouched.
 - **0.30.0**: Optional production track (English → Thai or Lao).
   - **Opt-in.** Off by default; turn it on in Settings → Production track or on the Shrine card. Thai + Lao mode produces Thai, Lao mode produces Lao.
   - **Who joins.** A word or syllable joins once its reading is at Naga Adept (stage 3), so you only produce what you read easily.
