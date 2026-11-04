@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.28.0";
+const APP_VERSION = "0.28.1";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2053,8 +2053,14 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "unset", textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
+/** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
+function loadPrefs(saved) {
+  const p = { ...DEFAULT_PREFS, ...(saved || {}) };
+  if (p.particle === "unset" && !p.particleSet) p.particle = "male";
+  return p;
+}
 const usePrefs = () => React.useContext(PrefsContext);
 const runtimePrefs = { haptics: true, roman: "learner" };
 /** Thai romanisation in the system chosen in Settings. */
@@ -2087,6 +2093,9 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.28.1", title: "ครับ by default", points: [
+    "Your own lines in dialogues, Talk Paths and chat packs now use the male particle ครับ unless you pick ค่ะ / คะ or Show both in Settings.",
+  ] },
   { v: "0.28.0", title: "Guardian Trials", points: [
     "Each level's guardian now tests you before the next level opens. When 90% of a level's letters reach Novice Monk, Face the guardian appears on the gate and in the Today Path.",
     "Twelve prompts in four rounds: recognise, tone (colours hidden), listen, and read a word yourself. You have 3 lanterns and nothing relights them.",
@@ -9729,7 +9738,7 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
           <Chip active={s.prefs.trueBlack} onClick={() => s.setPref("trueBlack", !s.prefs.trueBlack)}>{s.prefs.trueBlack ? "True black at night" : "Soft night"}</Chip>
         </div>
       </SettingRow>
-      <SettingRow label="Your polite particle" hint="Your lines in dialogues use it. Until you pick, they show both.">
+      <SettingRow label="Your polite particle" hint="Your lines in dialogues, Talk Paths and chats use it. ครับ is the default.">
         <div className="flex flex-wrap gap-2">
           <Chip active={s.prefs.particle === "male"} onClick={() => s.setPref("particle", "male")}><span style={{ fontFamily: FONT_STACKS.loop.th }}>ครับ</span> khráp</Chip>
           <Chip active={s.prefs.particle === "female"} onClick={() => s.setPref("particle", "female")}><span style={{ fontFamily: FONT_STACKS.loop.th }}>ค่ะ / คะ</span> khâ / khá</Chip>
@@ -9879,8 +9888,8 @@ export default function SuvarnaKani() {
   const [log, setLog] = useState(initial.log || {});
   const [dailyMinutes, setDailyMinutes] = useState(initial.dailyMinutes || 12);
   const [onboarded, setOnboarded] = useState(!!initial.onboarded || !!(initial.srs && Object.keys(initial.srs).length));
-  const [prefs, setPrefs] = useState(() => ({ ...DEFAULT_PREFS, ...(initial.prefs || {}) }));
-  const setPref = (k, v) => setPrefs((p) => ({ ...p, [k]: v }));
+  const [prefs, setPrefs] = useState(() => loadPrefs(initial.prefs));
+  const setPref = (k, v) => setPrefs((p) => ({ ...p, [k]: v, ...(k === "particle" ? { particleSet: true } : {}) }));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [decoderSaved, setDecoderSaved] = useState(() => initial.decoderSaved || []);
   const [gauntlet, setGauntlet] = useState(() => initial.gauntlet || {});
@@ -10137,4 +10146,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, readBackup, makeBackup, verCmp };
+export const __test = { trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };

@@ -77,6 +77,10 @@ check(s2.next - s1.next > s1.next, "second success waits longer than the first")
 eq(T.politeLine({ th: "ไม่ครับ เท่าไรครับ", r: "mâi khráp, thâo-rai khráp", syl: ["mâi", "khráp", "thâo", "rai", "khráp"], tones: ["falling", "high", "falling", "mid", "high"] }, "female"),
   { th: "ไม่ค่ะ เท่าไรคะ", r: "mâi khâ, thâo-rai khá", syl: ["mâi", "khâ", "thâo", "rai", "khá"], tones: ["falling", "falling", "falling", "mid", "high"] }, "female particles");
 eq(T.politeLine({ th: "ขอบคุณครับ" }, "unset").th, "ขอบคุณครับ/ค่ะ", "unset shows both");
+eq(T.loadPrefs(undefined).particle, "male", "ครับ is the default particle");
+eq(T.loadPrefs({ particle: "unset" }).particle, "male", "old unpicked saves move to ครับ");
+eq(T.loadPrefs({ particle: "unset", particleSet: true }).particle, "unset", "a chosen Show both is kept");
+eq(T.loadPrefs({ particle: "female" }).particle, "female", "a chosen female particle is kept");
 const b = T.makeBackup({ srs: { a: { stage: 2 } } });
 eq(T.readBackup(JSON.stringify(b)).state, { srs: { a: { stage: 2 } } }, "backup round trip");
 let threw = false; try { T.readBackup("{\"x\":1}"); } catch { threw = true; }

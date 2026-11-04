@@ -29,6 +29,7 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.28.1**: ครับ is the default polite particle. Your lines in dialogues, Talk Paths and Thai chat packs read and score with ครับ until you pick ค่ะ / คะ or Show both in Settings. Saves that still held the old "unset" default move to ครับ once; a choice made in Settings is kept.
 - **0.28.0**: Guardian Trials ([mock-up and rules](https://claude.ai/artifact/RWJ2u8WoeF6HMLC59gfv5b)).
   - **Trials open levels.** Reaching 90% of a level's letters at Novice Monk now calls the level's guardian instead of opening the next level. Face the guardian appears on the gate card and as a 4-minute Today Path step after reviews. Passing opens the next level. Levels you have started stay open, and sandbox opens everything without trials.
   - **The trial.** 12 prompts built by `buildTrial(levels, mode, srs)` from items you have started: Recognise (pick from lookalikes, with a cue that holds no Thai or Lao text), Tone (grey contours, or consonant class for letters), Listen (a meaning question if the device has no voice for the script), and Read it (type the reading, pick the meaning). 3 lanterns, no relighting, no timer. Pass = finish with a lantern lit; gold = no misses.
