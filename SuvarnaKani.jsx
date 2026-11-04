@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.29.0";
+const APP_VERSION = "0.30.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2353,7 +2353,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 /** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
 function loadPrefs(saved) {
@@ -2393,6 +2393,12 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.30.0", title: "Production track (optional)", points: [
+    "A new, optional track turns reading around: see the English, then build the Thai or Lao word from letter tiles (or type it on your own keyboard), and say it out loud. Turn it on in Settings or on the Shrine.",
+    "A word joins once its reading reaches Naga Adept, so you only produce words you already read easily.",
+    "It keeps its own memory, so a slip here never moves a word in your reading reviews. New and missed cards climb the same 4h, 8h, 1 day, 2 day ladder.",
+    "About ten cards a day, due ones first, as one more step in the Today Path. Saying is graded by you after you hear the model and, if you record, your own take.",
+  ] },
   { v: "0.29.0", title: "A fuller Word Garden", points: [
     "The Word Garden now has 465 words in 13 beds, each with its Lao word. New beds: Little words (ไม่, จะ, แล้ว, question words), Shopping and colours, Home, Describing things, Weather, nature and animals, and School and work.",
     "Every bed is split into small topic boxes, most useful words first. A planted bed starts with its first box; the next opens when 80% of the box before it reaches Novice Monk.",
@@ -3264,7 +3270,7 @@ function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Dat
   return { kind, label: "Shadow 5 syllables", done, note: `${Math.min(count, goal)} / ${goal} attempts` };
 }
 
-function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech, practice, onPractice, trial }) {
+function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech, practice, onPractice, trial, prod }) {
   const today = log[todayKey()] || {};
   const acc = weekAccuracy(log);
   const streak = computeStreak(log);
@@ -3288,6 +3294,8 @@ function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinu
       disabled: lessonsPaused && !(today.lessons > 0),
     });
   }
+  // Opt-in production track: about ten English-to-Thai cards a day.
+  if (prod) steps.push({ id: "prod", label: prod.label, min: 3, done: prod.done, note: prod.note, onClick: prod.onClick });
   if (practice) steps.push({ id: `practice-${practice.kind}`, label: practice.label, thai: practice.thai, min: 3, done: practice.done, note: practice.note, onClick: () => onPractice?.(practice.kind) });
   let budget = dailyMinutes;
   const planned = steps.filter((s) => { const keep = s.id === "reviews" || s.id === "trial" || budget - s.min >= 0; if (keep) budget -= s.min; return keep; });
@@ -3538,7 +3546,7 @@ function RiverButton({ n, tried, onRun, compact }) {
   );
 }
 
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [], trials = {}, setTrials }) {
+function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [], trials = {}, setTrials, prodSrs = {}, setProdSrs, setPref }) {
   const prefs = usePrefs();
   const course = useMemo(() => courseItems(mode), [mode]);
   const [trialRun, setTrialRun] = useState(null);
@@ -3547,6 +3555,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const [reviewOpen, setReviewOpen] = useState(false);
   const [leechOpen, setLeechOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
+  const [prodOpen, setProdOpen] = useState(false);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -3610,6 +3619,17 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const counts = SRS_STAGES.map((_, idx) => counted.filter((i) => stageOf(i.id) === idx).length);
 
   const leeches = useMemo(() => course.filter((i) => isLeech(srs[i.id])), [srs, course]);
+
+  // Production track (opt-in): words whose reading is at Naga Adept.
+  const prodOn = !!prefs.production;
+  const prodList = useMemo(() => (prodOn ? prodCards(course, srs, mode) : []), [prodOn, course, srs, mode]);
+  const prodToday = prodOn ? prodSession(prodList, prodSrs, now, sandbox) : null;
+  const prodClose = prodOn && !prodList.length ? course.filter((i) => i.tier !== "glyph" && stageOf(i.id) === 2).length : 0;
+  const prodStep = prodToday && (prodToday.queue.length || prodToday.doneToday) ? (() => {
+    const goal = Math.min(PROD_DAILY, prodToday.doneToday + prodToday.due.length + prodToday.fresh.length);
+    const done = prodToday.doneToday >= goal;
+    return { label: `Build and say ${goal} word${goal === 1 ? "" : "s"}`, done, note: `${Math.min(prodToday.doneToday, goal)} / ${goal} today`, onClick: () => prodToday.queue.length && setProdOpen(true) };
+  })() : null;
 
   const finishLessons = (ids) => {
     setSrs((prev) => {
@@ -3727,6 +3747,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
         onLeech={() => setLeechOpen(true)}
         practice={todayPractice({ srs, mode, bridgeSched, log, sandbox, streetOpen: unlockedLevels.has(7) })}
         onPractice={onPractice}
+        prod={prodStep}
       />
       <Card className="overflow-hidden">
         <div className="relative p-5">
@@ -3806,6 +3827,9 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       <Ledger open={ledgerOpen} onClose={() => setLedgerOpen(false)} log={log} srs={srs} ear={ear} mode={mode} />
 
       <SentenceDeck mode={mode} font={font} deck={sentSrs} setDeck={setSentSrs} saved={decoderSaved} mined={mined} sandbox={sandbox} logActivity={logActivity} course={course} stageOf={stageOf} />
+      <ProductionCard on={prodOn} onTurnOn={() => setPref?.("production", true)} cards={prodList} deck={prodSrs} sandbox={sandbox} script={prodScript(mode)} closeCount={prodClose} onOpen={() => setProdOpen(true)} />
+      {/* Outside the card: its backdrop blur would trap the fixed sheet. */}
+      {prodOpen && prodToday && <ProductionSession open={prodOpen} onClose={() => setProdOpen(false)} queue={prodToday.queue} deck={prodSrs} setDeck={setProdSrs} logActivity={logActivity} />}
 
       {/* River passport: one stamp per Guardian Trial. */}
       <div className="flex flex-wrap items-center gap-1.5 px-1" data-passport>
@@ -4255,12 +4279,285 @@ function SentenceSession({ open, onClose, cards, queue, deck, setDeck, mode, log
 }
 
 /* ============================================================================
+ * Production track (opt-in). English → Thai or Lao: build the word from letter
+ * tiles (or type it on your own keyboard), and say it out loud. A word joins
+ * once its reading reaches Naga Adept, so you only produce what you already read
+ * easily. Production keeps its own memory in `prodSrs`, so a slip here never
+ * moves a word in your reading reviews. About ten cards a day, due ones first.
+ * ========================================================================== */
+const PROD_UNLOCK_STAGE = 3;
+const PROD_DAILY = 10;
+const PROD_NEW_PER_DAY = 5;
+const PROD_DIRS = ["type", "say"];
+const PROD_MARKS = { th: ["่", "้", "๊", "๋"], lo: ["່", "້", "໊", "໋"] };
+
+const prodScript = (mode) => (mode === "lo" ? "lo" : "th");
+const prodKey = (item, script) => `${item.id}:${script}`;
+/** The spelling to compare: no spaces, one form of sara am. */
+function prodNorm(s) {
+  return (s || "").normalize("NFC").replace(/\s+/g, "").replace(/ํา/g, "ำ").replace(/ໍາ/g, "ຳ");
+}
+
+/** Words you can produce: non-letter items whose reading is at Naga Adept or higher. */
+function prodCards(course = [], srs = {}, mode = "th") {
+  const script = prodScript(mode);
+  const byMeaning = new Map();
+  course.forEach((i) => { if (i.tier !== "glyph" && i[script]) { const k = i.meaning.toLowerCase(); byMeaning.set(k, [...(byMeaning.get(k) || []), i[script]]); } });
+  return course
+    .filter((i) => i.tier !== "glyph" && i[script] && i.meaning && (srs[i.id]?.stage || 0) >= PROD_UNLOCK_STAGE)
+    .map((i) => ({
+      id: prodKey(i, script), itemId: i.id, script, word: i[script], meaning: i.meaning,
+      reading: script === "lo" ? i.loRoman : i.thRoman,
+      tts: script === "lo" ? i.ttsLo || i.ttsTh : i.ttsTh,
+      // Two words with the same meaning: either spelling counts.
+      accept: [...new Set(byMeaning.get(i.meaning.toLowerCase()))].map(prodNorm),
+    }));
+}
+
+/** Today's production queue: due cards first, then a few new ones, ten in all. */
+function prodSession(cards, deck = {}, now = Date.now(), sandbox = false) {
+  const day = todayKey(now);
+  const doneToday = deck.__day?.day === day ? deck.__day.n : 0;
+  const newToday = deck.__new?.day === day ? deck.__new.n : 0;
+  const due = cards.filter((c) => deck[c.id] && deck[c.id].stage < 5 && (sandbox || deck[c.id].next <= now)).sort((a, b) => deck[a.id].next - deck[b.id].next);
+  const fresh = cards.filter((c) => !deck[c.id]).slice(0, Math.max(0, PROD_NEW_PER_DAY - newToday));
+  const left = Math.max(0, PROD_DAILY - doneToday);
+  return { due, fresh, doneToday, queue: [...due, ...fresh].slice(0, left || PROD_DAILY) };
+}
+
+/** Build first, then alternate: whichever skill is due sooner (saying before you've said it once). */
+function prodDirection(st) {
+  if (!st?.fsrs?.type) return "type";
+  if (!st.fsrs.say) return "say";
+  const due = (t) => t.last + fsrsInterval(t.S) * DAY;
+  return due(st.fsrs.say) <= due(st.fsrs.type) ? "say" : "type";
+}
+
+/** Record one production answer in its own deck. */
+function prodAnswer(deck, card, dir, g, now = Date.now()) {
+  const day = todayKey(now);
+  const cur = deck[card.id];
+  const base = cur || { stage: 1, next: 0, ladder: 0 };
+  const next = { ...scheduleItem(base, { [dir]: g }, now, { ladder: true }), reps: (cur?.reps || 0) + 1 };
+  const n = deck.__day?.day === day ? deck.__day.n : 0;
+  const fresh = deck.__new?.day === day ? deck.__new.n : 0;
+  return { ...deck, [card.id]: next, __day: { day, n: n + 1 }, ...(cur ? {} : { __new: { day, n: fresh + 1 } }) };
+}
+
+/** The word's letters plus a few that don't belong: another tone mark and some common letters. */
+function prodTiles(word, script, rng = Math.random) {
+  const need = [...prodNorm(word)];
+  const marks = PROD_MARKS[script];
+  const extra = new Set();
+  const usedMark = need.find((c) => marks.includes(c));
+  if (usedMark) extra.add(marks[(marks.indexOf(usedMark) + 1) % 2]);
+  else extra.add(marks[Math.floor(rng() * 2)]);
+  const fillers = (script === "lo" ? LAO_FILLERS : THAI_FILLERS).filter((f) => !need.includes(f) && !extra.has(f));
+  const want = need.length > 6 ? 3 : 4;
+  while (extra.size < want && fillers.length) extra.add(fillers.splice(Math.floor(rng() * fillers.length), 1)[0]);
+  const tiles = [...need, ...extra].map((ch, i) => ({ ch, key: `${i}-${ch}` }));
+  for (let i = tiles.length - 1; i > 0; i -= 1) { const j = Math.floor(rng() * (i + 1)); [tiles[i], tiles[j]] = [tiles[j], tiles[i]]; }
+  return tiles;
+}
+const tileFace = (ch) => (COMBINING.test(ch) ? `◌${ch}` : ch);
+
+function ProductionCard({ on, onTurnOn, cards, deck, sandbox, script, closeCount = 0, onOpen }) {
+  const { due, fresh, doneToday } = prodSession(cards, deck, Date.now(), sandbox);
+  const started = cards.filter((c) => deck[c.id]).length;
+  const counts = SRS_STAGES.map((_, k) => cards.filter((c) => (deck[c.id]?.stage || 0) === k && (k > 0 || !deck[c.id])).length);
+  return (
+    <Card className="p-4 sm:p-5">
+      <div className="flex items-center justify-between gap-3" data-production-card>
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-300"><Mic size={13} /> Production track</div>
+          {!on ? (
+            <p className="text-xs text-slate-400">Optional. See the English, then build the {script === "lo" ? "Lao" : "Thai"} word from tiles and say it out loud. Words join once their reading reaches Naga Adept. It has its own memory, so a slip here never touches your reading reviews.</p>
+          ) : !cards.length ? (
+            <p className="text-xs text-slate-400">On. Your first word joins when its reading reaches Naga Adept (about a week of right answers). {closeCount ? `${closeCount} word${closeCount > 1 ? "s are" : " is"} at Novice Monk now.` : ""}</p>
+          ) : (
+            <p className="text-xs text-slate-400">English to {script === "lo" ? "Lao" : "Thai"}: build it, say it. {started}/{cards.length} words started · {Math.min(doneToday, PROD_DAILY)}/{PROD_DAILY} today.</p>
+          )}
+        </div>
+        {!on ? (
+          <button onClick={onTurnOn} className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15">Turn on</button>
+        ) : cards.length ? (
+          <button disabled={!due.length && !fresh.length} onClick={onOpen} className="shrink-0 rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-black disabled:bg-white/10 disabled:text-slate-400">
+            {due.length || fresh.length ? `${due.length} due · ${fresh.length} new` : "All done"}
+          </button>
+        ) : <Lock size={16} className="shrink-0 text-slate-400" />}
+      </div>
+      {on && started > 0 && (
+        <div className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full">
+          {counts.map((c, k) => <div key={k} style={{ flexGrow: c || 0.0001, background: SRS_STAGES[k].color }} />)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ProductionSession({ open, onClose, queue, deck, setDeck, logActivity }) {
+  const prefs = usePrefs();
+  const [line] = useState(() => queue);
+  const [dirs] = useState(() => queue.map((c) => prodDirection(deck[c.id])));
+  const [idx, setIdx] = useState(0);
+  const [tiles, setTiles] = useState([]);
+  const [picked, setPicked] = useState([]); // tile keys in order
+  const [typing, setTyping] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [hint, setHint] = useState(false);
+  const [result, setResult] = useState(null); // { ok, g, said }
+  const [revealed, setRevealed] = useState(false);
+  const [rec, setRec] = useState(null); // { stop } while recording
+  const [take, setTake] = useState(null); // object URL of your take
+  const [micErr, setMicErr] = useState("");
+  const card = line[idx];
+  const dir = dirs[idx];
+  const say = useCallback((c) => { if (!c) return; const a = getAudio(); if (c.script === "lo") a.speakHumanVoice(c.tts, c.word); else a.speakHumanVoice(c.tts); }, []);
+  useEffect(() => {
+    if (!card) return;
+    setTiles(prodTiles(card.word, card.script));
+    setPicked([]); setTyped(""); setHint(false); setResult(null); setRevealed(false); setTake(null); setMicErr("");
+  }, [idx]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (take) URL.revokeObjectURL(take); }, [take]);
+  if (!open) return null;
+  if (!card) {
+    return (
+      <Modal open={open} onClose={onClose} title="Production track">
+        <div className="py-6 text-center"><Check className="mx-auto text-emerald-300" size={28} /><p className="mt-2 text-white">Done for today.</p></div>
+        <button onClick={onClose} className="w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Close</button>
+      </Modal>
+    );
+  }
+  const fontFam = card.script === "lo" ? FONT_STACKS.loop.lo : FONT_STACKS.loop.th;
+  const reading = card.script === "lo" ? card.reading : romanize(card.reading || "", prefs.roman);
+  const built = picked.map((k) => tiles.find((t) => t.key === k)?.ch || "").join("");
+  const grade = (g, extra = {}) => {
+    if (result) return;
+    const ok = g >= 2;
+    setResult({ ok, g, ...extra });
+    haptic(ok ? "ok" : "miss");
+    setDeck?.((d) => prodAnswer(d, card, dir, g));
+    logReview(card.itemId, "produce", g);
+    logActivity?.({ prod: 1, prodRight: ok ? 1 : 0 });
+  };
+  const check = () => {
+    const answer = prodNorm(typing ? typed : built);
+    if (!answer) return;
+    const ok = card.accept.includes(answer);
+    say(card);
+    grade(ok ? (hint ? 2 : 3) : 1, { answer: typing ? typed : built });
+  };
+  const startRec = () => {
+    setMicErr("");
+    try {
+      const r = recordClip(3000);
+      setRec(r);
+      r.done.then((blob) => { setRec(null); setTake(URL.createObjectURL(blob)); }).catch(() => { setRec(null); setMicErr("No microphone here. Say it out loud anyway, then check."); });
+    } catch { setMicErr("No microphone here. Say it out loud anyway, then check."); }
+  };
+  const reveal = () => { rec?.stop(); setRevealed(true); say(card); };
+  const next = () => { getAudio().cancelSpeech(); setIdx(idx + 1); };
+  const btn = "rounded-xl border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-100";
+  return (
+    <Modal open={open} onClose={onClose} title={`Production · ${idx + 1} / ${line.length}`}>
+      <div className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400" data-prod-dir={dir}>
+        {dir === "type" ? <><Keyboard size={12} className="mr-1 inline" />Build the word</> : <><Mic size={12} className="mr-1 inline" />Say it out loud</>}
+      </div>
+      <div className="mt-3 rounded-3xl bg-white/[0.04] p-5 text-center">
+        <div className="text-2xl font-bold text-white" data-prod-meaning>{card.meaning}</div>
+        {(hint || result || revealed) && <div className="mt-1 text-sm text-slate-300">{reading}</div>}
+        {dir === "type" && !result && (
+          <div className="mt-4 min-h-[3.5rem] rounded-2xl border border-dashed border-white/15 px-3 py-2 text-4xl leading-[1.6] text-white" lang={card.script} style={{ fontFamily: fontFam }} data-prod-built>
+            {typing ? <span className="text-slate-400 text-base">Type below</span> : built || <span className="text-base text-slate-500">Tap the letters in order</span>}
+          </div>
+        )}
+        {(result || revealed) && (
+          <div className="mt-3">
+            <div className="text-5xl leading-[1.6] text-white" lang={card.script} style={{ fontFamily: fontFam }} data-prod-answer>{card.word}</div>
+            {result && dir === "type" && !result.ok && <div className="mt-1 text-sm text-rose-300">You built <span lang={card.script} style={{ fontFamily: fontFam }}>{result.answer || "nothing"}</span></div>}
+          </div>
+        )}
+      </div>
+
+      {dir === "type" && !result && (
+        <>
+          {!typing ? (
+            <div className="mt-4 flex flex-wrap justify-center gap-2" data-prod-tiles>
+              {tiles.map((t) => {
+                const used = picked.includes(t.key);
+                return (
+                  <button key={t.key} disabled={used} onClick={() => setPicked((p) => [...p, t.key])} className="h-12 min-w-[3rem] rounded-xl border border-white/15 bg-white/[0.06] px-2 text-2xl text-white disabled:opacity-25" style={{ fontFamily: fontFam }}>{tileFace(t.ch)}</button>
+                );
+              })}
+            </div>
+          ) : (
+            <input autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => e.key === "Enter" && check()} lang={card.script} autoComplete="off" spellCheck={false}
+              className="mt-4 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 text-center text-2xl text-white outline-none focus:border-amber-400" style={{ fontFamily: fontFam }} placeholder={card.script === "lo" ? "ພິມ…" : "พิมพ์…"} />
+          )}
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {!typing && <button onClick={() => setPicked((p) => p.slice(0, -1))} disabled={!picked.length} className={`${btn} disabled:opacity-40`}><Eraser size={13} className="mr-1 inline" />Undo</button>}
+            <button onClick={() => { setTyping(!typing); setPicked([]); setTyped(""); }} className={btn}>{typing ? "Use tiles" : "Use my keyboard"}</button>
+            {!hint && <button onClick={() => setHint(true)} className={btn}>Hint: reading</button>}
+          </div>
+          <button onClick={check} disabled={typing ? !typed.trim() : !picked.length} className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black disabled:bg-white/10 disabled:text-slate-400">Check</button>
+          <button onClick={() => { say(card); grade(1, { answer: "" }); }} className="mt-2 w-full text-xs text-slate-400 underline">I don't know</button>
+        </>
+      )}
+
+      {dir === "say" && !result && (
+        <>
+          {!revealed ? (
+            <>
+              <p className="mt-4 text-center text-sm text-slate-300">Say the {card.script === "lo" ? "Lao" : "Thai"} word out loud. Record yourself if you like, so you can compare.</p>
+              <div className="mt-3 flex justify-center gap-2">
+                {rec ? (
+                  <button onClick={() => rec.stop()} className="rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white"><Mic size={15} className="mr-1 inline" />Stop</button>
+                ) : (
+                  <button onClick={startRec} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-100"><Mic size={15} className="mr-1 inline" />{take ? "Record again" : "Record"}</button>
+                )}
+                {!hint && <button onClick={() => setHint(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm text-slate-200">Hint</button>}
+              </div>
+              {micErr && <p className="mt-2 text-center text-xs text-amber-200">{micErr}</p>}
+              <button onClick={reveal} className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Show the word</button>
+            </>
+          ) : (
+            <>
+              <div className="mt-3 flex flex-wrap justify-center gap-2" data-prod-ab>
+                <button onClick={() => say(card)} className={btn}><Volume2 size={13} className="mr-1 inline" />Model</button>
+                {take && <button onClick={() => playUrl(take)} className={btn}>You</button>}
+                {take && <button onClick={async () => { say(card); await new Promise((r) => setTimeout(r, 1500)); playUrl(take); }} className={`${btn} border-amber-400/50 text-amber-200`}>Model then you</button>}
+              </div>
+              <p className="mt-3 text-center text-sm text-slate-300">How did you do? Count it right if the word and its tone were there, even if the sounds were rough.</p>
+              <div className="mt-3 grid grid-cols-3 gap-2" data-prod-grades>
+                <button onClick={() => grade(1, { said: true })} className="rounded-2xl border border-rose-400/50 bg-rose-500/10 py-3 text-sm font-semibold text-rose-100">Missed it</button>
+                <button onClick={() => grade(2, { said: true })} className="rounded-2xl border border-amber-400/50 bg-amber-500/10 py-3 text-sm font-semibold text-amber-100">Close</button>
+                <button onClick={() => grade(hint ? 2 : 3, { said: true })} className="rounded-2xl border border-emerald-400/50 bg-emerald-500/10 py-3 text-sm font-semibold text-emerald-100">Said it</button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {result && (
+        <div className="mt-4">
+          <div className={`text-center text-sm font-semibold ${result.ok ? "text-emerald-300" : "text-rose-300"}`}>{result.ok ? (result.g === 2 ? "Right, with help" : "Right") : "Not yet. It comes back soon."}</div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => say(card)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm text-slate-200"><Volume2 size={16} /></button>
+            <button onClick={next} className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black" data-prod-next>{idx === line.length - 1 ? "Finish" : "Next"}</button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ============================================================================
  * Ledger (N15): a year of study on the phone. Heatmap, reviews per day, real
  * recall per track against the 90% target, tone confusions, hardest items,
  * time spent and a 30-day forecast.
  * ========================================================================== */
-const LEDGER_TRACKS = [["read", "Reading"], ["second", "Tone"], ["spell", "Spelling"], ["write", "Writing"], ["sentence", "Sentences"]];
-const dayActivity = (d) => (d ? (d.reviews || 0) + (d.lessons || 0) + (d.ear || 0) + (d.shadow || 0) + (d.traces || 0) + (d.bridge || 0) + (d.signs || 0) + (d.drills || 0) + (d.reads || 0) : 0);
+const LEDGER_TRACKS = [["read", "Reading"], ["second", "Tone"], ["spell", "Spelling"], ["write", "Writing"], ["sentence", "Sentences"], ["produce", "Production"]];
+const dayActivity = (d) => (d ? (d.reviews || 0) + (d.lessons || 0) + (d.ear || 0) + (d.shadow || 0) + (d.traces || 0) + (d.bridge || 0) + (d.signs || 0) + (d.drills || 0) + (d.reads || 0) + (d.prod || 0) : 0);
 const fmtMinutes = (secs) => { const m = Math.round((secs || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`; };
 
 /** Recall per track: share of answers that weren't "Again", from the review log, else from per-item counts. */
@@ -10230,6 +10527,12 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
           <Chip active={s.prefs.particle === "unset"} onClick={() => s.setPref("particle", "unset")}>Show both</Chip>
         </div>
       </SettingRow>
+      <SettingRow label="Production track" hint="Optional: English to Thai or Lao. Build the word from tiles or your keyboard, and say it out loud. Words join once their reading reaches Naga Adept, about ten cards a day. It keeps its own memory, so reading reviews never change.">
+        <div className="flex flex-wrap gap-2">
+          <Chip active={!s.prefs.production} onClick={() => s.setPref("production", false)}>Off</Chip>
+          <Chip active={!!s.prefs.production} onClick={() => s.setPref("production", true)}><Mic size={13} className="mr-1 inline" />On</Chip>
+        </div>
+      </SettingRow>
       <SettingRow label="Letter style" hint="Head-loop fonts teach the shapes; street fonts are what signs use.">
         <div className="flex flex-wrap gap-2">
           <Chip active={s.font === "loop"} onClick={() => s.setFont("loop")}>Head-loop</Chip>
@@ -10386,6 +10689,11 @@ export default function SuvarnaKani() {
     Object.entries(initial.sentSrs || {}).forEach(([k, v]) => { fixed[k] = k.startsWith("__") ? v : { ...v, next: v.next === null ? Infinity : v.next }; });
     return fixed;
   });
+  const [prodSrs, setProdSrs] = useState(() => {
+    const fixed = {};
+    Object.entries(initial.prodSrs || {}).forEach(([k, v]) => { fixed[k] = k.startsWith("__") ? v : { ...v, next: v.next === null ? Infinity : v.next }; });
+    return fixed;
+  });
   const [drills, setDrills] = useState(() => initial.drills || {});
   const [library, setLibrary] = useState(() => initial.library || {});
   const [marks, setMarks] = useState(() => initial.marks || {});
@@ -10490,11 +10798,11 @@ export default function SuvarnaKani() {
   }, []);
 
   const stateRef = useRef(null);
-  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb, trials };
+  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, prodSrs, drills, library, marks, kb, trials };
   useEffect(() => {
     if (restoringState) return;
     saveState(stateRef.current);
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, drills, library, marks, kb, trials]);
+  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, prodSrs, drills, library, marks, kb, trials]);
   const levelsOpen = useMemo(() => openLevels(srs, mode, sandbox, trials, garden), [srs, mode, sandbox, trials, garden]);
   // A snapshot of the state as the app opens each day, before today's work changes it.
   useEffect(() => { if (stateRef.current.onboarded) snapshotToday(stateRef.current); }, []);
@@ -10517,6 +10825,7 @@ export default function SuvarnaKani() {
     setGauntlet({});
     setGarden([]);
     setSentSrs({});
+    setProdSrs({});
     setDrills({});
     setLibrary({});
     setMarks({});
@@ -10558,7 +10867,7 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} trials={trials} setTrials={setTrials} />}
+        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} trials={trials} setTrials={setTrials} prodSrs={prodSrs} setProdSrs={setProdSrs} setPref={setPref} />}
         {tab === "ear" && (
           <>
             <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
@@ -10631,4 +10940,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
