@@ -435,5 +435,51 @@ check(!T.trialOutcome(runOf(9, [1, 4, 8]), 3, 12).passed, "a third miss fails, e
 check(!T.trialOutcome(runOf(5, [4]), 1, 20).passed, "one miss ends a river run");
 check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't pass");
 
+// Production track (opt-in, 0.30).
+{
+  eq(T.DEFAULT_PREFS.production, false, "production track is off by default");
+  const th = T.courseItems("th");
+  const word = th.find((i) => i.id === "v-kin");
+  const glyph = th.find((i) => i.tier === "glyph");
+  const srs = { [word.id]: { stage: 3 }, [glyph.id]: { stage: 4 }, "s-dii": { stage: 2 } };
+  const cards = T.prodCards(th, srs, "th");
+  eq(cards.map((c) => c.id), ["v-kin:th"], "only non-letter items at Naga Adept become production cards");
+  eq(cards[0].word, "กิน", "card asks for the Thai spelling");
+  const lo = T.prodCards(T.courseItems("lo"), srs, "lo");
+  check(lo.length === 1 && lo[0].word === "ກິນ" && lo[0].id === "v-kin:lo", "Lao mode produces the Lao word, with its own card id");
+  eq(T.prodCards(th, srs, "dual")[0].script, "th", "Thai + Lao mode produces Thai");
+  const now = Date.UTC(2026, 10, 4, 12);
+  let deck = {};
+  let sess = T.prodSession(cards, deck, now);
+  check(sess.fresh.length === 1 && sess.due.length === 0 && sess.queue.length === 1, "a new card is offered");
+  eq(T.prodDirection(deck["v-kin:th"]), "type", "the first production card builds the word");
+  deck = T.prodAnswer(deck, cards[0], "type", 3, now);
+  check(deck["v-kin:th"].ladder === 1 && deck["v-kin:th"].next === now + T.LADDER_HOURS[1] * 3600e3, "a right first build climbs the Apprentice ladder");
+  check(srs[word.id].stage === 3 && !srs[word.id].fsrs, "producing never touches the reading item");
+  eq(T.prodDirection(deck["v-kin:th"]), "say", "after building comes saying");
+  eq(deck.__day.n, 1, "today's production count goes up");
+  eq(T.prodSession(cards, deck, now).queue.length, 0, "a card isn't due again straight away");
+  check(T.prodSession(cards, deck, now, true).due.length === 1, "sandbox makes started cards due");
+  const missed = T.prodAnswer(deck, cards[0], "say", 1, now + 1000);
+  check(missed["v-kin:th"].stage === 1 && missed["v-kin:th"].next - (now + 1000) <= 10 * 60e3, "a miss comes back in ten minutes");
+  check(missed.__new.n === 1, "a second answer on the same card isn't counted as new");
+  // The daily cap: ten in all, five new.
+  const many = th.filter((i) => i.tier !== "glyph").slice(0, 30);
+  const srsMany = Object.fromEntries(many.map((i) => [i.id, { stage: 3 }]));
+  const cm = T.prodCards(th, srsMany, "th");
+  const s0 = T.prodSession(cm, {}, now);
+  check(s0.fresh.length === T.PROD_NEW_PER_DAY && s0.queue.length <= T.PROD_DAILY, "at most five new production cards a day");
+  // Tiles hold every letter of the word plus a wrong tone mark.
+  for (const it of th.filter((i) => i.tier !== "glyph").slice(0, 80)) {
+    const tiles = T.prodTiles(it.th, "th").map((x) => x.ch);
+    const need = [...T.prodNorm(it.th)];
+    const left = [...tiles];
+    check(need.every((c) => { const k = left.indexOf(c); if (k < 0) return false; left.splice(k, 1); return true; }), `tiles spell ${it.th}`);
+    check(left.length >= 3, `tiles for ${it.th} include distractors`);
+  }
+  eq(T.prodNorm("น้ํา"), T.prodNorm("น้ำ"), "sara am typed in two parts still matches");
+  eq(T.prodNorm("ชา เย็น"), "ชาเย็น", "spaces don't matter");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

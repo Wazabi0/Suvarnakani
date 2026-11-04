@@ -29,6 +29,12 @@ Progress is stored on the phone, per browser and per web address. Install from o
 For audio, set Settings → General management → Text-to-speech → Preferred engine to Speech Services by Google, then download Thai in that engine's settings.
 
 ## Changelog
+- **0.30.0**: Optional production track (English → Thai or Lao).
+  - **Opt-in.** Off by default; turn it on in Settings → Production track or on the Shrine card. Thai + Lao mode produces Thai, Lao mode produces Lao.
+  - **Who joins.** A word or syllable joins once its reading is at Naga Adept (stage 3), so you only produce what you read easily.
+  - **Two skills.** *Build it*: see the meaning, tap the word's letters in order from tiles that include a wrong tone mark and a few extra letters, or switch to your own keyboard. *Say it*: say it aloud (record yourself if you like), then hear the model and your take and grade yourself. A hint (the reading) caps the grade at Hard.
+  - **Own memory.** Cards live in `prodSrs` (`<item id>:<script>`), with FSRS tracks `type` and `say` and the same 4h/8h/1d/2d Apprentice ladder, so reading reviews never change. Answers log to the Ledger as the Production track.
+  - **Daily.** About ten cards a day, due first, at most five new, as a Today Path step ("Build and say N words").
 - **0.29.0**: A fuller Word Garden, in small boxes.
   - **Boxes.** Every bed is split into topic boxes of 7 to 15 words, most useful words first. Only a bed's first box feeds lessons at the start; the next opens when 80% of the box before it is at Novice Monk (words still waiting on letters don't count, and a box you've started stays open). Open a bed to see its boxes, locks and progress.
   - **Regrouped beds.** People, Body, Feelings and Time were mixed bags; their words now sit with their topic (pronouns in Little words, daily routine in Home, describing words in Describing things). Word ids are unchanged, so progress moves with each word.
