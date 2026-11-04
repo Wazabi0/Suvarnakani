@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Landmark, PenTool, FlaskConical, Orbit, Scissors, MessageCircle, Clock, Layers, BarChart3, Train, Library, Volume2, VolumeX, Music, Unlock, Lock,
-  Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
+  Dumbbell, Type, Languages, X, ChevronLeft, ChevronRight, Sparkles, RotateCcw, Check, Eye, Info,
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
   Cloud, Sun, Waves, Ear, Target, Flame, Mic,
   Settings, Download, Upload, History, RefreshCw, Search, Keyboard, Moon, EyeOff, Hand, SunMoon,
@@ -14,7 +14,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.31.0";
+const APP_VERSION = "0.32.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2393,6 +2393,11 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.32.0", title: "Extra practice", points: [
+    "Extra practice on the Shrine: a round of up to 15 letters and words you already know, weakest first, whenever you like, even with no reviews due.",
+    "It never changes anything: no stage, due date, ladder rung or level moves, right or wrong. Pick one level or all of them; burned items get a turn too.",
+    "A missed card comes back once before the round ends. Practice counts toward your streak but stays out of the Ledger.",
+  ] },
   { v: "0.31.0", title: "Male and female voices", points: [
     "Settings → Voices: pick a female or male voice for the app, or keep your device's own voice. Where a device offers several Thai or Lao voices, you can choose one by name.",
     "Dialogues and Talk Paths now use a voice per speaker: your lines follow your particle (ครับ is male), and the vendor, barista or driver follows theirs.",
@@ -3617,6 +3622,9 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const [leechOpen, setLeechOpen] = useState(false);
   const [ledgerOpen, setLedgerOpen] = useState(false);
   const [prodOpen, setProdOpen] = useState(false);
+  const [practiceRun, setPracticeRun] = useState(null); // { queue, directions }
+  const [practiceLevel, setPracticeLevel] = useState("all");
+  const practiceAnswered = useRef(0);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -3727,6 +3735,22 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
     logActivity({ reviews: 1, reviewsRight: correct ? 1 : 0 });
   };
 
+  // Extra practice: same cards as reviews, but answers change nothing (no stage, ladder, Ledger or level progress).
+  const practiceLevels = useMemo(() => COURSE_LEVELS.filter((l) => course.some((i) => i.level === l.n && stageOf(i.id) >= 1)), [course, srs]); // eslint-disable-line react-hooks/exhaustive-deps
+  const practiceCount = useMemo(() => practicePool(course, srs, now, { level: practiceLevel === "all" ? null : Number(practiceLevel), size: Infinity }).length, [course, srs, now, practiceLevel]);
+  const startPractice = () => {
+    const queue = practicePool(course, srs, Date.now(), { level: practiceLevel === "all" ? null : Number(practiceLevel) });
+    if (!queue.length) return;
+    practiceAnswered.current = 0;
+    setPracticeRun({ queue, directions: Object.fromEntries(queue.map((i) => [i.id, practiceDirection(srs[i.id])])) });
+  };
+  const practiceAnswer = () => { practiceAnswered.current += 1; };
+  const closePractice = () => {
+    if (practiceAnswered.current) logActivity({ drills: 1 });
+    practiceAnswered.current = 0;
+    setPracticeRun(null);
+  };
+
   const fmtWait = (t) => {
     const m = Math.round((t - now) / 60000);
     if (m < 60) return `${m} min`;
@@ -3834,6 +3858,27 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
               <div className="text-xs font-semibold uppercase tracking-wider text-cyan-200">Reviews</div>
             </button>
           </div>
+          <div className="mt-3 flex items-center gap-2 sm:max-w-md" data-practice>
+            <button
+              disabled={!practiceCount}
+              onClick={startPractice}
+              className="flex flex-1 items-center gap-2 rounded-2xl border border-purple-400/40 bg-purple-500/15 px-4 py-2.5 text-left text-sm font-semibold text-purple-100 transition active:scale-[0.98] disabled:opacity-40"
+            >
+              <Dumbbell size={16} className="text-purple-300" />
+              <span className="flex-1">Extra practice</span>
+              <span className="text-xs font-normal text-purple-200/80 tabular-nums">{Math.min(practiceCount, PRACTICE_SIZE)}</span>
+            </button>
+            <select
+              aria-label="Practice level"
+              value={practiceLevel}
+              onChange={(e) => setPracticeLevel(e.target.value)}
+              className="rounded-2xl border border-white/10 bg-slate-900 px-2 py-2.5 text-xs text-slate-200"
+            >
+              <option value="all">All levels</option>
+              {practiceLevels.map((l) => <option key={l.n} value={String(l.n)}>Level {l.n}</option>)}
+            </select>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500">Extra practice drills things you already know, weakest first. It never changes stages, due dates or levels.</p>
           <p className="mt-3 text-xs text-slate-400">
             {reviewQueue.length ? "Reviews are waiting." : nextReview ? `Next review in ${fmtWait(nextReview)}.` : "Finish a lesson to start reviews."}
             {sandbox && " Sandbox is on: every level is open and all learned items are reviewable now."}
@@ -4019,6 +4064,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
 
       <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
       <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} order={(q) => reviewOrder(q, srs)} />
+      <ReviewModal practice open={!!practiceRun} queue={practiceRun?.queue || []} directions={practiceRun?.directions || {}} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={closePractice} onAnswer={practiceAnswer} order={(q) => q} />
       <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
     </div>
   );
@@ -4876,6 +4922,38 @@ function reviewOrder(queue, srs, now = Date.now()) {
   return [...shuffle(queue.filter(first)), ...shuffle(queue.filter((i) => !first(i)))];
 }
 
+/**
+ * Extra practice: a round of items you've already started that aren't due yet.
+ * Answers never touch the schedule, so stages, the ladder and level gates stay put.
+ * Weakest first: misses in the last week and leeches, then lowest memory
+ * stability; burned items come last so they still get a turn.
+ */
+const PRACTICE_SIZE = 15;
+const PRACTICE_MISS_DAYS = 7;
+function practicePool(course, srs, now = Date.now(), { level = null, size = PRACTICE_SIZE } = {}) {
+  const items = course.filter((i) => {
+    const s = srs[i.id];
+    if (!s || !(s.stage >= 1)) return false;
+    if (level != null && i.level !== level) return false;
+    return s.stage >= 5 || !(s.next <= now); // due items belong in real reviews
+  });
+  const weakS = (s) => { const t = Object.values(s.fsrs || {}); return t.length ? Math.min(...t.map((x) => x.S)) : 0; };
+  const rank = (i) => {
+    const s = srs[i.id];
+    if (s.stage >= 5) return 3;
+    if ((s.lastMiss && now - s.lastMiss < PRACTICE_MISS_DAYS * DAY) || isLeech(s)) return 0;
+    return s.stage <= 2 ? 1 : 2;
+  };
+  const sorted = shuffle(items).sort((a, b) => rank(a) - rank(b) || weakS(srs[a.id]) - weakS(srs[b.id]));
+  // Keep a few burned items in a full round so they get refreshed too.
+  const burned = sorted.filter((i) => rank(i) === 3);
+  const live = sorted.filter((i) => rank(i) !== 3);
+  const burnSlots = Math.min(burned.length, Math.max(size - live.length, Math.ceil(size / 5)));
+  return shuffle([...live.slice(0, size - burnSlots), ...burned.slice(0, burnSlots)]);
+}
+/** Practice mixes directions: read for new items, read or spell for anything past Lotus Seed. */
+const practiceDirection = (st) => (!st || st.stage < 2 ? "read" : Math.random() < 0.5 ? "spell" : "read");
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i -= 1) {
@@ -5025,7 +5103,7 @@ function ClassChoice({ onPick, picked, correct, disabled }) {
   );
 }
 
-function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer, fontFor, order = shuffle }) {
+function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnswer, fontFor, order = shuffle, practice = false }) {
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
@@ -5038,6 +5116,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const [score, setScore] = useState({ right: 0, wrong: 0 });
   const inputRef = useRef(null);
   const pending = useRef(null);
+  const requeued = useRef(new Set());
 
   // An answer is saved when the learner moves on, so "I guessed" can still
   // lower its rating. Closing mid-result saves it too.
@@ -5045,6 +5124,11 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
     if (!pending.current) return;
     const { id, ok, parts } = pending.current;
     pending.current = null;
+    // Practice: a missed card comes back once at the end of the round.
+    if (practice && !ok && !requeued.current.has(id)) {
+      requeued.current.add(id);
+      setList((l) => { const it = l.find((x) => x.id === id); return it ? [...l, it] : l; });
+    }
     onAnswer(id, ok, { ...parts, guessed });
   };
   const close = () => {
@@ -5055,6 +5139,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   useEffect(() => {
     if (open) {
       pending.current = null;
+      requeued.current = new Set();
       setList(order(queue));
       setDirs(directions);
       setIdx(0);
@@ -5175,12 +5260,17 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const allOk = phase === "result" && readOk && secondOk !== false;
 
   return (
-    <Modal open={open} onClose={close} title={finished ? "Review complete" : `Review ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
+    <Modal open={open} onClose={close} title={finished ? (practice ? "Practice complete" : "Review complete") : `${practice ? "Practice" : "Review"} ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
+      {practice && !finished && (
+        <div data-practice-banner className="-mt-1 mb-3 rounded-xl border border-purple-400/30 bg-purple-500/10 px-3 py-1.5 text-center text-[11px] font-semibold text-purple-200">Practice: won't change your schedule or levels</div>
+      )}
       {finished ? (
         <div className="py-6 text-center">
           <Trophy size={44} className="mx-auto text-amber-400" />
           <div className="mt-3 text-2xl font-black text-white">{score.right} / {score.right + score.wrong}</div>
-          <p className="mt-1 text-sm text-slate-400">Each item's reading and its tone (or class) are scheduled separately, for about 90% recall. New and missed items climb a ladder of 4 hours, 8 hours, 1 day and 2 days before the memory model takes over; a miss comes back in 10 minutes and drops a rung.</p>
+          {practice ? (
+            <p className="mt-1 text-sm text-slate-400">Practice only: none of these answers moved a stage, a due date or a level. Your real reviews come back on their own schedule.</p>
+          ) : <p className="mt-1 text-sm text-slate-400">Each item's reading and its tone (or class) are scheduled separately, for about 90% recall. New and missed items climb a ladder of 4 hours, 8 hours, 1 day and 2 days before the memory model takes over; a miss comes back in 10 minutes and drops a rung.</p>}
           <button onClick={close} className="mt-5 rounded-xl bg-amber-500 px-5 py-2 font-bold text-black">Back to the Shrine</button>
         </div>
       ) : spell && spell.id === item.id ? (
@@ -5222,7 +5312,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
           )}
           {phase === "result" && (
             <div className="mt-4 flex gap-2">
-              {spell.pick === item.id && (
+              {spell.pick === item.id && !practice && (
                 <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5">I guessed</button>
               )}
               <button type="button" onClick={() => next()} className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">Next</button>
@@ -5293,7 +5383,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
           )}
           {phase !== "second" && (
             <div className="mt-4 flex gap-2">
-              {allOk && (
+              {allOk && !practice && (
                 <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5" title="Right, but you weren't sure: it will come back sooner">
                   I guessed
                 </button>
@@ -11063,4 +11153,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
