@@ -580,5 +580,30 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   eq(leaks, 0, "English meanings never pass as readings");
 }
 
+// 0.34: aspiration and vowel-length checks, streak rest days and vacation, practice tools.
+{
+  const all = T.courseItems("th");
+  const find = (th) => all.find((i) => i.th === th && i.tier !== "glyph");
+  eq(T.soundSlip(find("ข้าว"), "khao"), "length", "khao for ข้าว asks long or short");
+  eq(T.soundSlip(find("ข้าว"), "khaaw"), null, "khaaw for ข้าว is exact");
+  eq(T.soundSlip(find("ขา"), "kaa"), "aspiration", "kaa for ขา asks puffed or plain");
+  eq(T.soundSlip(find("กา"), "kaa"), null, "g/k stays forgiven");
+  const ch = T.slipChoices(find("ข้าว"), "khao", "length");
+  check(ch.length === 2 && ch.some((o) => o.right && o.label === "khaaw") && ch.some((o) => !o.right && o.label === "khao"), "ข้าว chips: khaaw vs khao");
+  let own = 0;
+  for (const it of all.filter((i) => i.tier !== "glyph")) if (T.soundSlip(it, it.thRoman.split(" ·")[0])) own += 1;
+  eq(own, 0, "an item's own reading never asks");
+  const DAY = 86400000, now = new Date(2026, 10, 17, 12).getTime();
+  const key = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const log = {};
+  [0, 1, 3, 4, 5].forEach((n) => { log[key(now - n * DAY)] = { reviews: 1 }; });
+  eq(T.computeStreak(log, now, null), 5, "one missed day is a free rest day");
+  log[key(now - 7 * DAY)] = { reviews: 1 }; log[key(now - 8 * DAY)] = { reviews: 1 };
+  eq(T.computeStreak(log, now, null), 5, "a second miss in the same week ends the streak");
+  const vac = {}; [6, 7].forEach((n) => { vac[key(now - n * DAY)] = { reviews: 1 }; });
+  eq(T.computeStreak(vac, now, now - 5 * DAY), 2, "vacation days hold the streak");
+  check(T.PRACTICE_TOOLS.find((t) => t.id === "talk").level === 8 && T.PRACTICE_TOOLS.find((t) => t.id === "bridge").level === 3, "tools open with their levels");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
