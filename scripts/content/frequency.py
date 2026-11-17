@@ -13,6 +13,8 @@ rarest part, doubled.
 The new order inside a box is a 50/50 blend of the hand-picked order and the
 corpus order. Only the order of words inside a box changes, and boxes whose order means something
 (counting, days, months) are left alone. Ids come from GARDEN_SRC, so no progress moves.
+Run --write once: each run blends with the order it finds, so a second run moves
+words again. Without --write the report shows the boxes as they are now.
 The report also lists common words the app doesn't teach yet, for a human to pick from.
 """
 import json, math, os, re, sys
@@ -84,7 +86,7 @@ def main():
         if new != ws:
             moved.append(title)
         out.append("+" + title + "|" + " ".join(new))
-        report.append(f"- **{title.lstrip('*')}**: {' '.join(new)}")
+        report.append(f"- **{title.lstrip('*')}**: {' '.join(new if write else ws)}")
     taught = set(words)
     cand = []
     seen = set()
