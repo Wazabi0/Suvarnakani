@@ -636,5 +636,19 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   T.applyNativeIndex({ clips: {} });
 }
 
+// 0.36.1: Thai letter cards don't take Lao-only readings.
+{
+  const cho = T.courseItems("th").find((i) => i.th === "ช" && i.tier === "glyph");
+  check(T.isCorrect(cho, "ch") && T.isCorrect(cho, "chaw") && T.isCorrect(cho, "elephant"), "ช takes ch, chaw, elephant");
+  check(!T.isCorrect(cho, "s") && !T.isCorrect(cho, "x"), "ช in the Thai course does not take the Lao s or x");
+  const so = T.courseItems("th").find((i) => i.th === "ซ" && i.tier === "glyph");
+  check(T.isCorrect(so, "s"), "ซ still takes s");
+  const xo = T.courseItems("lo").find((i) => i.lo === "ຊ" && i.tier === "glyph");
+  check(T.isCorrect(xo, "s") || T.isCorrect(xo, "x"), "Lao ຊ still takes s or x");
+  let leaks = 0;
+  T.courseItems("th").filter((i) => i.tier === "glyph").forEach((i) => T.thaiLetterOnly(i, i.accept).length !== i.accept.length && (leaks += 1));
+  console.log(`  Thai letter cards that had Lao-only answers: ${leaks}`);
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

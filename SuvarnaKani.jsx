@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.36.0";
+const APP_VERSION = "0.36.1";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2045,10 +2045,24 @@ function normalizeAnswer(s) {
 function looseRoman(s) {
   return normalizeAnswer(s).replace(/ue/g, "u").replace(/ae/g, "e").replace(/([kpt])h/g, "$1").replace(/ch|j/g, "c").replace(/^g|(?<=[^n])g/g, "k").replace(/r/g, "l").replace(/([a-z])\1+/g, "$1").replace(/w$/, "o").replace(/y$/, "i");
 }
+/**
+ * A Thai letter card takes only Thai sounds: ช is ch, not the s of Lao ຊ.
+ * Its `accept` list is shared with the Lao course, so answers that are only a
+ * Lao reading (x, s for ช) are dropped in the Thai course.
+ */
+const romanParts = (r) => (r || "").split(/\s*·\s*|\s*\/\s*/).filter(Boolean);
+function thaiLetterOnly(item, list) {
+  if (item.tier !== "glyph" || item.toneSet === "lo" || !item.loRoman) return list;
+  // Only short sound answers are at stake; anything written in the Thai romanisation stays.
+  const thText = normalizeAnswer(`${item.thRoman} ${romanize(item.thRoman, "rtgs")}`);
+  const lo = new Set(romanParts(item.loRoman).map(normalizeAnswer));
+  return list.filter((a) => { const n = normalizeAnswer(a); return n.length > 2 || thText.includes(n) || !lo.has(n); });
+}
 function isCorrect(item, input) {
   const n = normalizeAnswer(input);
   if (!n) return false;
-  const readings = [...item.accept, item.thRoman, item.loRoman, romanize(item.thRoman, "rtgs")].filter(Boolean).flatMap((r) => r.split(/\s*·\s*|\s*\/\s*/));
+  const thaiCard = item.tier === "glyph" && item.toneSet !== "lo";
+  const readings = [...thaiLetterOnly(item, item.accept), item.thRoman, thaiCard ? null : item.loRoman, romanize(item.thRoman, "rtgs")].filter(Boolean).flatMap((r) => r.split(/\s*·\s*|\s*\/\s*/));
   const pool = [...readings, ...item.meaning.split(/[\/·,()]/)];
   if (pool.some((a) => normalizeAnswer(a) === n)) return true;
   const l = looseRoman(input);
@@ -2083,7 +2097,8 @@ function editDistance(a, b) {
   return row[b.length];
 }
 function readingForms(item) {
-  return [item.thRoman, item.loRoman, item.thRoman && romanize(item.thRoman, "rtgs")].filter(Boolean).flatMap((r) => r.split(/\s*·\s*|\s*\/\s*/)).filter(Boolean);
+  const thaiCard = item.tier === "glyph" && item.toneSet !== "lo";
+  return [item.thRoman, thaiCard ? null : item.loRoman, item.thRoman && romanize(item.thRoman, "rtgs")].filter(Boolean).flatMap((r) => r.split(/\s*·\s*|\s*\/\s*/)).filter(Boolean);
 }
 const answerSplitCache = new Map();
 /** { readings, meanings } for an item, from its romanisations, meaning text and `accept` list. */
@@ -2580,6 +2595,9 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.36.1", title: "Fix: ช is ch", points: [
+    "Thai letter cards no longer accept the Lao reading: typing s for ช (or h for ร) is now marked wrong in the Thai course. The Lao course still accepts them for ຊ and ຣ.",
+  ] },
   { v: "0.36.0", title: "Real Thai voices", points: [
     "551 of the app's Thai words and 45 of its sentences now play recordings of real Thai speakers from Mozilla Common Voice, up to three people per word, a different one each time you tap. They download the first time you hear them, then work offline.",
     "Words with no recording, like the letter names, still use your phone's voice. Lao is unchanged. Settings → Voices can switch native speakers off.",
@@ -12000,4 +12018,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
