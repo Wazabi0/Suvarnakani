@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.36.1";
+const APP_VERSION = "0.36.2";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2622,6 +2622,10 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.36.2", title: "Stricter answers", points: [
+    "Letter cards want the letter's own sound: k for ข, p for พ, t for ท and ch for จ are now wrong, because those are the sounds of ก, ป, ต and ช.",
+    "Thai words no longer accept the Lao word: wao for พูด, het for ทำ, ngaam for สวย and about 260 more were being marked right. Loose spellings of the Thai reading (chop for จบ, khao for ข้าว) still count.",
+  ] },
   { v: "0.36.1", title: "Fix: ช is ch", points: [
     "Thai letter cards no longer accept the Lao reading: typing s for ช (or h for ร) is now marked wrong in the Thai course. The Lao course still accepts them for ຊ and ຣ.",
   ] },
