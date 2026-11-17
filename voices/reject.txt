@@ -1,0 +1,12 @@
+# Clips flagged by ear, as word:Common Voice clip (2026-11-17)
+กา:common_voice_th_26464672
+กิน:common_voice_th_26500370
+ตอเต่า:common_voice_th_26162450
+ตา:common_voice_th_23658101
+ตา:common_voice_th_26057653
+ตา:common_voice_th_26093884
+บ้าน:common_voice_th_25663221
+บ้าน:common_voice_th_25883496
+บ้าน:common_voice_th_27551511
+ปลา:common_voice_th_26052339
+ใจ:common_voice_th_23799221

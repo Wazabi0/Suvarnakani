@@ -176,8 +176,12 @@ def read_textgrid(path):
     return out
 
 
-def word_spans(intervals, words, max_join=4):
-    """(start, end, target) where 1 to max_join consecutive aligned words spell a target."""
+def word_spans(intervals, words, max_join=4, pause=0.08):
+    """(start, end, target, quiet) where 1 to max_join consecutive aligned words spell a target.
+
+    quiet counts the sides (0 to 2) where the speaker paused or the clip starts or
+    ends: words said in a run blur into their neighbours, so those cut worse.
+    """
     toks = [(s, e, key(t)) for s, e, t in intervals if t.strip() not in SKIP_WORDS and key(t)]
     out = []
     for i in range(len(toks)):
@@ -185,7 +189,9 @@ def word_spans(intervals, words, max_join=4):
         for j in range(i, min(len(toks), i + max_join)):
             joined += toks[j][2]
             if joined in words:
-                out.append((toks[i][0], toks[j][1], joined))
+                before = i == 0 or toks[i][0] - toks[i - 1][1] >= pause
+                after = j == len(toks) - 1 or toks[j + 1][0] - toks[j][1] >= pause
+                out.append((toks[i][0], toks[j][1], joined, int(before) + int(after)))
             if len(joined) > 24:
                 break
     return out
@@ -235,33 +241,38 @@ def build(args):
             if not r:
                 continue
             wav = os.path.join(corpus, spk, name)
-            if r["key"] in sentences:
-                cands[r["key"]].append({"r": r, "wav": wav, "span": None})
+            if r["key"] in sentences or r["key"] in words:
+                # A clip that is the whole word or sentence: no cutting needed, best of all.
+                cands[r["key"]].append({"r": r, "wav": wav, "span": None, "quiet": 3})
             tg = os.path.join(aligned, spk, base + ".TextGrid")
             if os.path.exists(tg):
-                for s, e, w in word_spans(read_textgrid(tg), words):
-                    if args.min_word <= e - s <= args.max_word:
-                        cands[w].append({"r": r, "wav": wav, "span": (s, e)})
+                for s, e, w, quiet in word_spans(read_textgrid(tg), words):
+                    if args.min_word <= e - s <= args.max_word and not (r["key"] == w):
+                        cands[w].append({"r": r, "wav": wav, "span": (s, e), "quiet": quiet})
 
     out_dir = os.path.join(VOICES, "th")
     os.makedirs(out_dir, exist_ok=True)
     speakers, clips, report = {}, {}, []
     for target in sorted(cands, key=lambda t: (words.get(t, 100), t)):
         picked, seen = [], set()
-        # Most up-voted first, one clip per speaker, alternating genders when we can.
-        pool = sorted(cands[target], key=lambda c: -c["r"]["up"])
+        # One clip per speaker, alternating genders among equally clean candidates.
+        # Words said on their own or between pauses first, then the most up-voted.
+        pool = sorted(cands[target], key=lambda c: (-c["quiet"], -c["r"]["up"]))
         while pool and len(picked) < args.per_text:
             want = None
             if picked and picked[-1]["r"]["gender"]:
                 want = "f" if picked[-1]["r"]["gender"] == "m" else "m"
-            c = next((c for c in pool if c["r"]["speaker"] not in seen and c["r"]["gender"] == want), None) \
-                or next((c for c in pool if c["r"]["speaker"] not in seen), None)
+            free = [c for c in pool if c["r"]["speaker"] not in seen]
+            best = [c for c in free if c["quiet"] == free[0]["quiet"]] if free else []
+            c = next((c for c in best if c["r"]["gender"] == want), None) or (free[0] if free else None)
             if not c:
                 break
             pool.remove(c)
-            sid = speakers.setdefault(c["r"]["speaker"], f"s{len(speakers) + 1}")
+            # Speaker ids come from the Common Voice id, so file names stay put between builds.
+            sid = speakers.setdefault(c["r"]["speaker"], "s" + hashlib.sha1(c["r"]["speaker"].encode()).hexdigest()[:6])
             fname = f"{hashlib.sha1(target.encode()).hexdigest()[:10]}-{sid}.mp3"
-            if fname in rejected:
+            src = f"{target}:{os.path.splitext(c['r']['path'])[0]}"
+            if fname in rejected or src in rejected:
                 continue
             span = c["span"]
             if loudness(c["wav"], *(span[0], span[1] - span[0]) if span else (None, None)) < args.min_db:
