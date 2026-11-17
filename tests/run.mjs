@@ -730,5 +730,19 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(lists.every((l) => new Set(l.map((c) => c[1])).size === l.length), "one clip per speaker per word");
 }
 
+// 0.40.0: letter pictures for all 44 Thai consonants.
+{
+  const cons = [..."กขฃคฅฆงจฉชซฌญฎฏฐฑฒณดตถทธนบปผฝพฟภมยรลวศษสหฬอฮ"];
+  check(cons.every((c) => T.LETTER_PICS[c]) && Object.keys(T.LETTER_PICS).length === 44, "every Thai consonant has a picture");
+  Object.entries(T.LETTER_PICS).forEach(([c, p]) => {
+    check(p.word && p.en && p.d.startsWith("M") && p.art.length >= 2 && p.vb.length === 3 && p.vb[2] >= 960, `${c}: picture has a word, outline, strokes and a square frame`);
+    check(p.art.every(([k, a]) => (k === "path" && /^M/.test(a)) || (k === "circle" && a.length === 3) || (k === "ellipse" && a.length === 4)), `${c}: picture strokes are well formed`);
+  });
+  const ko = T.CURRICULUM ? Object.values(T.CURRICULUM).flat().find?.((i) => i?.th === "ก" && i.tier === "glyph") : null;
+  const item = ko || { tier: "glyph", th: "ก" };
+  check(T.letterPicFor(item, "th")?.word === "ไก่" && T.letterPicFor(item, "dual") && !T.letterPicFor(item, "lo"), "ก shows the chicken in Thai and dual mode, not in Lao-only mode");
+  check(!T.letterPicFor({ tier: "word", th: "ไก่" }, "th"), "words get no letter picture");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
