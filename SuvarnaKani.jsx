@@ -5,6 +5,7 @@ import {
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
   Cloud, Sun, Waves, Ear, Target, Flame, Mic,
   Settings, Download, Upload, History, RefreshCw, Search, Keyboard, Moon, EyeOff, Hand, SunMoon,
+  Home, User, Map as MapIcon,
 } from "lucide-react";
 
 /* ============================================================================
@@ -14,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.32.0";
+const APP_VERSION = "0.33.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -1488,12 +1489,13 @@ const COURSE_LEVELS = LEVELS.filter((l) => !l.garden);
 /* Stage colours are a gold ramp from bronze seed to bright Nirvana (V8), so stage
  * never competes with tone colour. Each stage has its own small icon. */
 const SRS_STAGES = [
-  { name: "Locked", alias: "Queue", color: "#64748B", icon: "lock" },
-  { name: "Lotus Seed", alias: "Apprentice", color: "#9A6432", icon: "seed" },
-  { name: "Novice Monk", alias: "Guru", color: "#BD7A2A", icon: "monk" },
-  { name: "Naga Adept", alias: "Master", color: "#D99424", icon: "naga" },
-  { name: "Temple Guardian", alias: "Enlightened", color: "#EDB43A", icon: "guardian" },
-  { name: "Golden Nirvana", alias: "Burned", color: "#FFD54F", icon: "stupa" },
+  // `plain` says what each stage means (D1); `alias` is the WaniKani name.
+  { name: "Locked", alias: "Queue", plain: "not started", color: "#64748B", icon: "lock" },
+  { name: "Lotus Seed", alias: "Apprentice", plain: "new", color: "#9A6432", icon: "seed" },
+  { name: "Novice Monk", alias: "Guru", plain: "learned", color: "#BD7A2A", icon: "monk" },
+  { name: "Naga Adept", alias: "Master", plain: "solid", color: "#D99424", icon: "naga" },
+  { name: "Temple Guardian", alias: "Enlightened", plain: "strong", color: "#EDB43A", icon: "guardian" },
+  { name: "Golden Nirvana", alias: "Burned", plain: "done for good", color: "#FFD54F", icon: "stupa" },
 ];
 const HOUR = 3600 * 1000;
 const DAY = 24 * HOUR;
@@ -2053,6 +2055,83 @@ function isCorrect(item, input) {
   return l.length >= 2 && readings.some((a) => looseRoman(a) === l);
 }
 
+/* ---------------------------------------------------------------------------
+ * Two-part reviews (0.33): words and syllables ask for the reading and the
+ * meaning separately, so English alone can't pass a card. `accept` mixes both,
+ * so each accepted answer is sorted by its consonant outline: one that matches a
+ * romanised reading (within a letter for longer words) is a reading, the rest
+ * are meanings.
+ * ------------------------------------------------------------------------- */
+const consonantOutline = (s) => looseRoman(s).replace(/[aeiouh]/g, "");
+function editDistance(a, b) {
+  if (a === b) return 0;
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i += 1) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const tmp = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = tmp;
+    }
+  }
+  // Two swapped neighbours ("hosue") count as one slip.
+  if (a.length === b.length) {
+    const diff = [...a].map((c, i) => (c === b[i] ? -1 : i)).filter((i) => i >= 0);
+    if (diff.length === 2 && diff[1] === diff[0] + 1 && a[diff[0]] === b[diff[1]] && a[diff[1]] === b[diff[0]]) return 1;
+  }
+  return row[b.length];
+}
+function readingForms(item) {
+  return [item.thRoman, item.loRoman, item.thRoman && romanize(item.thRoman, "rtgs")].filter(Boolean).flatMap((r) => r.split(/\s*·\s*|\s*\/\s*/)).filter(Boolean);
+}
+const answerSplitCache = new Map();
+/** { readings, meanings } for an item, from its romanisations, meaning text and `accept` list. */
+function answerSplit(item) {
+  const key = `${item.id}:${item.toneSet || ""}`;
+  if (answerSplitCache.has(key)) return answerSplitCache.get(key);
+  const readings = readingForms(item);
+  const outlines = readings.map(consonantOutline);
+  const loose = readings.map(looseRoman);
+  const whole = item.meaning.replace(/\([^)]*\)/g, "").trim();
+  const meanings = [whole, ...item.meaning.split(/[/·,()…?]/)].map((m) => m.trim()).filter(Boolean);
+  (item.accept || []).forEach((a) => {
+    if (/\d/.test(a)) { meanings.push(a); return; }
+    const o = consonantOutline(a);
+    const isReading = loose.includes(looseRoman(a)) || outlines.some((r) => editDistance(r, o) <= (Math.max(r.length, o.length) >= 4 ? 1 : 0));
+    (isReading ? readings : meanings).push(a);
+  });
+  const out = { readings, meanings };
+  answerSplitCache.set(key, out);
+  return out;
+}
+/** Is the typed text this item's reading? Forgiving about aspiration, length, g/k, j/ch and r/l, as before. */
+function readingMatch(item, input) {
+  const n = normalizeAnswer(input);
+  if (!n) return false;
+  const { readings } = answerSplit(item);
+  if (readings.some((a) => normalizeAnswer(a) === n)) return true;
+  const l = looseRoman(input);
+  return l.length >= 2 && readings.some((a) => looseRoman(a) === l);
+}
+const stripArticle = (s) => normalizeAnswer(String(s).toLowerCase().replace(/^\s*(to|a|an|the)\s+/, ""));
+/** Is the typed text this item's meaning? Small typos pass (one letter from 5 letters, two from 9). */
+function meaningMatch(item, input) {
+  const n = stripArticle(input);
+  if (!n) return false;
+  return answerSplit(item).meanings.some((m) => {
+    const t = stripArticle(m);
+    if (!t) return false;
+    if (t === n) return true;
+    const slack = t.length >= 9 ? 2 : t.length >= 5 ? 1 : 0;
+    // Four letters: only a swapped pair ("crwo"), so "cow" never passes for "crow".
+    if (t.length === 4 && n.length === 4 && [...t].sort().join("") === [...n].sort().join("") && editDistance(t, n) === 1) return true;
+    return slack > 0 && Math.abs(t.length - n.length) <= slack && editDistance(t, n) <= slack;
+  });
+}
+/** Letters keep one answer (sound or name word); syllables and words get two. */
+const twoPartReview = (item) => item.tier !== "glyph";
+
 function loadState() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -2353,7 +2432,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 /** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
 function loadPrefs(saved) {
@@ -2393,6 +2472,12 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.33.0", title: "One clear daily loop", points: [
+    "New tabs: Today, Learn, Practice, Read and Me. Today fits on one screen: your session, your level and what opens next. The course map and Word Garden are under Learn; Ear, Write and Lab are under Practice; stats, the Ledger and the course switch are under Me.",
+    "Start today's session runs the whole Today Path in one flow: reviews, lessons, the Ear set and the day's practice, with the steps between and a summary at the end. No more hopping between tabs.",
+    "Word and syllable reviews now ask for the reading, then the meaning, as two answers. English alone no longer passes a card. Type the English in the reading box and the app asks for the sound instead of marking you wrong.",
+    "Plainer words: each stage says what it means (Novice Monk · learned), pitch numbers like 33 and 214 are off unless you turn them on in Settings, and empty screens say what opens them.",
+  ] },
   { v: "0.32.0", title: "Extra practice", points: [
     "Extra practice on the Shrine: a round of up to 15 letters and words you already know, weakest first, whenever you like, even with no reviews due.",
     "It never changes anything: no stage, due date, ladder rung or level moves, right or wrong. Pick one level or all of them; burned items get a turn too.",
@@ -2776,11 +2861,12 @@ function DualText({ th, lo, mode, font, className = "", gapClass = "gap-4", divi
 }
 
 function ToneBadge({ tone, small }) {
+  const prefs = usePrefs();
   const t = TONES[tone];
   if (!t) return null;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full font-semibold ${small ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-xs"}`} style={{ background: `${t.color}22`, color: t.ink, border: `1px solid ${t.color}66` }}>
-      <ToneGlyph tone={tone} size={small ? 14 : 16} /> {t.name} <span className="opacity-75">{t.chao}</span>
+      <ToneGlyph tone={tone} size={small ? 14 : 16} /> {t.name}{prefs.pitchNumbers && <span className="opacity-75">{t.chao}</span>}
     </span>
   );
 }
@@ -3336,23 +3422,28 @@ function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Dat
   return { kind, label: "Shadow 5 syllables", done, note: `${Math.min(count, goal)} / ${goal} attempts` };
 }
 
-function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onEar, onLeech, practice, onPractice, trial, prod }) {
+/**
+ * The day's plan (Today Path): which steps, in what order, inside the minutes the learner picked.
+ * Each step has `onClick` (opens a review-style sheet) or `tool` (a practice tool shown inside the
+ * daily session: "ear", "trace", "mekong", "sign" or "shadow").
+ */
+function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onLeech, practice, trial, prod }) {
   const today = log[todayKey()] || {};
   const acc = weekAccuracy(log);
-  const streak = computeStreak(log);
   const lessonBatch = Math.min(lessonQueue.length, dailyMinutes <= 5 ? 3 : 5);
   const lessonsPaused = (acc != null && acc < 0.8) || reviewCount >= 30;
   const steps = [
-    { id: "reviews", label: reviewCount ? `${reviewCount} review${reviewCount > 1 ? "s" : ""}` : "Reviews", min: Math.max(1, Math.ceil((reviewCount * 10) / 60)), done: reviewCount === 0, note: reviewCount === 0 ? (today.reviews ? `${today.reviews} done today` : "Nothing due") : null, onClick: onReviews, disabled: !reviewCount },
-    { id: "ear", label: "Ear set", min: 3, done: (today.ear || 0) >= EAR_DAILY_TRIALS, note: `${Math.min(today.ear || 0, EAR_DAILY_TRIALS)} / ${EAR_DAILY_TRIALS} trials`, onClick: onEar },
+    { id: "reviews", label: reviewCount ? `${reviewCount} review${reviewCount > 1 ? "s" : ""}` : "Reviews", short: reviewCount ? `${reviewCount} reviews` : "Reviews", min: Math.max(1, Math.ceil((reviewCount * 10) / 60)), done: reviewCount === 0, note: reviewCount === 0 ? (today.reviews ? `${today.reviews} done today` : "Nothing due") : null, onClick: onReviews, disabled: !reviewCount },
   ];
+  const earStep = { id: "ear", label: "Ear set", short: "Ear", min: 3, done: (today.ear || 0) >= EAR_DAILY_TRIALS, note: `${Math.min(today.ear || 0, EAR_DAILY_TRIALS)} / ${EAR_DAILY_TRIALS} trials`, tool: "ear" };
   // A ready Guardian Trial comes straight after reviews.
-  if (trial) steps.splice(1, 0, { id: "trial", label: trial.label, min: 4, done: false, onClick: trial.onClick });
-  if (leeches.length) steps.push({ id: "leech", label: `Leech drill: ${leeches.slice(0, 3).map((l) => l.th).join(" ")}`, thai: true, min: 2, done: (today.drills || 0) > 0, onClick: onLeech });
+  if (trial) steps.splice(1, 0, { id: "trial", label: trial.label, short: "Trial", min: 4, done: false, onClick: trial.onClick });
+  if (leeches.length) steps.push({ id: "leech", label: `Leech drill: ${leeches.slice(0, 3).map((l) => l.th).join(" ")}`, short: "Leeches", thai: true, min: 2, done: (today.drills || 0) > 0, onClick: onLeech });
   if (lessonQueue.length) {
     steps.push({
       id: "lessons",
       label: `${lessonBatch} new item${lessonBatch > 1 ? "s" : ""}`,
+      short: `${lessonBatch} new`,
       min: 3,
       done: (today.lessons || 0) >= lessonBatch,
       note: lessonsPaused ? (reviewCount >= 30 ? "Paused until reviews are under 30" : `Paused: ${Math.round(acc * 100)}% this week, aim for 80%`) : null,
@@ -3360,65 +3451,194 @@ function TodayPath({ srs, now, reviewCount, lessonQueue, leeches, log, dailyMinu
       disabled: lessonsPaused && !(today.lessons > 0),
     });
   }
+  // 0.33: new items come before the Ear set, so a first session starts with letters.
+  steps.push(earStep);
   // Opt-in production track: about ten English-to-Thai cards a day.
-  if (prod) steps.push({ id: "prod", label: prod.label, min: 3, done: prod.done, note: prod.note, onClick: prod.onClick });
-  if (practice) steps.push({ id: `practice-${practice.kind}`, label: practice.label, thai: practice.thai, min: 3, done: practice.done, note: practice.note, onClick: () => onPractice?.(practice.kind) });
+  if (prod) steps.push({ id: "prod", label: prod.label, short: "Build and say", min: 3, done: prod.done, note: prod.note, onClick: prod.onClick });
+  if (practice) steps.push({ id: `practice-${practice.kind}`, label: practice.label, short: { trace: "Trace", mekong: "Mekong", sign: "Sign", shadow: "Shadow" }[practice.kind], thai: practice.thai, min: 3, done: practice.done, note: practice.note, tool: practice.kind });
   let budget = dailyMinutes;
-  const planned = steps.filter((s) => { const keep = s.id === "reviews" || s.id === "trial" || budget - s.min >= 0; if (keep) budget -= s.min; return keep; });
-  const total = planned.reduce((n, s) => n + s.min, 0);
-  const doneMin = planned.filter((s) => s.done).reduce((n, s) => n + s.min, 0);
-  const nextStep = planned.find((s) => !s.done && !s.disabled);
-  const reads = Object.values(srs).reduce((a, s) => [a[0] + (s?.stats?.read?.[0] || 0), a[1] + (s?.stats?.read?.[1] || 0)], [0, 0]);
-  const seconds = Object.values(srs).reduce((a, s) => [a[0] + (s?.stats?.second?.[0] || 0), a[1] + (s?.stats?.second?.[1] || 0)], [0, 0]);
-  const pct = ([r, n]) => (n ? `${Math.round((r / n) * 100)}%` : "–");
+  const planned = steps.filter((st) => { const keep = st.id === "reviews" || st.id === "trial" || budget - st.min >= 0; if (keep) budget -= st.min; return keep; });
+  const total = planned.reduce((n, st) => n + st.min, 0);
+  const doneMin = planned.filter((st) => st.done).reduce((n, st) => n + st.min, 0);
+  const nextStep = planned.find((st) => !st.done && !st.disabled) || null;
+  const complete = planned.every((st) => st.done || st.disabled);
+  return { planned, total, doneMin, nextStep, complete, acc };
+}
 
+/** One step of the plan as a row: a tick box, the label, its note and minutes. */
+function PlanStep({ step, isNext, onRun }) {
   return (
-    <Card className="p-5 sm:p-6" glow={COLORS.gold}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <li>
+      <button
+        type="button"
+        onClick={() => onRun(step)}
+        disabled={step.disabled}
+        data-plan-step={step.id}
+        className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${isNext ? "border-amber-400/70 bg-amber-400/10" : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"} disabled:cursor-default disabled:hover:bg-white/[0.03]`}
+      >
+        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${step.done ? "bg-emerald-400 text-emerald-950" : isNext ? "border-2 border-amber-400" : "border-2 border-white/20"}`}>
+          {step.done && <Check size={15} strokeWidth={3} />}
+        </span>
+        <span className={`flex-1 font-semibold ${step.done ? "text-slate-400 line-through decoration-slate-500" : "text-white"}`} style={step.thai ? { fontFamily: FONT_STACKS.loop.th } : undefined}>{step.label}</span>
+        <span className="text-xs tabular-nums text-slate-400">{step.min} min</span>
+      </button>
+      {step.note && <div className="px-12 pt-0.5 text-xs text-slate-400">{step.note}</div>}
+    </li>
+  );
+}
+
+/** Home screen (A2): the day's session in one button, with its steps as small chips. */
+function SessionCard({ plan, streak, started, onStart, onRunStep, onExtra, extraCount }) {
+  const { planned, total, doneMin, complete } = plan;
+  return (
+    <Card className="p-5 sm:p-6" glow={COLORS.gold} data-session-card>
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/90">Today</p>
-          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">{planned.every((s) => s.done || s.disabled) ? "Path complete" : `${total}-minute path`}</h1>
-        </div>
-        <div className="flex items-center gap-2 rounded-2xl bg-white/5 px-3 py-2 text-sm">
-          <Flame size={16} className={streak ? "text-amber-400" : "text-slate-400"} />
-          <span className="font-bold text-white tabular-nums">{streak}</span>
-          <span className="text-slate-400">day{streak === 1 ? "" : "s"}</span>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/90">Today · {total} min</p>
+          <h1 className="mt-1 text-2xl font-extrabold text-white sm:text-3xl">{complete ? "Today's path is done" : started ? "Pick up where you left off" : "Your session is ready"}</h1>
         </div>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${total ? (doneMin / total) * 100 : 100}%` }} /></div>
-      <ol className="mt-4 space-y-2">
-        {planned.map((s) => {
-          const isNext = nextStep && s.id === nextStep.id;
-          return (
-            <li key={s.id}>
-              <button
-                onClick={s.onClick}
-                disabled={s.disabled}
-                className={`flex w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition ${isNext ? "border-amber-400/70 bg-amber-400/10" : "border-white/5 bg-white/[0.03] hover:bg-white/[0.06]"} disabled:cursor-default disabled:hover:bg-white/[0.03]`}
-              >
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg ${s.done ? "bg-emerald-400 text-emerald-950" : isNext ? "border-2 border-amber-400" : "border-2 border-white/20"}`}>
-                  {s.done && <Check size={15} strokeWidth={3} />}
-                </span>
-                <span className={`flex-1 font-semibold ${s.done ? "text-slate-400 line-through decoration-slate-500" : "text-white"}`} style={s.thai ? { fontFamily: FONT_STACKS.loop.th } : undefined}>{s.label}</span>
-                {s.note && <span className="hidden text-xs text-slate-400 sm:inline">{s.note}</span>}
-                <span className="text-xs tabular-nums text-slate-400">{s.min} min</span>
-              </button>
-              {s.note && <div className="px-12 pt-0.5 text-xs text-slate-400 sm:hidden">{s.note}</div>}
-            </li>
-          );
-        })}
-      </ol>
-      <div className="mt-5 grid gap-4 sm:grid-cols-[1.4fr_1fr]">
-        <div>
-          <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Reviews due, next 7 days</div>
-          <ForecastChart days={forecast(srs, now)} />
+      {complete ? (
+        <div className="mt-4 grid gap-2">
+          <p className="text-sm text-slate-300">Everything planned for today is done. Extra practice drills what you know without moving your schedule.</p>
+          <button type="button" onClick={onExtra} disabled={!extraCount} className="rounded-2xl border border-purple-400/40 bg-purple-500/15 px-4 py-3 font-semibold text-purple-100 disabled:opacity-40"><Dumbbell size={16} className="mr-1.5 inline" />Extra practice</button>
         </div>
-        <div className="grid grid-cols-3 gap-2 self-end text-center">
-          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(reads)}</div><div className="text-[11px] text-slate-400">reading</div></div>
-          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(seconds)}</div><div className="text-[11px] text-slate-400">tone / class</div></div>
-          <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{acc == null ? "–" : `${Math.round(acc * 100)}%`}</div><div className="text-[11px] text-slate-400">this week</div></div>
-        </div>
+      ) : (
+        <button type="button" onClick={onStart} data-start-session className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-4 text-lg font-extrabold text-black shadow-[0_8px_30px_#F59E0B44] active:scale-[0.99]">
+          <Play size={20} /> {started ? "Continue today's session" : "Start today's session"}
+        </button>
+      )}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {planned.map((st) => (
+          <button key={st.id} type="button" onClick={() => onRunStep(st)} disabled={st.disabled} data-step-chip={st.id}
+            className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${st.done ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-200" : "border-white/10 bg-white/[0.04] text-slate-300"} disabled:opacity-50`}>
+            {st.done && <Check size={12} strokeWidth={3} />}{st.short || st.label}
+          </button>
+        ))}
       </div>
+    </Card>
+  );
+}
+
+/**
+ * The daily session (A1): one full-screen flow through the plan. Review-style steps open their
+ * own sheet on top; practice tools run inside the session. Between steps it shows the plan with
+ * the next step ready, and it ends on a summary of the day.
+ */
+function SessionSheet({ open, onClose, plan, startStep, renderTool, log, streak, tomorrow }) {
+  const [view, setView] = useState({ kind: "list" }); // list | tool
+  useBackClose(open, onClose);
+  useWakeLock(open);
+  const run = (step) => {
+    if (!step || step.disabled) return;
+    if (step.tool) setView({ kind: "tool", step: step.id, tool: step.tool });
+    else step.onClick?.();
+  };
+  // Opening from a chip or the big button runs that step straight away.
+  useEffect(() => {
+    if (!open) return;
+    setView({ kind: "list" });
+    if (startStep) run(startStep);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!open) return null;
+  const { planned, total, doneMin, nextStep, complete } = plan;
+  const toolStep = view.kind === "tool" ? planned.find((st) => st.id === view.step) : null;
+  const today = log[todayKey()] || {};
+  const position = toolStep ? planned.indexOf(toolStep) + 1 : planned.filter((st) => st.done).length;
+  const right = today.reviewsRight || 0;
+  return (
+    <div className="fixed inset-0 z-40 flex flex-col" style={{ backgroundColor: "rgb(var(--sk-bg))", backgroundImage: "var(--sk-glow)" }} data-session>
+      <div className="flex items-center gap-3 border-b border-white/5 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+        {toolStep ? (
+          <button type="button" onClick={() => setView({ kind: "list" })} className="flex items-center gap-1 rounded-xl px-2 py-1.5 text-sm font-semibold text-slate-300 hover:bg-white/5"><ChevronLeft size={16} />Steps</button>
+        ) : <div className="text-sm font-bold text-white">Today's session</div>}
+        <div className="flex flex-1 justify-center gap-1" aria-label={`${planned.filter((st) => st.done).length} of ${planned.length} steps done`}>
+          {planned.map((st) => <span key={st.id} className={`h-1.5 w-6 rounded-full ${st.done ? "bg-emerald-400" : toolStep?.id === st.id ? "bg-amber-400" : "bg-white/15"}`} />)}
+        </div>
+        <button type="button" onClick={onClose} aria-label="Pause the session" className="rounded-xl p-2 text-slate-300 hover:bg-white/5"><X size={18} /></button>
+      </div>
+      {toolStep ? (
+        <>
+          <div className="flex-1 overflow-y-auto px-4 py-4" data-session-tool={view.tool}>
+            <p className="mb-3 text-xs font-bold uppercase tracking-widest text-amber-300">Step {position} of {planned.length} · {toolStep.label}{toolStep.note ? ` · ${toolStep.note}` : ""}</p>
+            <div className="mx-auto max-w-3xl">{renderTool(view.tool)}</div>
+          </div>
+          <div className="border-t border-white/5 bg-sk-bg/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+            <button type="button" data-session-next onClick={() => { const nxt = planned.find((st) => st.id !== toolStep.id && !st.done && !st.disabled); setView({ kind: "list" }); if (toolStep.done && nxt) run(nxt); }}
+              className={`w-full rounded-2xl py-3 font-bold ${toolStep.done ? "bg-amber-500 text-black" : "border border-white/15 text-slate-200"}`}>
+              {toolStep.done ? "Done · next step" : "Back to the steps"}
+            </button>
+          </div>
+        </>
+      ) : complete ? (
+        <div className="flex-1 overflow-y-auto px-4 py-8" data-session-done>
+          <div className="mx-auto max-w-md text-center">
+            <Trophy size={48} className="mx-auto text-amber-400" />
+            <h2 className="mt-3 text-2xl font-extrabold text-white">Session complete</h2>
+            <p className="mt-1 text-sm text-slate-400">{total} minutes planned, all done.</p>
+            <div className="mt-6 grid grid-cols-2 gap-3 text-left">
+              {[
+                ["Reviews", today.reviews ? `${today.reviews} · ${Math.round((right / today.reviews) * 100)}% right` : "None due"],
+                ["New items", today.lessons ? String(today.lessons) : "None today"],
+                ["Ear trials", String(today.ear || 0)],
+                ["Streak", `${streak} day${streak === 1 ? "" : "s"}`],
+              ].map(([k, v]) => (
+                <div key={k} className="rounded-2xl bg-white/[0.04] p-3"><div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{k}</div><div className="mt-0.5 font-bold text-white">{v}</div></div>
+              ))}
+            </div>
+            <p className="mt-4 text-sm text-slate-300">{tomorrow ? `About ${tomorrow} review${tomorrow === 1 ? "" : "s"} come due tomorrow.` : "Nothing new comes due tomorrow."}</p>
+            <button type="button" onClick={onClose} className="mt-6 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Done</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-4 py-5" data-session-list>
+          <div className="mx-auto max-w-md">
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/90">Today · {total} min</p>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${total ? (doneMin / total) * 100 : 100}%` }} /></div>
+            <ol className="mt-4 space-y-2">{planned.map((st) => <PlanStep key={st.id} step={st} isNext={nextStep?.id === st.id} onRun={run} />)}</ol>
+            {nextStep && (
+              <button type="button" onClick={() => run(nextStep)} data-session-go className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-4 text-lg font-extrabold text-black active:scale-[0.99]">
+                <Play size={20} /> <span style={nextStep.thai ? { fontFamily: FONT_STACKS.loop.th } : undefined}>{nextStep.label}</span>
+              </button>
+            )}
+            <button type="button" onClick={onClose} className="mt-3 w-full rounded-2xl py-2 text-sm text-slate-400 underline">Stop for today</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Me tab: streak, recall, the week's forecast. Hidden numbers until there is something to count (D3). */
+function StatsCard({ srs, now, log }) {
+  const streak = computeStreak(log);
+  const acc = weekAccuracy(log);
+  const started = Object.values(srs).some((x) => x?.stage > 0);
+  const reads = Object.values(srs).reduce((a, x) => [a[0] + (x?.stats?.read?.[0] || 0), a[1] + (x?.stats?.read?.[1] || 0)], [0, 0]);
+  const seconds = Object.values(srs).reduce((a, x) => [a[0] + (x?.stats?.second?.[0] || 0), a[1] + (x?.stats?.second?.[1] || 0)], [0, 0]);
+  const pct = ([r, n]) => (n ? `${Math.round((r / n) * 100)}%` : "–");
+  return (
+    <Card className="p-5" data-stats>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/90">Your progress</p>
+        <div className="flex items-center gap-1.5 text-sm"><Flame size={16} className={streak ? "text-amber-400" : "text-slate-400"} /><span className="font-bold text-white">{streak}</span><span className="text-slate-400">day{streak === 1 ? "" : "s"} in a row</span></div>
+      </div>
+      {started ? (
+        <div className="mt-4 grid gap-4 sm:grid-cols-[1.4fr_1fr]">
+          <div>
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Reviews due, next 7 days</div>
+            <ForecastChart days={forecast(srs, now)} />
+          </div>
+          <div className="grid grid-cols-3 gap-2 self-end text-center">
+            <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(reads)}</div><div className="text-[11px] text-slate-400">reading</div></div>
+            <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{pct(seconds)}</div><div className="text-[11px] text-slate-400">tone / class</div></div>
+            <div className="rounded-xl bg-white/[0.04] p-2"><div className="font-black text-white tabular-nums">{acc == null ? "–" : `${Math.round(acc * 100)}%`}</div><div className="text-[11px] text-slate-400">this week</div></div>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-3 text-sm text-slate-400" data-stats-empty>Your forecast and recall rates appear here after your first lesson.</p>
+      )}
     </Card>
   );
 }
@@ -3547,7 +3767,7 @@ const ONBOARD_QUESTIONS = [
     { v: "reads", label: "I can read slowly", sub: "Open every level now." },
   ] },
   { key: "minutes", q: "How many minutes a day?", options: [
-    { v: 5, label: "5 minutes", sub: "Reviews plus a short drill." },
+    { v: 5, label: "5 minutes", sub: "Reviews plus a few new items." },
     { v: 12, label: "12 minutes", sub: "Recommended." },
     { v: 20, label: "20 minutes", sub: "Faster progress." },
   ] },
@@ -3612,7 +3832,7 @@ function RiverButton({ n, tried, onRun, compact }) {
   );
 }
 
-function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [], trials = {}, setTrials, prodSrs = {}, setProdSrs, setPref }) {
+function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [], trials = {}, setTrials, prodSrs = {}, setProdSrs, setPref, renderTool, onGoLearn, sessionOnOpen, onSessionOpened }) {
   const prefs = usePrefs();
   const course = useMemo(() => courseItems(mode), [mode]);
   const [trialRun, setTrialRun] = useState(null);
@@ -3625,6 +3845,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const [practiceRun, setPracticeRun] = useState(null); // { queue, directions }
   const [practiceLevel, setPracticeLevel] = useState("all");
   const practiceAnswered = useRef(0);
+  const [session, setSession] = useState(null); // { start: step | null } while the daily session is open
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30000);
@@ -3729,6 +3950,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       if (parts.read != null) stats.read = bump(stats.read, parts.read);
       if (parts.second != null) stats.second = bump(stats.second, parts.second);
       if (parts.spell != null) stats.spell = bump(stats.spell || [0, 0], parts.spell);
+      if (parts.meaning != null) stats.meaning = bump(stats.meaning || [0, 0], parts.meaning);
       return { ...prev, [id]: { ...scheduleItem(cur, { read: grade(parts.read), second: grade(parts.second), spell: grade(parts.spell) }, Date.now(), { ladder: true }), stats } };
     });
     ["read", "second", "spell"].forEach((k) => logReview(id, k, grade(parts[k])));
@@ -3814,26 +4036,145 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
   const gateLevel = COURSE_LEVELS.find((l) => !unlockedLevels.has(l.n));
   const readyTrial = gateLevel && gateLevel.n > 1 && trialStates[gateLevel.n - 1]?.status === "ready" ? gateLevel.n - 1 : null;
 
-  return (
-    <div className="space-y-5">
+  const plan = planToday({
+    srs,
+    reviewCount: reviewQueue.length,
+    lessonQueue,
+    leeches,
+    log,
+    dailyMinutes,
+    onReviews: () => setReviewOpen(true),
+    onLessons: () => setLessonOpen(true),
+    onLeech: () => setLeechOpen(true),
+    practice: todayPractice({ srs, mode, bridgeSched, log, sandbox, streetOpen: unlockedLevels.has(7) }),
+    trial: readyTrial ? { label: `Guardian Trial · Level ${readyTrial}`, onClick: () => startTrial(readyTrial) } : null,
+    prod: prodStep,
+  });
+  const todayLog = log[todayKey()] || {};
+  const startedToday = ["reviews", "lessons", "ear", "drills", "traces", "bridge", "signs", "shadow", "prod"].some((k) => (todayLog[k] || 0) > 0);
+  const streak = computeStreak(log);
+  // Outside the session, a tool step opens its tab; inside, it runs in the session.
+  const runStepAlone = (st) => { if (st.tool === "ear") onOpenEar?.(); else if (st.tool) onPractice?.(st.tool); else st.onClick?.(); };
+  const openSession = (start = null) => setSession({ start });
+  useEffect(() => {
+    if (!sessionOnOpen) return;
+    openSession();
+    onSessionOpened?.();
+  }, [sessionOnOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tomorrowDue = forecast(srs, now)[1]?.count || 0;
+  const currentLvl = COURSE_LEVELS.find((l) => l.n === currentLevel);
+  const currentGoal = currentLvl ? levelGoal(currentLvl.n, course, srs, chain) : null;
+  const nextLvl = COURSE_LEVELS.find((l) => l.n === currentLevel + 1);
+  // The next tool to open, so the home screen always says what's coming (D3).
+  const nextTool = !sandbox && [
+    { open: unlockedLevels.has(3), text: "the Mekong Predictor, with Level 3" },
+    { open: gardenOpen, text: "the Word Garden, when you pass the Level 4 trial" },
+    { open: unlockedLevels.has(7), text: "Street Reader and Ride the line, with Level 7" },
+    { open: unlockedLevels.has(8), text: "Talk Paths, with Level 8" },
+  ].find((t) => !t.open);
+
+  const modals = (
+    <>
       <GuardianTrial run={trialRun} mode={mode} font={font} onClose={() => setTrialRun(null)} onFinish={finishTrial} />
-      <TodayPath
-        trial={readyTrial ? { label: `Guardian Trial · Level ${readyTrial}`, onClick: () => startTrial(readyTrial) } : null}
-        srs={srs}
-        now={now}
-        reviewCount={reviewQueue.length}
-        lessonQueue={lessonQueue}
-        leeches={leeches}
-        log={log}
-        dailyMinutes={dailyMinutes}
-        onReviews={() => setReviewOpen(true)}
-        onLessons={() => setLessonOpen(true)}
-        onEar={onOpenEar}
-        onLeech={() => setLeechOpen(true)}
-        practice={todayPractice({ srs, mode, bridgeSched, log, sandbox, streetOpen: unlockedLevels.has(7) })}
-        onPractice={onPractice}
-        prod={prodStep}
-      />
+      {prodOpen && prodToday && <ProductionSession open={prodOpen} onClose={() => setProdOpen(false)} queue={prodToday.queue} deck={prodSrs} setDeck={setProdSrs} logActivity={logActivity} />}
+      <Ledger open={ledgerOpen} onClose={() => setLedgerOpen(false)} log={log} srs={srs} ear={ear} mode={mode} />
+      <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
+      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} order={(q) => reviewOrder(q, srs)} />
+      <ReviewModal practice open={!!practiceRun} queue={practiceRun?.queue || []} directions={practiceRun?.directions || {}} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={closePractice} onAnswer={practiceAnswer} order={(q) => q} />
+      <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
+      <SessionSheet open={!!session} startStep={session?.start} onClose={() => setSession(null)} plan={plan} renderTool={renderTool || (() => null)} log={log} streak={streak} tomorrow={tomorrowDue} />
+    </>
+  );
+
+  if (view === "today") {
+    return (
+      <div className="space-y-4" data-view="today">
+        <SessionCard plan={plan} streak={streak} started={startedToday} onStart={() => openSession(plan.nextStep)} onRunStep={(st) => openSession(st)} onExtra={startPractice} extraCount={practiceCount} />
+        {currentLvl && (
+          <Card className="p-4 sm:p-5" data-home-level>
+            <div className="flex items-center gap-4">
+              {(() => {
+                const g = currentGoal;
+                const frac = g && g.need ? Math.min(1, g.done / g.need) : 0;
+                const c = 2 * Math.PI * 24;
+                return (
+                  <svg width="60" height="60" viewBox="0 0 60 60" className="shrink-0" aria-hidden="true">
+                    <circle cx="30" cy="30" r="24" fill="none" stroke="rgb(var(--sk-slate-600) / 0.35)" strokeWidth="7" />
+                    <circle cx="30" cy="30" r="24" fill="none" stroke={currentLvl.accent} strokeWidth="7" strokeLinecap="round" strokeDasharray={`${frac * c} ${c}`} transform="rotate(-90 30 30)" />
+                    <text x="30" y="35" textAnchor="middle" fontSize="15" fontWeight="800" fill="currentColor" className="text-white">{currentLvl.n}</text>
+                  </svg>
+                );
+              })()}
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold uppercase tracking-widest" style={{ color: currentLvl.accent }}>Level {currentLvl.n}</div>
+                <h2 className="font-bold text-white">{currentLvl.title}</h2>
+                <p className="text-xs text-slate-400">
+                  {readyTrial === currentLvl.n
+                    ? "The guardian is ready to test you."
+                    : currentGoal && nextLvl && !unlockedLevels.has(nextLvl.n)
+                      ? `${currentGoal.done} of ${currentGoal.total} ${currentGoal.letters ? "letters" : "items"} learned. The guardian comes at ${currentGoal.need}.`
+                      : `${course.filter((i) => i.level === currentLvl.n && stageOf(i.id) >= 2).length} of ${course.filter((i) => i.level === currentLvl.n).length} items learned.`}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {readyTrial === currentLvl.n && <button type="button" onClick={() => startTrial(readyTrial)} className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Face the guardian</button>}
+              <button type="button" onClick={onGoLearn} className="rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/5">Course map <ChevronRight size={14} className="inline" /></button>
+              <button type="button" onClick={() => setLessonOpen(true)} disabled={!lessonQueue.length} data-home-lessons className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 disabled:opacity-40">{lessonQueue.length} lesson{lessonQueue.length === 1 ? "" : "s"}</button>
+              <button type="button" onClick={() => setReviewOpen(true)} disabled={!reviewQueue.length} data-home-reviews className="rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 disabled:opacity-40">{reviewQueue.length} review{reviewQueue.length === 1 ? "" : "s"}</button>
+            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              {reviewQueue.length ? "Reviews are waiting." : nextReview ? `Next review in ${fmtWait(nextReview)}.` : "Reviews start after your first lesson."}
+            </p>
+          </Card>
+        )}
+        {nextTool && <p className="px-1 text-sm text-slate-400" data-next-tool><Lock size={13} className="mr-1 inline text-slate-500" />Next to open: {nextTool.text}.</p>}
+        {sandbox && <p className="px-1 text-xs text-emerald-300">Sandbox is on: every level is open and all learned items are reviewable now.</p>}
+        {modals}
+      </div>
+    );
+  }
+
+  if (view === "me") {
+    return (
+      <div className="space-y-5" data-view="me">
+        <StatsCard srs={srs} now={now} log={log} />
+      <Card className="p-4 sm:p-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest" style={{ color: TONES.rising.ink }}><Ear size={13} /> Tone ear</div>
+            <p className="text-xs text-slate-400">Listening accuracy per tone, from the Ear Dojo.</p>
+          </div>
+          <button onClick={onOpenEar} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/15"><Target size={13} className="mr-1 inline" />Train</button>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {TONE_ORDER.map((t) => {
+            const acc = earAccuracy(ear, t);
+            return (
+              <div key={t} className="rounded-xl bg-white/[0.03] p-2 text-center">
+                <div className="flex justify-center" style={{ color: TONES[t].ink }}><ToneGlyph tone={t} size={20} /></div>
+                <div className="text-sm font-black tabular-nums text-white">{acc == null ? "–" : `${Math.round(acc * 100)}%`}</div>
+                <div className="text-[11px]" style={{ color: TONES[t].ink }}>{TONES[t].name}</div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+      <button onClick={() => setLedgerOpen(true)} className="flex w-full items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4 text-left">
+        <BarChart3 size={18} className="text-amber-300" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-bold uppercase tracking-widest text-amber-300">Ledger</div>
+          <div className="text-xs text-slate-400">Your year, recall by track, hardest items and what's due.</div>
+        </div>
+        <ChevronRight size={16} className="text-slate-400" />
+      </button>
+        {modals}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5" data-view="learn">
       <Card className="overflow-hidden">
         <div className="relative p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-amber-400/80">SRS Shrine</p>
@@ -3894,48 +4235,17 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
             <div key={s.name} className="rounded-xl bg-white/[0.03] px-2 py-2 text-center">
               <div className="flex items-center justify-center gap-1 text-lg font-black text-white"><StageIcon stage={idx} size={15} />{counts[idx]}</div>
               <div className="text-[11px] font-semibold text-slate-300">{s.name}</div>
-              <div className="text-[11px] text-slate-400">{s.alias}</div>
+              <div className="text-[11px] text-slate-400">{s.plain}</div>
             </div>
           ))}
         </div>
       </Card>
 
-      <Card className="p-4 sm:p-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest" style={{ color: TONES.rising.ink }}><Ear size={13} /> Tone ear</div>
-            <p className="text-xs text-slate-400">Listening accuracy per tone, from the Ear Dojo.</p>
-          </div>
-          <button onClick={onOpenEar} className="rounded-xl bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/15"><Target size={13} className="mr-1 inline" />Train</button>
-        </div>
-        <div className="grid grid-cols-5 gap-2">
-          {TONE_ORDER.map((t) => {
-            const acc = earAccuracy(ear, t);
-            return (
-              <div key={t} className="rounded-xl bg-white/[0.03] p-2 text-center">
-                <div className="flex justify-center" style={{ color: TONES[t].ink }}><ToneGlyph tone={t} size={20} /></div>
-                <div className="text-sm font-black tabular-nums text-white">{acc == null ? "–" : `${Math.round(acc * 100)}%`}</div>
-                <div className="text-[11px]" style={{ color: TONES[t].ink }}>{TONES[t].name}</div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
 
-      <button onClick={() => setLedgerOpen(true)} className="flex w-full items-center gap-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4 text-left">
-        <BarChart3 size={18} className="text-amber-300" />
-        <div className="min-w-0 flex-1">
-          <div className="text-xs font-bold uppercase tracking-widest text-amber-300">Ledger</div>
-          <div className="text-xs text-slate-400">Your year, recall by track, hardest items and what's due.</div>
-        </div>
-        <ChevronRight size={16} className="text-slate-400" />
-      </button>
       <Ledger open={ledgerOpen} onClose={() => setLedgerOpen(false)} log={log} srs={srs} ear={ear} mode={mode} />
 
       <SentenceDeck mode={mode} font={font} deck={sentSrs} setDeck={setSentSrs} saved={decoderSaved} mined={mined} sandbox={sandbox} logActivity={logActivity} course={course} stageOf={stageOf} />
       <ProductionCard on={prodOn} onTurnOn={() => setPref?.("production", true)} cards={prodList} deck={prodSrs} sandbox={sandbox} script={prodScript(mode)} closeCount={prodClose} onOpen={() => setProdOpen(true)} />
-      {/* Outside the card: its backdrop blur would trap the fixed sheet. */}
-      {prodOpen && prodToday && <ProductionSession open={prodOpen} onClose={() => setProdOpen(false)} queue={prodToday.queue} deck={prodSrs} setDeck={setProdSrs} logActivity={logActivity} />}
 
       {/* River passport: one stamp per Guardian Trial. */}
       <div className="flex flex-wrap items-center gap-1.5 px-1" data-passport>
@@ -3980,7 +4290,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
                     </div>
                     <div className="text-right text-xs text-slate-400">
                       <div className="font-bold text-slate-200">{burned ? `${burned}/${items.length} burned` : `${done}/${items.length}`}</div>
-                      {burned ? `${done} at Novice Monk+` : "at Novice Monk+"}
+                      {burned ? `${done} learned` : "learned"}
                       {trialStates[lvl.n]?.status === "passed" && trialStates[lvl.n].met && !trialStates[lvl.n].trial.gold && (
                         <button type="button" data-trial-replay={lvl.n} onClick={() => startTrial(lvl.n)} className="mt-1 block w-full rounded-full border border-amber-400/50 px-2 py-0.5 text-[11px] font-semibold text-amber-300">{trialStates[lvl.n].trial.legacy || trialStates[lvl.n].trial.river ? "Take the trial" : "Go for gold"}</button>
                       )}
@@ -4061,11 +4371,7 @@ function Shrine({ srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, l
       </div>
 
       <WordGarden open={gardenOpen} boxes={boxes} goal={(bed, box) => gardenBoxGoal(bed, box, course, srs, chain)} course={course} planted={garden} setPlanted={setGarden} stageOf={stageOf} mode={mode} font={font} onInspect={onInspect} />
-
-      <LessonModal open={lessonOpen} queue={lessonQueue.slice(0, dailyMinutes <= 5 ? 3 : 5)} mode={mode} font={font} onClose={() => setLessonOpen(false)} onFinish={finishLessons} />
-      <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} order={(q) => reviewOrder(q, srs)} />
-      <ReviewModal practice open={!!practiceRun} queue={practiceRun?.queue || []} directions={practiceRun?.directions || {}} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={closePractice} onAnswer={practiceAnswer} order={(q) => q} />
-      <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
+      {modals}
     </div>
   );
 }
@@ -4193,7 +4499,7 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
       <div className="mt-4 space-y-3 text-sm">
         <ExampleLine item={item} mode={mode} />
         {!item.example && <InfoRow icon={Sparkles} label="Mnemonic" text={item.mnemonic} color={COLORS.gold} />}
-        {item.loop && <InfoRow icon={PenTool} label="Head-loop topology" text={item.loop} color={COLORS.cyan} />}
+        {item.loop && <InfoRow icon={PenTool} label="How to write it" text={item.loop} color={COLORS.cyan} />}
         {item.bridge && <InfoRow icon={Languages} label="Mekong bridge" text={item.bridge} color={COLORS.purple} />}
       </div>
       <div className="mt-5 flex items-center justify-between gap-2">
@@ -4289,10 +4595,10 @@ function SentenceDeck({ mode, font, deck = {}, setDeck, saved, mined, sandbox, l
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-amber-300"><MessageCircle size={13} /> Sentence deck</div>
-          <p className="text-xs text-slate-400">Whole lines: read them, hear them, fill the gap. {known}/{cards.length} started.</p>
+          <p className="text-xs text-slate-400">Whole lines: read them, hear them, fill the gap. {known || due.length || fresh.length ? `${known}/${cards.length} started.` : "A line opens once every word in it is learned (Novice Monk)."}</p>
         </div>
         <button disabled={!due.length && !fresh.length} onClick={() => setOpen(true)} className="shrink-0 rounded-xl bg-amber-500 px-3 py-2 text-xs font-bold text-black disabled:bg-white/10 disabled:text-slate-400">
-          {due.length || fresh.length ? `${due.length} due · ${fresh.length} new` : "All done"}
+          {due.length || fresh.length ? `${due.length} due · ${fresh.length} new` : known ? "Done for today" : "Not open yet"}
         </button>
       </div>
     </Card>
@@ -5024,6 +5330,7 @@ function syllableLabels(item) {
 }
 
 function ToneChoice({ onPick, picked, correct, disabled, options = TONE_ORDER }) {
+  const prefs = usePrefs();
   useEffect(() => {
     if (disabled) return undefined;
     const onKey = (e) => {
@@ -5048,7 +5355,7 @@ function ToneChoice({ onPick, picked, correct, disabled, options = TONE_ORDER })
           >
             <ToneMini tone={k} />
             <div className="text-xs font-semibold" style={{ color: t.ink }}>{t.name}</div>
-            <div className="text-[11px] text-slate-400">{i + 1} · {t.chao}</div>
+            <div className="text-[11px] text-slate-400">{i + 1}{prefs.pitchNumbers ? ` · ${t.chao}` : ""}</div>
           </button>
         );
       })}
@@ -5107,8 +5414,12 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const [list, setList] = useState([]);
   const [idx, setIdx] = useState(0);
   const [input, setInput] = useState("");
-  const [phase, setPhase] = useState("read"); // read → second → result
+  const [phase, setPhase] = useState("read"); // read → meaning (words) → second → result
   const [readOk, setReadOk] = useState(null);
+  const [meaningInput, setMeaningInput] = useState("");
+  const [meaningOk, setMeaningOk] = useState(null);
+  const [nudge, setNudge] = useState(null); // an answer typed into the wrong box
+  const meaningRef = useRef(null);
   const [pick, setPick] = useState(null);
   const [tonePicks, setTonePicks] = useState([]);
   const [dirs, setDirs] = useState({});
@@ -5146,6 +5457,9 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
       setInput("");
       setPhase("read");
       setReadOk(null);
+      setMeaningInput("");
+      setMeaningOk(null);
+      setNudge(null);
       setPick(null);
       setTonePicks([]);
       setScore({ right: 0, wrong: 0 });
@@ -5155,6 +5469,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
 
   useEffect(() => {
     if (open && phase === "read") inputRef.current?.focus();
+    if (open && phase === "meaning") meaningRef.current?.focus();
   }, [open, idx, phase]);
 
   // Reverse reviews: hear the word, see its reading and meaning, pick the spelling.
@@ -5196,11 +5511,14 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
     else audio.speakHumanVoice(item.ttsTh);
   };
 
-  const finish = (rOk, sOk) => {
-    const ok = rOk && (sOk == null || sOk);
+  const two = item ? twoPartReview(item) : false;
+  // The reading track passes only when both the reading and (for words) the meaning are right.
+  const finish = (rOk, sOk, mOk = meaningOk) => {
+    const recall = rOk && (!two || !!mOk);
+    const ok = recall && (sOk == null || sOk);
     haptic(ok ? "ok" : "miss");
     setScore((s) => ({ ...s, [ok ? "right" : "wrong"]: s[ok ? "right" : "wrong"] + 1 }));
-    pending.current = { id: item.id, ok, parts: { read: rOk, second: sOk, kind } };
+    pending.current = { id: item.id, ok, parts: { read: recall, second: sOk, kind, ...(two ? { reading: rOk, meaning: !!mOk } : {}) } };
     setPhase("result");
     speak();
   };
@@ -5220,6 +5538,9 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
     setInput("");
     setPhase("read");
     setReadOk(null);
+    setMeaningInput("");
+    setMeaningOk(null);
+    setNudge(null);
     setPick(null);
     setTonePicks([]);
     setIdx(idx + 1);
@@ -5228,7 +5549,27 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const submit = (e) => {
     e.preventDefault();
     if (phase === "result") return next();
+    if (phase === "meaning") {
+      if (!meaningInput.trim()) return undefined;
+      const mOk = meaningMatch(item, meaningInput);
+      // The reading again, typed in the meaning box: ask again instead of marking it wrong.
+      if (!mOk && readingMatch(item, meaningInput)) { setNudge("That's the reading. What does it mean in English?"); return undefined; }
+      setNudge(null);
+      setMeaningOk(mOk);
+      if (kind) setPhase("second");
+      else finish(readOk, null, mOk);
+      return undefined;
+    }
     if (phase !== "read" || !input.trim()) return undefined;
+    if (two) {
+      const rOk = readingMatch(item, input);
+      // English in the reading box: ask for the sound instead of marking it wrong.
+      if (!rOk && meaningMatch(item, input)) { setNudge("That's the meaning. First type how it sounds, like maa or khâaw."); return undefined; }
+      setNudge(null);
+      setReadOk(rOk);
+      setPhase("meaning");
+      return undefined;
+    }
     const ok = isCorrect(item, input);
     setReadOk(ok);
     if (kind) setPhase("second");
@@ -5252,12 +5593,20 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   };
 
   const readingNote = phase === "result" && !readOk ? diagnoseReading(item, input) : null;
+  const meaningMissed = two && phase === "result" && meaningOk === false;
   const secondNote = phase === "result" && secondOk === false
     ? multi
       ? sylTones.map((t, i) => (tonePicks[i] === t ? null : `${sylLabels[i]} is ${TONES[t].name} (${TONES[t].chao}), not ${TONES[tonePicks[i]].name}.${item.loParts ? ` ${explainLaoTone(item.loParts[i])}` : ""}`)).filter(Boolean).join(" ")
       : kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
     : null;
-  const allOk = phase === "result" && readOk && secondOk !== false;
+  const allOk = phase === "result" && readOk && (!two || meaningOk) && secondOk !== false;
+  const missLabel = (() => {
+    const parts = [!readOk && "reading", meaningMissed && "meaning", secondOk === false && (kind === "tone" ? "tone" : "class")].filter(Boolean);
+    if (!parts.length) return "Correct";
+    const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+    return `${text[0].toUpperCase()}${text.slice(1)} missed`;
+  })();
+  const n2 = two ? 3 : 2;
 
   return (
     <Modal open={open} onClose={close} title={finished ? (practice ? "Practice complete" : "Review complete") : `${practice ? "Practice" : "Review"} ${idx + 1} / ${list.length}`} accent={item ? TIER[item.tier].color : COLORS.gold}>
@@ -5324,7 +5673,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
           <div className="sk-on-color rounded-3xl p-8 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
             <DualText th={item.th} lo={item.lo} mode={mode} font={fontFor ? fontFor(item) : font} className={`${item.th.length + item.lo.length > 8 ? "text-5xl sm:text-6xl" : "text-7xl"} leading-[1.35] text-white`} />
           </div>
-          <label htmlFor="review-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">1 · Type the reading or the meaning</label>
+          <label htmlFor="review-input" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">{two ? "1 · Reading: how does it sound?" : "1 · Type the sound or the letter's name word"}</label>
           <input
             id="review-input"
             ref={inputRef}
@@ -5336,13 +5685,34 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
             autoComplete="off"
             spellCheck={false}
             enterKeyHint="go"
-            placeholder="e.g. maa / horse"
-            className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${readOk === true ? "border-emerald-400 bg-emerald-500/20" : readOk === false ? "border-rose-400 bg-rose-500/20" : "border-white/15 focus:border-amber-400"}`}
+            placeholder={two ? "e.g. maa" : "e.g. k / chicken"}
+            className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${readOk === true && phase === "result" ? "border-emerald-400 bg-emerald-500/20" : readOk === false && phase === "result" ? "border-rose-400 bg-rose-500/20" : readOk != null ? "border-white/25" : "border-white/15 focus:border-amber-400"}`}
           />
+          {two && phase !== "read" && (
+            <>
+              <label htmlFor="review-meaning" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">2 · Meaning</label>
+              <input
+                id="review-meaning"
+                ref={meaningRef}
+                value={meaningInput}
+                onChange={(e) => setMeaningInput(e.target.value)}
+                readOnly={phase !== "meaning"}
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="off"
+                spellCheck={false}
+                enterKeyHint="go"
+                placeholder="e.g. horse"
+                data-meaning-input
+                className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${meaningOk === true && phase === "result" ? "border-emerald-400 bg-emerald-500/20" : meaningOk === false && phase === "result" ? "border-rose-400 bg-rose-500/20" : meaningOk != null ? "border-white/25" : "border-white/15 focus:border-amber-400"}`}
+              />
+            </>
+          )}
+          {nudge && <p data-review-nudge className="mt-2 text-center text-sm text-amber-300">{nudge}</p>}
           {kind && phase !== "read" && (
             <div className="mt-4">
               <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
-                2 · {multi ? "Tone of each syllable (keys 1–5)" : kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
+                {n2} · {multi ? "Tone of each syllable (keys 1–5)" : kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
               </div>
               {multi && (
                 <div className="mb-3 flex flex-wrap justify-center gap-2">
@@ -5368,7 +5738,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
           {phase === "result" && (
             <div className="mt-3 space-y-2 rounded-2xl bg-white/[0.04] p-3 text-sm">
               <div className={`font-bold ${allOk ? "text-emerald-300" : "text-rose-300"}`}>
-                {allOk ? "Correct" : !readOk && secondOk === false ? "Reading and " + (kind === "tone" ? "tone" : "class") + " missed" : !readOk ? "Reading missed" : kind === "tone" ? "Tone missed" : "Class missed"}
+                {missLabel}
               </div>
               {readingNote && <p className="text-rose-200">{readingNote}</p>}
               {secondNote && <p className="text-rose-200">{secondNote}</p>}
@@ -5382,7 +5752,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
             </div>
           )}
           {phase !== "second" && (
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex gap-2" data-review-actions>
               {allOk && !practice && (
                 <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5" title="Right, but you weren't sure: it will come back sooner">
                   I guessed
@@ -5410,13 +5780,13 @@ function Inspector({ item, mode, font, srs, onClose }) {
           <ItemHero item={item} mode={mode} font={font} />
           <div className="mt-3 flex justify-center"><AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} /></div>
           <div className="mt-3 text-center text-xs text-slate-400">
-            SRS stage: <StageIcon stage={st} size={13} className="mb-0.5 inline" /> <span className="font-bold text-white">{SRS_STAGES[st].name}</span> ({SRS_STAGES[st].alias})
+            SRS stage: <StageIcon stage={st} size={13} className="mb-0.5 inline" /> <span className="font-bold text-white">{SRS_STAGES[st].name}</span> ({SRS_STAGES[st].plain})
             {srs[item.id]?.ladder != null && <span data-ladder-rung> · rung {srs[item.id].ladder + 1} of {LADDER_HOURS.length}</span>}
           </div>
         </div>
         <div className="space-y-3 text-sm">
           <InfoRow icon={Sparkles} label="Mnemonic story" text={item.mnemonic} color={COLORS.gold} />
-          {item.loop && <InfoRow icon={PenTool} label="Head-loop topology" text={item.loop} color={COLORS.cyan} />}
+          {item.loop && <InfoRow icon={PenTool} label="How to write it" text={item.loop} color={COLORS.cyan} />}
           {tone && (
             <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-3">
               <div className="text-[11px] font-bold uppercase tracking-wider text-pink-300">Tone equation (Thai)</div>
@@ -10755,6 +11125,7 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
         <div className="flex flex-wrap gap-2">
           <Chip active={s.prefs.tint} onClick={() => s.setPref("tint", !s.prefs.tint)}>{s.prefs.tint ? "Tone colours on" : "Tone colours off"}</Chip>
           <Chip active={s.prefs.randomFonts} onClick={() => s.setPref("randomFonts", !s.prefs.randomFonts)}>{s.prefs.randomFonts ? "Random fonts in reviews" : "Same font in reviews"}</Chip>
+          <Chip active={s.prefs.pitchNumbers} onClick={() => s.setPref("pitchNumbers", !s.prefs.pitchNumbers)}>{s.prefs.pitchNumbers ? "Pitch numbers shown (33, 214)" : "Pitch numbers hidden"}</Chip>
         </div>
       </SettingRow>
       <SettingRow label="Daily goal">
@@ -10849,20 +11220,37 @@ const READ_TABS = [
   { id: "ride", label: "Ride the line", icon: Train },
 ];
 // Older saved tabs map onto the new hubs.
-const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"] };
+const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"], shrine: ["today"] };
 
+// 0.33: Today, Learn, Practice (Ear, Write, Lab), Read, Me.
 const TABS = [
-  { id: "shrine", label: "Shrine", icon: Landmark },
+  { id: "today", label: "Today", icon: Home },
+  { id: "learn", label: "Learn", icon: MapIcon },
+  { id: "practice", label: "Practice", icon: Dumbbell },
+  { id: "read", label: "Read", icon: BookOpen },
+  { id: "me", label: "Me", icon: User },
+];
+const PRACTICE_TABS = [
   { id: "ear", label: "Ear", icon: Ear },
   { id: "tracer", label: "Write", icon: PenTool },
   { id: "lab", label: "Lab", icon: FlaskConical },
-  { id: "read", label: "Read", icon: BookOpen },
 ];
+const isPracticeTab = (t) => PRACTICE_TABS.some((p) => p.id === t);
+/** The bottom-bar tab a screen belongs to. */
+const navTab = (t) => (isPracticeTab(t) ? "practice" : t);
 
 export default function SuvarnaKani() {
   const initial = useMemo(() => loadState() || {}, []);
   const launchGo = typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("text") ? "decoder" : new URLSearchParams(window.location.search).get("go")) : null;
-  const [tab, setTab] = useState(launchGo === "decoder" ? "read" : launchGo === "ear" ? "ear" : launchGo === "reviews" ? "shrine" : LEGACY_TAB[initial.tab]?.[0] || initial.tab || "shrine");
+  const [tab, setTabRaw] = useState(launchGo === "decoder" ? "read" : launchGo === "ear" ? "ear" : launchGo === "reviews" ? "today" : LEGACY_TAB[initial.tab]?.[0] || initial.tab || "today");
+  const [practiceTab, setPracticeTab] = useState(initial.practiceTab || (isPracticeTab(initial.tab) ? initial.tab : "ear"));
+  const setTab = (t) => {
+    if (t === "practice") { setTabRaw(practiceTab); return; }
+    if (isPracticeTab(t)) setPracticeTab(t);
+    setTabRaw(t);
+  };
+  // The Today button can open the daily session straight away.
+  const [sessionNow, setSessionNow] = useState(false);
   const [labTab, setLabTab] = useState(LEGACY_TAB[initial.tab]?.[1] === "reactor" || LEGACY_TAB[initial.tab]?.[1] === "orbit" ? LEGACY_TAB[initial.tab][1] : initial.labTab || "reactor");
   const [readTab, setReadTab] = useState(launchGo === "decoder" ? "decoder" : initial.readTab || "decoder");
   const [earTab, setEarTab] = useState(initial.earTab || "dojo");
@@ -10938,7 +11326,7 @@ export default function SuvarnaKani() {
     if (meta) meta.setAttribute("content", theme === "light" ? "#FAF7F0" : prefs.trueBlack ? "#000000" : "#0B0F19");
   }, [theme, prefs.trueBlack]);
   // Back from another tab returns to the Shrine instead of closing the app.
-  useBackClose(tab !== "shrine", () => setTab("shrine"));
+  useBackClose(tab !== "today", () => setTab("today"));
   const logActivity = useCallback((delta) => {
     setLog((prev) => {
       const key = todayKey();
@@ -10983,6 +11371,15 @@ export default function SuvarnaKani() {
     window.scrollTo?.(0, 0);
   };
   const [inspect, setInspect] = useState(null);
+  // Practice tools as the daily session shows them (A1).
+  const renderTool = (kind) => {
+    if (kind === "ear") return <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />;
+    if (kind === "shadow") return <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />;
+    if (kind === "trace") return <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} kb={kb} setKb={setKb} />;
+    if (kind === "mekong") return <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} srs={srs} sandbox={sandbox} introSeen={prefs.mekongIntro} onIntroSeen={() => setPrefs((p) => ({ ...p, mekongIntro: true }))} />;
+    if (kind === "sign") return <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} sandbox={sandbox} />;
+    return null;
+  };
 
   useEffect(() => {
     if (document.querySelector("[data-suvarnakani-fonts]")) return;
@@ -11011,11 +11408,11 @@ export default function SuvarnaKani() {
   }, []);
 
   const stateRef = useRef(null);
-  stateRef.current = { tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, prodSrs, drills, library, marks, kb, trials };
+  stateRef.current = { tab, practiceTab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, earTab, shadow, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, prodSrs, drills, library, marks, kb, trials };
   useEffect(() => {
     if (restoringState) return;
     saveState(stateRef.current);
-  }, [earTab, shadow, tab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, prodSrs, drills, library, marks, kb, trials]);
+  }, [earTab, shadow, tab, practiceTab, labTab, readTab, mode, font, sandbox, rate, muted, srs, ear, log, dailyMinutes, onboarded, bridge, bridgeSched, streetBest, prefs, seenVersion, decoderSaved, gauntlet, garden, sentSrs, prodSrs, drills, library, marks, kb, trials]);
   const levelsOpen = useMemo(() => openLevels(srs, mode, sandbox, trials, garden), [srs, mode, sandbox, trials, garden]);
   // A snapshot of the state as the app opens each day, before today's work changes it.
   useEffect(() => { if (stateRef.current.onboarded) snapshotToday(stateRef.current); }, []);
@@ -11059,11 +11456,11 @@ export default function SuvarnaKani() {
               <div className="text-[11px] text-amber-300/80"><span style={{ fontFamily: FONT_STACKS.loop.th }}>สุวรรณกานิ</span> · <span style={{ fontFamily: FONT_STACKS.loop.lo }}>ສຸວັນນະການິ</span></div>
             </div>
           </div>
-          <div className="flex rounded-xl border border-white/10 bg-white/5 p-0.5 text-xs font-semibold">
-            {[["dual", "Dual", "ไทย/ລາວ"], ["th", "Thai", "ไทย"], ["lo", "Lao", "ລາວ"]].map(([k, en, native]) => (
-              <button key={k} onClick={() => setMode(k)} className={`rounded-lg px-2.5 py-1.5 transition ${mode === k ? "bg-amber-500 text-black" : "text-slate-300 hover:text-white"}`}><span className="hidden sm:inline">{en} </span>{native}</button>
-            ))}
-          </div>
+          {/* The course switch lives in Settings and on the Me tab (D2); the header shows the streak. */}
+          <button type="button" onClick={() => setTab("me")} data-header-streak title="Days in a row" className="flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1.5 text-xs font-semibold text-slate-200">
+            <Flame size={14} className={computeStreak(log) ? "text-amber-400" : "text-slate-500"} />{computeStreak(log)}
+            <span className="ml-1 border-l border-white/10 pl-1.5 text-slate-400">{mode === "dual" ? "ไทย·ລາວ" : mode === "lo" ? "ລາວ" : "ไทย"}</span>
+          </button>
           {sandbox && <span title="All levels unlocked" className="rounded-xl border border-emerald-400/40 bg-emerald-500/10 p-2 text-emerald-200"><Unlock size={14} /></span>}
           <button onClick={() => setSettingsOpen(true)} aria-label="Settings" className="relative rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10">
             <Settings size={16} />
@@ -11072,7 +11469,7 @@ export default function SuvarnaKani() {
         </div>
         <nav className="mx-auto hidden max-w-6xl gap-1 px-4 pb-2 sm:flex">
           {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${tab === t.id ? "bg-white/10 text-amber-300" : "text-slate-400 hover:text-white"}`}>
+            <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${navTab(tab) === t.id ? "bg-white/10 text-amber-300" : "text-slate-400 hover:text-white"}`}>
               <t.icon size={16} /> {t.label}
             </button>
           ))}
@@ -11080,7 +11477,33 @@ export default function SuvarnaKani() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-5">
-        {tab === "shrine" && <Shrine srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} trials={trials} setTrials={setTrials} prodSrs={prodSrs} setProdSrs={setProdSrs} setPref={setPref} />}
+        {["today", "learn", "me"].includes(tab) && (
+          <Shrine key={tab} view={tab} srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} trials={trials} setTrials={setTrials} prodSrs={prodSrs} setProdSrs={setProdSrs} setPref={setPref}
+            renderTool={renderTool} onGoLearn={() => { setTab("learn"); window.scrollTo?.(0, 0); }} sessionOnOpen={tab === "today" && sessionNow} onSessionOpened={() => setSessionNow(false)} />
+        )}
+        {tab === "me" && (
+          <Card className="mt-5 p-4 sm:p-5" data-me-course>
+            <div className="text-xs font-bold uppercase tracking-widest text-amber-300">Course</div>
+            <p className="mt-1 text-xs text-slate-400">Which script the course teaches. Your progress in each is kept.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[["th", "Thai", "ไทย"], ["lo", "Lao", "ລາວ"], ["dual", "Thai + Lao", "ไทย·ລາວ"]].map(([k, en, native]) => (
+                <Chip key={k} active={mode === k} onClick={() => setMode(k)}>{en} <span className="opacity-80">{native}</span></Chip>
+              ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/5"><Settings size={14} className="mr-1 inline" />Settings and backup</button>
+            </div>
+          </Card>
+        )}
+        {isPracticeTab(tab) && (
+          <div className="mb-3 grid grid-cols-3 gap-1 rounded-2xl bg-amber-500/10 p-1" role="tablist" aria-label="Practice" data-practice-switch>
+            {PRACTICE_TABS.map((t) => (
+              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold transition ${tab === t.id ? "bg-amber-500 text-black" : "text-slate-300 hover:text-white"}`}>
+                <t.icon size={16} /> {t.label}
+              </button>
+            ))}
+          </div>
+        )}
         {tab === "ear" && (
           <>
             <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
@@ -11122,7 +11545,7 @@ export default function SuvarnaKani() {
 
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-white/10 bg-sk-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
         {TABS.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold ${tab === t.id ? "text-amber-400" : "text-slate-400"}`}>
+          <button key={t.id} onClick={() => setTab(t.id)} data-nav={t.id} className={`flex flex-col items-center gap-0.5 py-2 text-[11px] font-semibold ${navTab(tab) === t.id ? "text-amber-400" : "text-slate-400"}`}>
             <t.icon size={20} />
             {t.label}
           </button>
@@ -11153,4 +11576,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
