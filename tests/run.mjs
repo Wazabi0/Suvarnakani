@@ -667,5 +667,31 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   if (xo) check(T.readingMatch(xo, "wao"), "the Lao course still takes wao");
 }
 
+// 0.37.0 C3: readable examples and their fill-the-gap cards.
+{
+  const th = T.courseItems("th");
+  const w = (c) => th.find((i) => i.th === c && i.tier !== "glyph");
+  const words = th.filter((i) => i.tier !== "glyph");
+  const none = words.filter((i) => !T.examplesFor(i, "th").length).map((i) => i.th);
+  check(none.length <= 3, `almost every Thai word has an example line (missing: ${none.join(" ")})`);
+  const kin = T.examplesFor(w("กิน"), "th", () => 0);
+  check(kin.length === 3 && kin.every((e) => e.words.some((x) => x.w === "กิน")), "กิน gets three lines that use it");
+  check(new Set(kin.map((e) => e.use)).size === 3, "the three lines show กิน next to different words");
+  check(kin.some((e) => !e.readable) && T.examplesFor(w("กิน"), "th", () => 1).every((e) => e.readable), "a line is readable once its other words are started");
+  const readFirst = T.examplesFor(w("ไป"), "th", (id) => (id === w("ฉัน").id ? 1 : 0));
+  check(readFirst.length > 0, "ไป has example lines");
+  const lo = T.courseItems("lo").filter((i) => i.tier !== "glyph");
+  check(lo.filter((i) => T.examplesFor(i, "lo").length).length >= lo.length * 0.9, "most Lao words have a Lao example line");
+  check(T.examplePool("lo").every((e) => e.words.every((x) => !/[ก-๛]/.test(x.w))), "Lao lines hold no Thai letters");
+  check(T.SENTENCE_GAPS.length === 0, "every garden line parses into course words");
+  const none2 = T.sentenceCards({ mode: "th", course: th, stageOf: () => 2 }).filter((c) => c.id.startsWith("gy-"));
+  check(none2.length === 0, "no example gap cards before Naga Adept");
+  const cards = T.sentenceCards({ mode: "th", course: th, stageOf: () => 3 });
+  const gy = cards.filter((c) => c.id.startsWith("gy-"));
+  check(gy.length > 50 && gy.every((c) => c.words.includes(c.gap)), "Naga Adept words get fill-the-gap lines with the word as the gap");
+  check(new Set(cards.map((c) => c.id)).size === cards.length, "sentence card ids are unique");
+  check(T.textKey("ฉัน กิน") === T.textKey("ฉันกิน"), "text keys ignore spaces");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
