@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.34.0";
+const APP_VERSION = "0.35.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2379,6 +2379,54 @@ function useVoiceBank() {
   useEffect(() => { const fn = () => force((n) => n + 1); voiceBankListeners.add(fn); return () => voiceBankListeners.delete(fn); }, []);
   return voiceBank;
 }
+/* ---------------------------------------------------------------------------
+ * Native voices (C1). Real Thai speakers from Mozilla Common Voice (CC0), cut to
+ * word and sentence clips by scripts/voices and shipped in voices/th/. The
+ * index lists clips by text; the audio itself downloads on first play and the
+ * service worker keeps it for offline. Without an index (the single-file build,
+ * or before any pack exists) everything falls back to the phone's voice.
+ * ------------------------------------------------------------------------- */
+const nativeKey = (text) => sanitizeThai(text).replace(/\s+/g, "");
+const nativeClips = new Map(); // nativeKey -> [{ f, s, g }]
+const nativeTurn = new Map(); // nativeKey -> next speaker index, so plays rotate speakers
+const nativeInfo = { loaded: false, clips: 0, words: 0, speakers: 0, source: "" };
+async function loadNativeVoices(base = "voices/th/") {
+  if (typeof fetch === "undefined" || typeof location === "undefined" || !/^https?:$/.test(location.protocol)) return nativeInfo;
+  try {
+    const r = await fetch(`${base}index.json`, { cache: "no-cache" });
+    if (!r.ok) return nativeInfo;
+    applyNativeIndex(await r.json(), base);
+  } catch { /* no pack yet */ }
+  return nativeInfo;
+}
+/** Index format: { source, license, speakers, clips: { "<thai>": [[file, speaker, "m"|"f"|""], ...] } } */
+function applyNativeIndex(idx, base = "voices/th/") {
+  nativeClips.clear();
+  let clips = 0;
+  const speakers = new Set();
+  Object.entries(idx?.clips || {}).forEach(([text, list]) => {
+    const key = nativeKey(text);
+    if (!key || !Array.isArray(list) || !list.length) return;
+    nativeClips.set(key, list.map(([f, sp, g]) => ({ f: base + f, s: sp, g: g || "" })));
+    clips += list.length;
+    list.forEach(([, sp]) => speakers.add(sp));
+  });
+  Object.assign(nativeInfo, { loaded: nativeClips.size > 0, clips, words: nativeClips.size, speakers: speakers.size, source: idx?.source || "" });
+  notifyVoiceBank();
+  return nativeInfo;
+}
+/** The next native clip for this Thai text, rotating speakers; `who` prefers a speaker's gender. */
+function nativeClip(text, who = null) {
+  if (runtimePrefs.nativeVoices === false) return null;
+  const key = nativeKey(text);
+  const list = nativeClips.get(key);
+  if (!list) return null;
+  const pool = who ? list.filter((c) => c.g === who[0]) : list;
+  const from = pool.length ? pool : list;
+  const n = nativeTurn.get(key) || 0;
+  nativeTurn.set(key, n + 1);
+  return from[n % from.length];
+}
 const blobToB64 = (blob) => new Promise((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.readAsDataURL(blob); });
 async function exportVoices() {
   try {
@@ -2416,9 +2464,10 @@ function playUrl(url, rate = 1) {
     const a = new Audio(url);
     playUrl.current = a;
     try { a.preservesPitch = true; a.playbackRate = Math.min(1.3, Math.max(0.7, rate)); } catch { /* old browser */ }
-    a.onended = resolve;
-    a.onerror = resolve;
-    a.play().catch(resolve);
+    // Resolves true when the clip played, false when it could not (offline, not cached).
+    a.onended = () => resolve(true);
+    a.onerror = () => resolve(false);
+    a.play().catch(() => resolve(false));
   });
 }
 
@@ -2490,7 +2539,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false, toolsSeen: {}, vacation: null, placementAsk: false };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false, toolsSeen: {}, vacation: null, placementAsk: false, nativeVoices: true, hearIt: true };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 /** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
 function loadPrefs(saved) {
@@ -2530,6 +2579,10 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.35.0", title: "Hear it", points: [
+    "Hear-it reviews: once a word is solid (Naga Adept), some spelling turns play only the sound. Pick the spelling, or for words, the meaning. \"Can't listen now\" shows the text for that card, and Settings can turn hear-it off.",
+    "Ready for native speakers: when recordings from real Thai speakers are added, every Thai word that has one plays it instead of the phone voice, rotating speakers each time and working offline after the first play. Settings → Voices shows what's installed.",
+  ] },
   { v: "0.34.0", title: "Better lessons and checks", points: [
     "Lessons come in beats: meet each item (you hear it straight away, with one line to remember it and the rest under More), then try it by picking its sound from lookalikes before the next one.",
     "Reviews now check vowel length and puffed vs plain sounds. Type khao for ข้าว and you'll be asked: khaaw (long) or khao (short)? They're different words.",
@@ -2770,16 +2823,18 @@ class SuvarnaMobileAudioEngine {
     this.cancelSpeech();
     const token = this.seqToken;
     // A Voice Bank recording of the same text wins over the synthetic voice.
-    const recOf = (e) => (e.lo && voiceBank.get(voiceKey("lo", e.lo))) || (e.th && voiceBank.get(voiceKey("th", e.th)));
-    if (list.some(recOf) || !("speechSynthesis" in window)) {
+    // Then a native speaker's clip (Thai only: a Lao word is never read with a Thai recording).
+    const recOf = (e) => (e.lo && voiceBank.get(voiceKey("lo", e.lo))) || (e.th && voiceBank.get(voiceKey("th", e.th))) || (!e.lo && e.th && nativeClip(e.th, e.who)?.f) || null;
+    const urls = list.map(recOf); // once, so speaker rotation advances once per play
+    if (urls.some(Boolean) || !("speechSynthesis" in window)) {
       const run = async () => {
         for (let i = 0; i < list.length; i += 1) {
           if (token !== this.seqToken) return;
-          const url = recOf(list[i]);
-          if (url) {
-            // eslint-disable-next-line no-await-in-loop
-            await playUrl(url, (list[i].rate || this.rate) / 0.85);
-          } else if ("speechSynthesis" in window) {
+          const url = urls[i];
+          // eslint-disable-next-line no-await-in-loop
+          const played = url ? await playUrl(url, (list[i].rate || this.rate) / 0.85) : false;
+          if (token !== this.seqToken) return;
+          if (!played && "speechSynthesis" in window) {
             // eslint-disable-next-line no-await-in-loop
             await new Promise((res) => {
               const e = list[i];
@@ -3757,11 +3812,34 @@ function leechOptions(item) {
 }
 
 /** Which direction to review: "spell" (sound → Thai) once an item is known, alternating by due date. */
-function reviewDirection(st) {
+function reviewDirection(st, item = null, hearIt = true) {
   if (!st || st.stage < 2 || !st.fsrs?.read) return "read";
   const due = (t) => t.last + fsrsInterval(t.S) * DAY;
-  if (!st.fsrs.spell) return "spell";
-  return due(st.fsrs.spell) <= due(st.fsrs.read) ? "spell" : "read";
+  const spell = !st.fsrs.spell || due(st.fsrs.spell) <= due(st.fsrs.read);
+  return spell ? hearOrSpell(st, item, hearIt) : "read";
+}
+/**
+ * Hear-it reviews (B4): past Novice Monk a spelling turn plays the word with no
+ * text at all. Letters ask for the spelling; words alternate spelling and meaning.
+ */
+const HEAR_STAGE = 3;
+function hearOrSpell(st, item, hearIt = true) {
+  if (!hearIt || !st || st.stage < HEAR_STAGE) return "spell";
+  if (!item || !twoPartReview(item)) return "hear-spell";
+  return ((st.stats?.spell?.[1] || 0) % 2) ? "hear-meaning" : "hear-spell";
+}
+/** Meaning choices for a hear-it card: the word and up to three sound-alikes with different meanings. */
+const plainMeaning = (m) => (m || "").replace(/\s*\([^)]*[\u0E00-\u0EFF][^)]*\)/g, "").trim();
+function hearMeaningOptions(item, others) {
+  const seen = new Set([plainMeaning(item.meaning).toLowerCase()]);
+  const out = [item];
+  others.forEach((o) => {
+    const m = plainMeaning(o.meaning).toLowerCase();
+    if (!m || seen.has(m) || out.length >= 4) return;
+    seen.add(m);
+    out.push(o);
+  });
+  return out;
 }
 
 function LeechDrill({ open, leeches, mode, font, onClose, onFinish }) {
@@ -3997,7 +4075,7 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
     () => course.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= (prefs.vacation?.since ?? now)); }),
     [srs, now, sandbox, course, prefs.vacation]
   );
-  const reviewDirections = useMemo(() => Object.fromEntries(reviewQueue.map((i) => [i.id, reviewDirection(srs[i.id])])), [reviewQueue]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reviewDirections = useMemo(() => Object.fromEntries(reviewQueue.map((i) => [i.id, reviewDirection(srs[i.id], i, prefs.hearIt !== false)])), [reviewQueue]); // eslint-disable-line react-hooks/exhaustive-deps
   // Opened from the home-screen "Reviews" shortcut.
   useEffect(() => {
     if (!autoReview) return;
@@ -4069,7 +4147,7 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
     const queue = practicePool(course, srs, Date.now(), { level: practiceLevel === "all" ? null : Number(practiceLevel) });
     if (!queue.length) return;
     practiceAnswered.current = 0;
-    setPracticeRun({ queue, directions: Object.fromEntries(queue.map((i) => [i.id, practiceDirection(srs[i.id])])) });
+    setPracticeRun({ queue, directions: Object.fromEntries(queue.map((i) => [i.id, practiceDirection(srs[i.id], i, prefs.hearIt !== false)])) });
   };
   const practiceAnswer = () => { practiceAnswered.current += 1; };
   const closePractice = () => {
@@ -5428,7 +5506,7 @@ function practicePool(course, srs, now = Date.now(), { level = null, size = PRAC
   return shuffle([...live.slice(0, size - burnSlots), ...burned.slice(0, burnSlots)]);
 }
 /** Practice mixes directions: read for new items, read or spell for anything past Lotus Seed. */
-const practiceDirection = (st) => (!st || st.stage < 2 ? "read" : Math.random() < 0.5 ? "spell" : "read");
+const practiceDirection = (st, item = null, hearIt = true) => (!st || st.stage < 2 ? "read" : Math.random() < 0.5 ? hearOrSpell(st, item, hearIt) : "read");
 
 function shuffle(arr) {
   const a = [...arr];
@@ -5647,8 +5725,12 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   // Reverse reviews: hear the word, see its reading and meaning, pick the spelling.
   useEffect(() => {
     const it = list[idx];
-    if (!open || !it || dirs[it.id] !== "spell") return setSpell(null);
-    setSpell({ id: it.id, options: shuffle([it, ...confusables(it, mode === "lo" ? "lo" : "th")]), pick: null });
+    const dir = it ? dirs[it.id] : null;
+    if (!open || !it || !(dir === "spell" || dir?.startsWith("hear"))) return setSpell(null);
+    const others = confusables(it, mode === "lo" ? "lo" : "th");
+    const muted = getAudio().muted; // no sound, no hear-it: show the text as before
+    const hear = muted ? null : dir === "hear-meaning" ? "meaning" : dir === "hear-spell" ? "spell" : null;
+    setSpell({ id: it.id, hear, options: shuffle(hear === "meaning" ? hearMeaningOptions(it, others) : [it, ...others]), pick: null });
     const audio = getAudio();
     if (mode === "lo") audio.speakHumanVoice(it.ttsLo || it.ttsTh, it.lo);
     else audio.speakHumanVoice(it.ttsTh);
@@ -5811,21 +5893,39 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
         </div>
       ) : spell && spell.id === item.id ? (
         <div>
-          <div className="text-center text-xs font-bold uppercase tracking-widest text-slate-400">Which spelling? (keys 1–4)</div>
-          <div className="mt-3 flex items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-            <button type="button" onClick={speak} aria-label="Play again" className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-amber-500 text-black active:scale-95"><Volume2 size={28} /></button>
-            <div>
-              <div className="text-2xl font-bold text-white">{mode === "lo" ? item.loRoman : R(item.thRoman.split(" ·")[0])}</div>
-              {/* Thai in brackets (e.g. "child (เด็ก)") would give the spelling away. */}
-              <div className="text-slate-300">{item.meaning.replace(/\s*\([^)]*[\u0E00-\u0EFF][^)]*\)/g, "")}</div>
-            </div>
+          <div className="text-center text-xs font-bold uppercase tracking-widest text-slate-400">
+            {spell.hear === "meaning" ? "Hear it: what does it mean? (keys 1–4)" : spell.hear ? "Hear it: which spelling? (keys 1–4)" : "Which spelling? (keys 1–4)"}
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          {spell.hear ? (
+            // Hear-it (B4): only the sound until the answer is in.
+            <div data-hear-card className="mt-3 flex flex-col items-center gap-2 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <button type="button" onClick={speak} aria-label="Play again" className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-500 text-black active:scale-95"><Volume2 size={34} /></button>
+              <div className="text-xs text-slate-400">Tap to hear it again</div>
+              {!spell.pick && (
+                <button type="button" data-hear-skip onClick={() => setSpell({ ...spell, hear: null, options: spell.hear === "meaning" ? shuffle([item, ...confusables(item, mode === "lo" ? "lo" : "th")]) : spell.options })} className="text-xs font-semibold text-slate-400 underline underline-offset-2">Can't listen now</button>
+              )}
+            </div>
+          ) : (
+            <div className="mt-3 flex items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+              <button type="button" onClick={speak} aria-label="Play again" className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-amber-500 text-black active:scale-95"><Volume2 size={28} /></button>
+              <div>
+                <div className="text-2xl font-bold text-white">{mode === "lo" ? item.loRoman : R(item.thRoman.split(" ·")[0])}</div>
+                {/* Thai in brackets (e.g. "child (เด็ก)") would give the spelling away. */}
+                <div className="text-slate-300">{plainMeaning(item.meaning)}</div>
+              </div>
+            </div>
+          )}
+          <div className={`mt-4 grid gap-3 ${spell.hear === "meaning" ? "grid-cols-1" : "grid-cols-2"}`}>
             {spell.options.map((o, i) => {
               const right = o.id === item.id;
               const picked = spell.pick === o.id;
               const state = !spell.pick ? "border-white/10 bg-white/[0.04]" : right ? "border-emerald-400 bg-emerald-500/20" : picked ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
-              return (
+              return spell.hear === "meaning" ? (
+                <button key={o.id} data-spell-opt type="button" onClick={() => pickSpelling(o)} disabled={!!spell.pick} className={`relative rounded-2xl border-2 px-8 py-3 text-left text-base font-semibold text-white transition ${state}`}>
+                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-500">{i + 1}</span>
+                  {plainMeaning(o.meaning)}
+                </button>
+              ) : (
                 <button key={o.id} data-spell-opt type="button" onClick={() => pickSpelling(o)} disabled={!!spell.pick} className={`relative rounded-2xl border-2 px-2 py-4 text-center transition ${state}`}>
                   <span className="absolute left-2 top-1.5 text-[11px] text-slate-500">{i + 1}</span>
                   <span className={`${(mode === "lo" ? o.lo : o.th).length > 5 ? "text-3xl" : "text-5xl"} leading-[1.5] text-white`} style={{ fontFamily: FONT_STACKS[font][mode === "lo" ? "lo" : "th"] }}>{mode === "lo" ? o.lo : o.th}</span>
@@ -5839,11 +5939,12 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
                 <div className="font-bold text-emerald-300">Correct</div>
               ) : (
                 <>
-                  <div className="font-bold text-rose-300">Spelling missed</div>
+                  <div className="font-bold text-rose-300">{spell.hear === "meaning" ? "Meaning missed" : "Spelling missed"}</div>
                   {(() => { const o = spell.options.find((x) => x.id === spell.pick); return o ? <p className="text-rose-200">{mode === "lo" ? o.lo : o.th} is {mode === "lo" ? o.loRoman : o.thRoman.split(" ·")[0]}, "{o.meaning}". {item.trap || ""}</p> : null; })()}
                 </>
               )}
               <div className="text-slate-300"><DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-3xl leading-[1.5] text-white" /></div>
+              {spell.hear && <div className="text-slate-300">{mode === "lo" ? item.loRoman : R(item.thRoman.split(" ·")[0])} · {plainMeaning(item.meaning)}</div>}
             </div>
           )}
           {phase === "result" && (
@@ -6217,7 +6318,8 @@ function SpeedNote({ ear, setEar }) {
           {ear.varyVoices === false ? "One voice" : `Rotating ${n} voices`}
         </button>
       )}
-      {n <= 1 && <span>One Thai voice on this phone. Recordings in the Voice Bank add real ones.</span>}
+      {nativeInfo.loaded && <span>Words with native recordings rotate {nativeInfo.speakers} real speakers.</span>}
+      {n <= 1 && !nativeInfo.loaded && <span>One Thai voice on this phone. Recordings in the Voice Bank add real ones.</span>}
     </div>
   );
 }
@@ -11247,7 +11349,28 @@ function VoiceSettings({ prefs, setPref }) {
         <button data-voice-test="male" onClick={() => test("male")} className="rounded-xl bg-sky-500/15 py-2 text-sm text-sky-200"><Volume2 size={14} className="mr-1 inline" />Male</button>
       </div>
       {how && <p className="mt-2 text-xs text-slate-400">{how}</p>}
+      <NativeVoiceRow prefs={prefs} setPref={setPref} />
     </>
+  );
+}
+
+/** Native speakers (C1): what's installed, and a switch back to the phone's voice. */
+function NativeVoiceRow({ prefs, setPref }) {
+  useVoiceBank(); // re-render when the index arrives
+  return (
+    <div data-native-voices className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-semibold text-slate-200">Native speakers</span>
+        {nativeInfo.loaded && (
+          <Chip active={prefs.nativeVoices !== false} onClick={() => setPref("nativeVoices", prefs.nativeVoices === false)}>{prefs.nativeVoices !== false ? "On" : "Off"}</Chip>
+        )}
+      </div>
+      <p className="mt-1 text-slate-400">
+        {nativeInfo.loaded
+          ? `${nativeInfo.words} Thai words and sentences recorded by ${nativeInfo.speakers} people${nativeInfo.source ? ` (${nativeInfo.source})` : ""}. Each play picks the next speaker; clips download the first time you hear them and then work offline. Lao stays on the phone voice and your Voice Bank.`
+          : "No native recordings installed yet, so the app uses your phone's Thai voice. Your own Voice Bank recordings always come first."}
+      </p>
+    </div>
   );
 }
 
@@ -11359,6 +11482,11 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
           <Chip active={s.prefs.tint} onClick={() => s.setPref("tint", !s.prefs.tint)}>{s.prefs.tint ? "Tone colours on" : "Tone colours off"}</Chip>
           <Chip active={s.prefs.randomFonts} onClick={() => s.setPref("randomFonts", !s.prefs.randomFonts)}>{s.prefs.randomFonts ? "Random fonts in reviews" : "Same font in reviews"}</Chip>
           <Chip active={s.prefs.pitchNumbers} onClick={() => s.setPref("pitchNumbers", !s.prefs.pitchNumbers)}>{s.prefs.pitchNumbers ? "Pitch numbers shown (33, 214)" : "Pitch numbers hidden"}</Chip>
+        </div>
+      </SettingRow>
+      <SettingRow label="Hear-it reviews" hint="Once a word is solid (Naga Adept), some spelling turns play only the sound: pick the spelling, or for words, the meaning. Turn off if you often review where you can't listen.">
+        <div className="flex flex-wrap gap-2" data-hear-pref>
+          <Chip active={s.prefs.hearIt !== false} onClick={() => s.setPref("hearIt", s.prefs.hearIt === false)}>{s.prefs.hearIt !== false ? "Hear-it on" : "Hear-it off"}</Chip>
         </div>
       </SettingRow>
       <SettingRow label="Vacation" hint="Away for a while? Reviews stop coming due and your streak holds. When you come back, every due date moves forward by the time you were away.">
@@ -11574,6 +11702,7 @@ export default function SuvarnaKani() {
   runtimePrefs.haptics = prefs.haptics;
   runtimePrefs.roman = prefs.roman;
   runtimePrefs.vacationSince = prefs.vacation?.since ?? null;
+  runtimePrefs.nativeVoices = prefs.nativeVoices;
   useEffect(() => {
     document.documentElement.style.fontSize = prefs.textSize === 100 ? "" : `${prefs.textSize}%`;
   }, [prefs.textSize]);
@@ -11610,6 +11739,7 @@ export default function SuvarnaKani() {
     const id = setInterval(() => { if (document.visibilityState === "visible" && Date.now() - lastTouch < 90000) logActivity({ secs: 30 }); }, 30000);
     pruneReviews();
     loadVoiceBank();
+    loadNativeVoices();
     return () => { clearInterval(id); window.removeEventListener("pointerdown", touch); window.removeEventListener("keydown", touch); };
   }, [logActivity]);
   // Lamps for streak milestones, once each (V5).
@@ -11865,4 +11995,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
