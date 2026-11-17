@@ -553,5 +553,32 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   eq(T.practiceDirection({ stage: 1 }), "read", "new items practise reading");
 }
 
+// 0.33: two-part reviews. English alone must not pass the reading; the meaning box takes English.
+{
+  const all = [...T.courseItems("th"), ...T.courseItems("lo")];
+  const find = (th) => all.find((i) => i.th === th && i.tier !== "glyph");
+  const baan = find("บ้าน");
+  check(T.twoPartReview(baan) && !T.twoPartReview(all.find((i) => i.tier === "glyph")), "words are two-part, letters are not");
+  check(T.readingMatch(baan, "baan") && !T.readingMatch(baan, "house"), "บ้าน: baan is the reading, house is not");
+  check(T.meaningMatch(baan, "house") && T.meaningMatch(baan, "hosue") && T.meaningMatch(baan, "a house") && !T.meaningMatch(baan, "baan"), "บ้าน: meaning with typo and article");
+  const khaa = find("ขา");
+  check(T.readingMatch(khaa, "kha") && T.meaningMatch(khaa, "leg") && !T.readingMatch(khaa, "leg"), "ขา reading and meaning");
+  const kaa = find("กา");
+  check(T.meaningMatch(kaa, "crwo") && !T.meaningMatch(kaa, "cow"), "กา: a swapped pair passes, a different word doesn't");
+  const sawat = find("สวัสดี");
+  check(T.readingMatch(sawat, "sawasdee") && T.meaningMatch(sawat, "hi") && !T.readingMatch(sawat, "hello"), "สวัสดี spellings");
+  // Across the course, every item's own reading and first meaning pass their own box.
+  let leaks = 0, misses = 0;
+  for (const it of all.filter(T.twoPartReview)) {
+    const first = it.meaning.split(/[/·,(]/)[0].trim();
+    if (!T.meaningMatch(it, first)) misses += 1;
+    if (!T.readingMatch(it, it.thRoman.split(" ·")[0]) && !T.readingMatch(it, it.loRoman)) misses += 1;
+    // An English meaning should not pass as a reading, except loanwords (menu, baht).
+    if (/^[a-z ]{4,}$/.test(first) && T.readingMatch(it, first) && !/menu|baht|kip/.test(first)) leaks += 1;
+  }
+  eq(misses, 0, "own reading and meaning always pass");
+  eq(leaks, 0, "English meanings never pass as readings");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
