@@ -622,6 +622,8 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   eq(T.plainMeaning("child (เด็ก)"), "child", "meaning choices hide Thai in brackets");
 
   eq(T.nativeKey("สวัสดี ครับ!"), "สวัสดีครับ", "native keys drop spaces and non-Thai");
+  eq(T.nativeKey("ท\u0E4Dางาน"), "ทำงาน", "sara am written as two marks matches ำ");
+  eq(T.nativeKey("น\u0E4D\u0E49\u0E32"), "น้ำ", "with a tone mark between");
   T.applyNativeIndex({ source: "test", clips: { "กิน": [["a.mp3", "s1", "f"], ["b.mp3", "s2", "m"]], "ห้อง น้ำ": [["c.mp3", "s1", "f"]] } }, "v/");
   check(T.nativeInfo.loaded && T.nativeInfo.words === 2 && T.nativeInfo.speakers === 2 && T.nativeInfo.clips === 3, "index counts words, clips and speakers");
   eq([T.nativeClip("กิน").f, T.nativeClip("กิน").f, T.nativeClip("กิน").f], ["v/a.mp3", "v/b.mp3", "v/a.mp3"], "plays rotate speakers");

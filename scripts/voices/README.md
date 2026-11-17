@@ -32,8 +32,11 @@ pip install pythainlp   # optional: splits the transcripts into words first
 
 ```sh
 node scripts/voices/targets.mjs                     # every Thai text the app speaks → voices/targets.json
-python3 scripts/voices/make_pack.py prepare --cv ~/cv/cv-corpus-23.0/th --work ~/cv/work
-mfa align ~/cv/work/corpus thai_mfa thai_mfa ~/cv/work/aligned --clean
+python3 scripts/voices/make_pack.py prepare --cv ~/cv/cv-corpus-23.0/th --work ~/cv/work --dict ~/Documents/MFA/pretrained_models/dictionary/thai_mfa.dict
+mfa align ~/cv/work/corpus thai_mfa thai_mfa ~/cv/work/aligned --clean --no_tokenization
+python3 scripts/voices/make_pack.py verify  --cv ~/cv/cv-corpus-23.0/th --work ~/cv/work \
+    --dict ~/Documents/MFA/pretrained_models/dictionary/thai_mfa.dict \
+    --acoustic ~/Documents/MFA/pretrained_models/acoustic/thai_mfa.zip
 python3 scripts/voices/make_pack.py build   --cv ~/cv/cv-corpus-23.0/th --work ~/cv/work
 ```
 
@@ -44,6 +47,15 @@ MFA. `build` cuts each target word from the alignments (joining up to four
 aligned tokens when MFA splits a word), keeps up to 3 speakers per word or
 sentence (most up-voted first, alternating male and female where it can), drops
 clips that are too short, too long or too quiet, and writes 48 kbps mono MP3s.
+
+`verify` is the check that doesn't need a Thai ear. It runs the aligner again
+on every word clip as a tiny recogniser: the clip may be its word or any of
+about 75 decoys (similar-length words, and the word with a stray syllable
+before or after). A clip passes only when the word itself fits best; when the
+word plus a stray syllable wins, the clip is re-cut to just the word's sounds
+and checked again. Of 11 clips a learner flagged by ear it caught 9 (the 2 it
+missed are in `reject.txt`). On the first full run, 3,716 of 4,854 candidates
+passed, 1,537 of them after trimming.
 
 ## 4. Check by ear, then commit
 

@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.35.0";
+const APP_VERSION = "0.36.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2386,7 +2386,8 @@ function useVoiceBank() {
  * service worker keeps it for offline. Without an index (the single-file build,
  * or before any pack exists) everything falls back to the phone's voice.
  * ------------------------------------------------------------------------- */
-const nativeKey = (text) => sanitizeThai(text).replace(/\s+/g, "");
+// Sara am is composed (ำ), whichever way the text spelled it (ํ + า).
+const nativeKey = (text) => sanitizeThai(text).replace(/\s+/g, "").replace(/\u0E4D([\u0E48-\u0E4B]?)\u0E32/g, "$1\u0E33");
 const nativeClips = new Map(); // nativeKey -> [{ f, s, g }]
 const nativeTurn = new Map(); // nativeKey -> next speaker index, so plays rotate speakers
 const nativeInfo = { loaded: false, clips: 0, words: 0, speakers: 0, source: "" };
@@ -2579,6 +2580,10 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.36.0", title: "Real Thai voices", points: [
+    "551 of the app's Thai words and 45 of its sentences now play recordings of real Thai speakers from Mozilla Common Voice, up to three people per word, a different one each time you tap. They download the first time you hear them, then work offline.",
+    "Words with no recording, like the letter names, still use your phone's voice. Lao is unchanged. Settings → Voices can switch native speakers off.",
+  ] },
   { v: "0.35.0", title: "Hear it", points: [
     "Hear-it reviews: once a word is solid (Naga Adept), some spelling turns play only the sound. Pick the spelling, or for words, the meaning. \"Can't listen now\" shows the text for that card, and Settings can turn hear-it off.",
     "Ready for native speakers: when recordings from real Thai speakers are added, every Thai word that has one plays it instead of the phone voice, rotating speakers each time and working offline after the first play. Settings → Voices shows what's installed.",
