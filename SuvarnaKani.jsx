@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.38.0";
+const APP_VERSION = "0.39.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2681,6 +2681,10 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.39.0", title: "Studio-clean voices", points: [
+    "262 Thai words now also play clips from the LOTUS corpus (NECTEC): 24 speakers, 12 women and 12 men, recorded on a close-talk microphone. These clean clips play first, and the Common Voice clips follow in rotation.",
+    "Every clip passed the same machine check as before: the aligner had to pick the word itself over about 75 lookalikes.",
+  ] },
   { v: "0.38.0", title: "51 common words", points: [
     "The Word Garden adds 51 of the most common Thai words it didn't teach yet, such as ว่า, เพื่อ, ทุก, อีก, กว่า, ปัญหา and ตั้งแต่, each with its Lao word and an example.",
     "They sit in new boxes at the end of their beds (Little words, Numbers and time, Getting around, Home, School and work), so boxes you've already opened stay as they are.",

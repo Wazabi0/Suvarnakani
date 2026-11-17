@@ -64,3 +64,20 @@ word, cut off, noisy), add its file name to `voices/reject.txt` and run `build`
 again; the next speaker takes its place. Then commit `voices/th/` and
 `voices/reject.txt`. `npm run build` copies the pack into `dist/voices/th/`, and
 the service worker keeps each clip once it has played.
+
+## Clean clips from LOTUS
+
+`lotus.py` adds studio clips from the NECTEC LOTUS corpus (CC BY-NC-SA 3.0, so the app
+must stay non-commercial and credit it). The cloud can download it directly:
+
+```
+curl -L -o lotus.zip https://github.com/korakot/corpus/releases/download/v1.0/AIFORTHAI-LotusCorpus.zip
+unzip lotus.zip 'LOTUS/PD/C/*' 'LOTUS/Supplement/*'
+node scripts/voices/targets.mjs
+python3 scripts/voices/lotus.py --lotus LOTUS --dict thai_mfa.dict --acoustic thai_mfa.zip --mfa path/to/mfa
+```
+
+LOTUS has hand-checked phone labels, so word boundaries come straight from them. Each
+cut is then checked by the aligner, as `verify` does. Run it after `make_pack.py build`.
+It replaces earlier LOTUS clips, so it can be run again. This release of LOTUS holds
+read sentences only, with no isolated words and no letter names.
