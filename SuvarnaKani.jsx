@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.33.0";
+const APP_VERSION = "0.34.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2129,6 +2129,64 @@ function meaningMatch(item, input) {
     return slack > 0 && Math.abs(t.length - n.length) <= slack && editDistance(t, n) <= slack;
   });
 }
+/* ---------------------------------------------------------------------------
+ * 0.34 (B2): aspiration and vowel length. Typing stays forgiving, but when a
+ * reading only matches after ignoring puffed vs plain consonants or long vs
+ * short vowels, the review asks which one it is with two chips.
+ * ------------------------------------------------------------------------- */
+const plainLearner = (r) => (r || "").split(" ·")[0].split(" / ")[0].normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ɛ/g, "ɛ").toLowerCase();
+const canonRoman = (s) => normalizeAnswer(s).replace(/ng/g, "N").replace(/g/g, "k").replace(/N/g, "ng").replace(/j/g, "c").replace(/ch/g, "C");
+const noAspiration = (s) => canonRoman(s).replace(/([kpt])h/g, "$1").replace(/C/g, "c");
+// Final -w / -y are written -o / -i by many learners (khao for khâaw), so they count as the same here.
+const noLength = (s) => canonRoman(s).replace(/w$/, "o").replace(/y$/, "i").replace(/(aa|ee|ii|oo|uu)/g, (m) => m[0]).replace(/ueue/g, "ue");
+/** What a forgiving match glossed over: "aspiration", "length" or null. Thai items only. */
+function soundSlip(item, input) {
+  if (item.toneSet === "lo" || item.tier === "glyph" || !item.thRoman) return null;
+  const r = plainLearner(item.thRoman);
+  const n = normalizeAnswer(input);
+  if (!n || canonRoman(n) === canonRoman(r)) return null;
+  if (noLength(n) === noLength(r)) return "length";
+  if (noAspiration(n) === noAspiration(r)) return "aspiration";
+  if (noAspiration(noLength(n)) === noAspiration(noLength(r))) return "length";
+  return null;
+}
+/** Flip the feature in one syllable of a plain learner reading (khaaw → khaw, khaa → kaa). */
+function flipSound(syl, kind) {
+  if (kind === "length") {
+    const m = syl.match(/(aa|ee|ii|oo|uu|ɛɛ|ɔɔ|əə|ʉʉ)/);
+    if (m) return syl.replace(m[0], m[0][0]).replace(/([aeiou])w$/, "$1o");
+    const v = syl.match(/[aeiouɛɔəʉ]/);
+    return v ? syl.replace(v[0], v[0] + v[0]) : null;
+  }
+  if (/^(kh|ph|th)/.test(syl)) return syl.slice(0, 1).replace("k", "g") + syl.slice(2);
+  if (/^ch/.test(syl)) return `j${syl.slice(2)}`;
+  if (/^[gptj]/.test(syl)) return ({ g: "kh", p: "ph", t: "th", j: "ch" })[syl[0]] + syl.slice(1);
+  return null;
+}
+/** Two chips for a slip: the right reading and the same word with the feature flipped where the typing differed. */
+function slipChoices(item, input, kind) {
+  const r = plainLearner(item.thRoman);
+  const syls = r.split(/[-\s]+/).filter(Boolean);
+  const target = kind === "length" ? noLength(input) === noLength(r) ? canonRoman(input) : null : canonRoman(input);
+  let wrong = null;
+  for (let i = 0; i < syls.length && !wrong; i += 1) {
+    const f = flipSound(syls[i], kind);
+    if (!f) continue;
+    const cand = [...syls.slice(0, i), f, ...syls.slice(i + 1)].join("-");
+    if (!target || canonRoman(cand) === target) wrong = cand;
+  }
+  if (!wrong) {
+    const i = syls.findIndex((x) => flipSound(x, kind));
+    if (i < 0) return null;
+    wrong = [...syls.slice(0, i), flipSound(syls[i], kind), ...syls.slice(i + 1)].join("-");
+  }
+  const note = (w) => {
+    if (kind === "length") return /(aa|ee|ii|oo|uu|ɛɛ|ɔɔ|əə|ʉʉ)/.test(w) && !(/(aa|ee|ii|oo|uu|ɛɛ|ɔɔ|əə|ʉʉ)/.test(w === r ? wrong : r)) ? "long vowel" : "short vowel";
+    return /(^|-)(kh|ph|th|ch)/.test(w) && !/(^|-)(kh|ph|th|ch)/.test(w === r ? wrong : r) ? "puffed" : "plain";
+  };
+  return shuffle([{ label: r, note: note(r), right: true }, { label: wrong, note: note(wrong), right: false }]);
+}
+
 /** Letters keep one answer (sound or name word); syllables and words get two. */
 const twoPartReview = (item) => item.tier !== "glyph";
 
@@ -2432,7 +2490,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false, toolsSeen: {}, vacation: null, placementAsk: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 /** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
 function loadPrefs(saved) {
@@ -2441,7 +2499,7 @@ function loadPrefs(saved) {
   return p;
 }
 const usePrefs = () => React.useContext(PrefsContext);
-const runtimePrefs = { haptics: true, roman: "learner" };
+const runtimePrefs = { haptics: true, roman: "learner", vacationSince: null };
 /** Thai romanisation in the system chosen in Settings. */
 const R = (learner) => romanize(learner, runtimePrefs.roman);
 
@@ -2472,6 +2530,12 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.34.0", title: "Better lessons and checks", points: [
+    "Lessons come in beats: meet each item (you hear it straight away, with one line to remember it and the rest under More), then try it by picking its sound from lookalikes before the next one.",
+    "Reviews now check vowel length and puffed vs plain sounds. Type khao for ข้าว and you'll be asked: khaaw (long) or khao (short)? They're different words.",
+    "Practice is a grid of tools, grouped by skill. Tools appear when they become useful, each with a short intro the first time.",
+    "One placement run replaces the eight river buttons: pick how far to test, under Learn. Vacation mode in Settings pauses reviews and your streak, and one missed day a week no longer breaks a streak.",
+  ] },
   { v: "0.33.0", title: "One clear daily loop", points: [
     "New tabs: Today, Learn, Practice, Read and Me. Today fits on one screen: your session, your level and what opens next. The course map and Word Garden are under Learn; Ear, Write and Lab are under Practice; stats, the Ledger and the course switch are under Me.",
     "Start today's session runs the whole Today Path in one flow: reviews, lessons, the Ear set and the day's practice, with the steps between and a summary at the end. No more hopping between tabs.",
@@ -3248,9 +3312,9 @@ function Modal({ open, onClose, children, title, accent = COLORS.gold, wide }) {
   );
 }
 
-function Card({ children, className = "", glow, style }) {
+function Card({ children, className = "", glow, style, ...rest }) {
   return (
-    <div className={`sk-card rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={{ ...(glow ? { boxShadow: `0 0 40px ${glow}1f` } : {}), ...style }}>
+    <div {...rest} className={`sk-card rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-md ${className}`} style={{ ...(glow ? { boxShadow: `0 0 40px ${glow}1f` } : {}), ...style }}>
       {children}
     </div>
   );
@@ -3329,14 +3393,23 @@ function ToneContour({ tone, width = 300, height = 160 }) {
  * ========================================================================== */
 const EAR_DAILY_TRIALS = 20;
 
-function computeStreak(log) {
+/**
+ * Days in a row. 0.34 (B3): vacation days (and days marked `rest` when a vacation ended) keep the
+ * streak without adding to it, and one missed day a week is a free rest day.
+ */
+function computeStreak(log, now = Date.now(), vacationSince = runtimePrefs.vacationSince) {
   let streak = 0;
   const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) + (log[k].traces || 0) + (log[k].bridge || 0) + (log[k].signs || 0) + (log[k].drills || 0) + (log[k].reads || 0) > 0);
-  let t = Date.now();
+  const resting = (t) => !!log[todayKey(t)]?.rest || (vacationSince != null && todayKey(t) >= todayKey(vacationSince));
+  let t = now;
   if (!active(todayKey(t))) t -= DAY;
-  while (active(todayKey(t))) {
-    streak += 1;
-    t -= DAY;
+  let lastFree = -Infinity;
+  for (let i = 0; i < 4000; i += 1) {
+    if (active(todayKey(t))) { streak += 1; t -= DAY; continue; }
+    if (resting(t)) { t -= DAY; continue; }
+    // One free rest day a week, if the day before it was studied (or rested).
+    if (i - lastFree >= 7 && (active(todayKey(t - DAY)) || resting(t - DAY))) { lastFree = i; t -= DAY; continue; }
+    break;
   }
   return streak;
 }
@@ -3446,7 +3519,7 @@ function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, 
       short: `${lessonBatch} new`,
       min: 3,
       done: (today.lessons || 0) >= lessonBatch,
-      note: lessonsPaused ? (reviewCount >= 30 ? "Paused until reviews are under 30" : `Paused: ${Math.round(acc * 100)}% this week, aim for 80%`) : null,
+      note: lessonsPaused ? (reviewCount >= 30 ? "Paused until reviews are under 30" : `Paused: ${Math.round(acc * 100)}% this week, aim for 80%`) : `Adds about ${lessonBatch * 4} short reviews this week`,
       onClick: onLessons,
       disabled: lessonsPaused && !(today.lessons > 0),
     });
@@ -3526,7 +3599,7 @@ function SessionCard({ plan, streak, started, onStart, onRunStep, onExtra, extra
  * own sheet on top; practice tools run inside the session. Between steps it shows the plan with
  * the next step ready, and it ends on a summary of the day.
  */
-function SessionSheet({ open, onClose, plan, startStep, renderTool, log, streak, tomorrow }) {
+function SessionSheet({ open, onClose, plan, startStep, renderTool, log, streak, tomorrow, letters, nextUp }) {
   const [view, setView] = useState({ kind: "list" }); // list | tool
   useBackClose(open, onClose);
   useWakeLock(open);
@@ -3583,11 +3656,16 @@ function SessionSheet({ open, onClose, plan, startStep, renderTool, log, streak,
                 ["New items", today.lessons ? String(today.lessons) : "None today"],
                 ["Ear trials", String(today.ear || 0)],
                 ["Streak", `${streak} day${streak === 1 ? "" : "s"}`],
+                ...(letters ? [["Letters learned", `${letters.done} of ${letters.total}`]] : []),
               ].map(([k, v]) => (
                 <div key={k} className="rounded-2xl bg-white/[0.04] p-3"><div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{k}</div><div className="mt-0.5 font-bold text-white">{v}</div></div>
               ))}
             </div>
+            {letters && letters.total > 0 && (
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10" aria-hidden="true"><div className="h-full rounded-full bg-amber-400" style={{ width: `${(letters.done / letters.total) * 100}%` }} /></div>
+            )}
             <p className="mt-4 text-sm text-slate-300">{tomorrow ? `About ${tomorrow} review${tomorrow === 1 ? "" : "s"} come due tomorrow.` : "Nothing new comes due tomorrow."}</p>
+            {nextUp && <p className="mt-1 text-sm text-slate-400" data-session-next-up>Next to open: {nextUp}.</p>}
             <button type="button" onClick={onClose} className="mt-6 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Done</button>
           </div>
         </div>
@@ -3764,7 +3842,7 @@ const ONBOARD_QUESTIONS = [
   { key: "level", q: "Can you read any Thai or Lao already?", options: [
     { v: "none", label: "Not yet", sub: "Start with Level 1." },
     { v: "some", label: "Some letters", sub: "Start with Level 1, faster pace." },
-    { v: "reads", label: "I can read slowly", sub: "Open every level now." },
+    { v: "reads", label: "I can read slowly", sub: "Take a placement run to skip what you know." },
   ] },
   { key: "minutes", q: "How many minutes a day?", options: [
     { v: 5, label: "5 minutes", sub: "Reviews plus a few new items." },
@@ -3823,6 +3901,33 @@ function ZoneLock({ tool, level }) {
 }
 
 /** Skip ahead: a one-lantern run covering every level before `n`. Once a day per level. */
+/**
+ * 0.34 (A5): one placement run instead of a river button on every locked level. Pick how far to
+ * test; the run is the river run (20 prompts, one lantern) down to that level.
+ */
+function PlacementCard({ locked, triedToday, onRun, onDismiss }) {
+  const [target, setTarget] = useState(() => locked[0]?.n || null);
+  useEffect(() => { if (!locked.some((l) => l.n === target)) setTarget(locked[0]?.n || null); }, [locked]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!locked.length) return null;
+  const tried = target != null && triedToday(target);
+  return (
+    <Card className="p-4 sm:p-5" data-placement>
+      <div className="text-xs font-bold uppercase tracking-widest text-cyan-300">Already read some Thai?</div>
+      <p className="mt-1 text-sm text-slate-300">Take the placement run: {RIVER_SIZE} prompts from the levels you'd skip, one lantern. Pass and they all open; what you skipped goes into your reviews. Fail and nothing changes.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <label htmlFor="placement-target" className="text-sm text-slate-400">Open up to</label>
+        <select id="placement-target" value={target || ""} onChange={(e) => setTarget(Number(e.target.value))} className="rounded-xl border border-white/10 bg-slate-900 px-2 py-2 text-sm text-slate-200">
+          {locked.map((l) => <option key={l.n} value={l.n}>Level {l.n} · {l.title}</option>)}
+        </select>
+        {tried
+          ? <span className="text-xs text-slate-400" data-river-tried={target}>Tried today. Try again tomorrow.</span>
+          : <button type="button" data-river-run={target} onClick={() => onRun(target)} className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-bold text-black">Take the placement run</button>}
+        {onDismiss && <button type="button" onClick={onDismiss} className="text-xs text-slate-400 underline">Not now</button>}
+      </div>
+    </Card>
+  );
+}
+
 function RiverButton({ n, tried, onRun, compact }) {
   if (tried) return <span className={`${compact ? "" : "mt-2 block"} text-[11px] text-slate-500`} data-river-tried={n}>River run tried today</span>;
   return (
@@ -3889,8 +3994,8 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
   // Unstarted items in open levels still waiting on letters (shown under Lessons).
   const waitingCount = useMemo(() => course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && !chain.ready(i) && boxOpen(i) && (!i.garden || garden.includes(i.garden))).length, [course, unlockedLevels, chain, garden, boxes]); // eslint-disable-line react-hooks/exhaustive-deps
   const reviewQueue = useMemo(
-    () => course.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= now); }),
-    [srs, now, sandbox, course]
+    () => course.filter((i) => { const s = srs[i.id]; return s && s.stage >= 1 && s.stage < 5 && (sandbox || s.next <= (prefs.vacation?.since ?? now)); }),
+    [srs, now, sandbox, course, prefs.vacation]
   );
   const reviewDirections = useMemo(() => Object.fromEntries(reviewQueue.map((i) => [i.id, reviewDirection(srs[i.id])])), [reviewQueue]); // eslint-disable-line react-hooks/exhaustive-deps
   // Opened from the home-screen "Reviews" shortcut.
@@ -4061,7 +4166,9 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
     openSession();
     onSessionOpened?.();
   }, [sessionOnOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  const tomorrowDue = forecast(srs, now)[1]?.count || 0;
+  const tomorrowDue = forecast(srs, now)[1] || 0;
+  const glyphItems = course.filter((i) => i.tier === "glyph" && !i.garden);
+  const lettersLearned = { done: glyphItems.filter((i) => stageOf(i.id) >= 2).length, total: glyphItems.length };
   const currentLvl = COURSE_LEVELS.find((l) => l.n === currentLevel);
   const currentGoal = currentLvl ? levelGoal(currentLvl.n, course, srs, chain) : null;
   const nextLvl = COURSE_LEVELS.find((l) => l.n === currentLevel + 1);
@@ -4082,7 +4189,7 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
       <ReviewModal open={reviewOpen} queue={reviewQueue} directions={reviewDirections} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={() => setReviewOpen(false)} onAnswer={answer} order={(q) => reviewOrder(q, srs)} />
       <ReviewModal practice open={!!practiceRun} queue={practiceRun?.queue || []} directions={practiceRun?.directions || {}} mode={mode} font={font} fontFor={(it) => reviewFontFor(it, srs[it.id], font, prefs)} onClose={closePractice} onAnswer={practiceAnswer} order={(q) => q} />
       <LeechDrill open={leechOpen} leeches={leeches} mode={mode} font={font} onClose={() => setLeechOpen(false)} onFinish={finishLeechDrill} />
-      <SessionSheet open={!!session} startStep={session?.start} onClose={() => setSession(null)} plan={plan} renderTool={renderTool || (() => null)} log={log} streak={streak} tomorrow={tomorrowDue} />
+      <SessionSheet open={!!session} startStep={session?.start} onClose={() => setSession(null)} plan={plan} renderTool={renderTool || (() => null)} log={log} streak={streak} tomorrow={tomorrowDue} letters={lettersLearned} nextUp={nextTool?.text} />
     </>
   );
 
@@ -4128,6 +4235,8 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
             </p>
           </Card>
         )}
+        {prefs.placementAsk && !sandbox && <PlacementCard locked={COURSE_LEVELS.filter((l) => !unlockedLevels.has(l.n))} triedToday={riverTriedToday} onRun={(n) => { setPref?.("placementAsk", false); startRiver(n); }} onDismiss={() => setPref?.("placementAsk", false)} />}
+        {prefs.vacation && <p className="rounded-2xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100" data-vacation-note>On vacation since {new Date(prefs.vacation.since).toLocaleDateString()}. Reviews are paused and your streak holds. Come back in Settings.</p>}
         {nextTool && <p className="px-1 text-sm text-slate-400" data-next-tool><Lock size={13} className="mr-1 inline text-slate-500" />Next to open: {nextTool.text}.</p>}
         {sandbox && <p className="px-1 text-xs text-emerald-300">Sandbox is on: every level is open and all learned items are reviewable now.</p>}
         {modals}
@@ -4248,6 +4357,7 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
       <ProductionCard on={prodOn} onTurnOn={() => setPref?.("production", true)} cards={prodList} deck={prodSrs} sandbox={sandbox} script={prodScript(mode)} closeCount={prodClose} onOpen={() => setProdOpen(true)} />
 
       {/* River passport: one stamp per Guardian Trial. */}
+      {!sandbox && <PlacementCard locked={COURSE_LEVELS.filter((l) => !unlockedLevels.has(l.n))} triedToday={riverTriedToday} onRun={startRiver} />}
       <div className="flex flex-wrap items-center gap-1.5 px-1" data-passport>
         <span className="mr-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Passport</span>
         {COURSE_LEVELS.map((l) => {
@@ -4360,10 +4470,9 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
                       </>
                     );
                   })()}
-                  <RiverButton n={lvl.n} tried={riverTriedToday(lvl.n)} onRun={startRiver} />
                 </Card>
               ) : (
-                <div className="flex min-h-[3.25rem] flex-wrap items-center gap-2 pt-4 text-sm text-slate-500"><span className="font-semibold">Level {lvl.n}</span> · {lvl.title}<span className="ml-auto"><RiverButton n={lvl.n} tried={riverTriedToday(lvl.n)} onRun={startRiver} compact /></span></div>
+                <div className="flex min-h-[3.25rem] flex-wrap items-center gap-2 pt-4 text-sm text-slate-500"><span className="font-semibold">Level {lvl.n}</span> · {lvl.title}</div>
               )}
             </div>
           );
@@ -4418,6 +4527,11 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
   // enters SRS. Misses go to the back of the line, as in WaniKani.
   const [quiz, setQuiz] = useState(null); // { line: [ids], input, result: null | "ok" | "miss", misses }
   const quizInput = useRef(null);
+  // 0.34 (A3): each new item is two beats. Meet it (heard straight away, one mnemonic line, the rest
+  // under More), then try it: pick its reading from lookalikes before moving on.
+  const [beat, setBeat] = useState("meet"); // meet | try
+  const [more, setMore] = useState(false);
+  const [tryPick, setTryPick] = useState(null);
   useEffect(() => {
     if (open) {
       setBatch(queue);
@@ -4426,6 +4540,24 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  useEffect(() => {
+    setBeat("meet");
+    setMore(false);
+    setTryPick(null);
+    const it = open ? batch[idx] : null;
+    if (!it || quiz) return;
+    const audio = getAudio();
+    if (mode === "lo") audio.speakHumanVoice(it.ttsLo || it.ttsTh, it.lo);
+    else audio.speakHumanVoice(it.ttsTh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, idx, batch]);
+  const tryOptions = useMemo(() => {
+    const it = batch[idx];
+    if (!it) return [];
+    const label = (o) => (mode === "lo" ? o.loRoman : o.tier === "glyph" ? o.thRoman : R(o.thRoman.split(" ·")[0]));
+    const seen = new Set();
+    return shuffle([it, ...confusables(it, mode === "lo" ? "lo" : "th")]).filter((o) => { const l = label(o); if (seen.has(l)) return false; seen.add(l); return true; }).map((o) => ({ id: o.id, label: label(o), meaning: o.meaning }));
+  }, [batch, idx, mode]);
   useEffect(() => {
     if (quiz && !quiz.result) quizInput.current?.focus();
   }, [quiz]);
@@ -4490,35 +4622,73 @@ function LessonModal({ open, queue, mode, font, onClose, onFinish }) {
     );
   }
 
+  const goNext = () => (last ? setQuiz({ line: shuffle(items.map((i) => i.id)), input: "", result: null, misses: 0 }) : setIdx(idx + 1));
+  const extras = [item.loop && ["How to write it", item.loop, PenTool, COLORS.cyan], item.bridge && ["Mekong bridge", item.bridge, Languages, COLORS.purple], item.trap && ["Lookalike trap", item.trap, AlertTriangle, COLORS.pink]].filter(Boolean);
   return (
-    <Modal open={open} onClose={onClose} title={`Lesson ${idx + 1} / ${items.length}`} accent={TIER[item.tier].color}>
-      <ItemHero item={item} mode={mode} font={font} />
-      <div className="mt-4 flex justify-center">
-        <AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} />
+    <Modal open={open} onClose={onClose} title={`Lesson ${idx + 1} / ${items.length} · ${beat === "meet" ? "meet it" : "try it"}`} accent={TIER[item.tier].color}>
+      <div className="mb-3 flex gap-1" aria-hidden="true" data-lesson-beats>
+        {items.map((_, i) => (
+          <div key={i} className="flex flex-1 gap-0.5">
+            <span className={`h-1.5 flex-1 rounded-full ${i < idx || (i === idx) ? "bg-amber-400" : "bg-white/15"}`} />
+            <span className={`h-1.5 flex-1 rounded-full ${i < idx || (i === idx && beat === "try") ? "bg-amber-400" : "bg-white/15"}`} />
+          </div>
+        ))}
       </div>
-      <div className="mt-4 space-y-3 text-sm">
-        <ExampleLine item={item} mode={mode} />
-        {!item.example && <InfoRow icon={Sparkles} label="Mnemonic" text={item.mnemonic} color={COLORS.gold} />}
-        {item.loop && <InfoRow icon={PenTool} label="How to write it" text={item.loop} color={COLORS.cyan} />}
-        {item.bridge && <InfoRow icon={Languages} label="Mekong bridge" text={item.bridge} color={COLORS.purple} />}
-      </div>
-      <div className="mt-5 flex items-center justify-between gap-2">
-        <button disabled={idx === 0} onClick={() => setIdx(idx - 1)} className="inline-flex items-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 disabled:opacity-30">
-          <ChevronLeft size={16} /> Back
-        </button>
-        <div className="flex gap-1">
-          {items.map((_, i) => <span key={i} className={`h-1.5 w-5 rounded-full ${i === idx ? "bg-amber-400" : "bg-white/15"}`} />)}
+      {idx === 0 && beat === "meet" && <p className="mb-3 text-center text-xs text-slate-400" data-lesson-load>These {items.length} add about {items.length * 4} short reviews over the next week.</p>}
+      {beat === "meet" ? (
+        <>
+          <ItemHero item={item} mode={mode} font={font} />
+          <div className="mt-4 flex justify-center">
+            <AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} />
+          </div>
+          <div className="mt-4 space-y-3 text-sm">
+            <ExampleLine item={item} mode={mode} />
+            {!item.example && <InfoRow icon={Sparkles} label="Remember it" text={item.mnemonic} color={COLORS.gold} />}
+            {extras.length > 0 && (more
+              ? extras.map(([label, text, icon, color]) => <InfoRow key={label} icon={icon} label={label} text={text} color={color} />)
+              : <button type="button" onClick={() => setMore(true)} data-lesson-more className="w-full rounded-2xl border border-white/10 px-3 py-2 text-left text-xs text-slate-300 hover:bg-white/5">More: {extras.map((x) => x[0].toLowerCase()).join(", ")} <ChevronRight size={12} className="inline" /></button>)}
+          </div>
+          <div className="mt-5 flex items-center justify-between gap-2">
+            <button disabled={idx === 0} onClick={() => setIdx(idx - 1)} className="inline-flex items-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300 disabled:opacity-30">
+              <ChevronLeft size={16} /> Back
+            </button>
+            <button type="button" onClick={() => setBeat("try")} data-lesson-try className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">
+              Try it <ChevronRight size={16} />
+            </button>
+          </div>
+        </>
+      ) : (
+        <div data-lesson-try-beat>
+          <div className="sk-on-color rounded-3xl p-6 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
+            <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-6xl leading-[1.35] text-white" />
+          </div>
+          <p className="mt-4 text-center text-xs font-bold uppercase tracking-widest text-slate-400">{item.tier === "glyph" ? "Which letter is this?" : "How does it sound?"}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {tryOptions.map((o) => {
+              const right = o.id === item.id;
+              const picked = tryPick === o.id;
+              const state = !tryPick ? "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" : right ? "border-emerald-400 bg-emerald-500/20" : picked ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
+              return (
+                <button key={o.id} type="button" disabled={!!tryPick} data-try-opt={right ? "right" : "wrong"} onClick={() => { setTryPick(o.id); haptic(right ? "ok" : "miss"); }} className={`rounded-2xl border-2 px-2 py-3 text-center text-sm font-semibold text-white transition ${state}`}>
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+          {tryPick && (
+            <p className={`mt-3 text-center text-sm ${tryPick === item.id ? "text-emerald-300" : "text-rose-200"}`}>
+              {tryPick === item.id ? "Yes. " : `Not quite: that one is "${tryOptions.find((o) => o.id === tryPick)?.meaning}". `}
+              {mode === "lo" ? item.loRoman : R(item.thRoman)} · {item.meaning}
+            </p>
+          )}
+          <div className="mt-5 flex items-center justify-between gap-2">
+            <button type="button" onClick={() => { setBeat("meet"); setTryPick(null); }} className="inline-flex items-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-sm text-slate-300"><ChevronLeft size={16} /> See it again</button>
+            <button type="button" disabled={!tryPick} onClick={goNext} data-lesson-next className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black disabled:opacity-40">
+              {last ? <><Check size={16} /> Quiz me</> : <>Next item <ChevronRight size={16} /></>}
+            </button>
+          </div>
         </div>
-        {last ? (
-          <button onClick={() => setQuiz({ line: shuffle(items.map((i) => i.id)), input: "", result: null, misses: 0 })} className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">
-            <Check size={16} /> Quiz me
-          </button>
-        ) : (
-          <button onClick={() => setIdx(idx + 1)} className="inline-flex items-center gap-1 rounded-xl bg-white/10 px-3 py-2 text-sm font-semibold text-white">
-            Next <ChevronRight size={16} />
-          </button>
-        )}
-      </div>
+      )}
     </Modal>
   );
 }
@@ -5419,6 +5589,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const [meaningInput, setMeaningInput] = useState("");
   const [meaningOk, setMeaningOk] = useState(null);
   const [nudge, setNudge] = useState(null); // an answer typed into the wrong box
+  const [slip, setSlip] = useState(null); // { kind, options, pick } when the typing skipped aspiration or length
   const meaningRef = useRef(null);
   const [pick, setPick] = useState(null);
   const [tonePicks, setTonePicks] = useState([]);
@@ -5460,6 +5631,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
       setMeaningInput("");
       setMeaningOk(null);
       setNudge(null);
+      setSlip(null);
       setPick(null);
       setTonePicks([]);
       setScore({ right: 0, wrong: 0 });
@@ -5541,6 +5713,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
     setMeaningInput("");
     setMeaningOk(null);
     setNudge(null);
+    setSlip(null);
     setPick(null);
     setTonePicks([]);
     setIdx(idx + 1);
@@ -5566,6 +5739,10 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
       // English in the reading box: ask for the sound instead of marking it wrong.
       if (!rOk && meaningMatch(item, input)) { setNudge("That's the meaning. First type how it sounds, like maa or khâaw."); return undefined; }
       setNudge(null);
+      // Right only if you ignore aspiration or vowel length: ask which it is (B2).
+      const kindSlip = rOk ? soundSlip(item, input) : null;
+      const options = kindSlip ? slipChoices(item, input, kindSlip) : null;
+      if (options) { setSlip({ kind: kindSlip, options, pick: null }); setPhase("slip"); return undefined; }
       setReadOk(rOk);
       setPhase("meaning");
       return undefined;
@@ -5592,7 +5769,17 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
     finish(readOk, k === secondRight);
   };
 
-  const readingNote = phase === "result" && !readOk ? diagnoseReading(item, input) : null;
+  const pickSlip = (o) => {
+    if (phase !== "slip") return;
+    setSlip({ ...slip, pick: o.label });
+    setReadOk(o.right);
+    haptic(o.right ? "ok" : "miss");
+    setPhase("meaning");
+  };
+  const slipNote = phase === "result" && slip?.pick && slip.options.find((o) => o.label === slip.pick && !o.right)
+    ? `Close, but ${slip.kind === "length" ? "vowel length" : "a puffed or plain sound"} changes the word: it's ${slip.options.find((o) => o.right).label} (${slip.options.find((o) => o.right).note}).`
+    : null;
+  const readingNote = phase === "result" && !readOk ? slipNote || diagnoseReading(item, input) : null;
   const meaningMissed = two && phase === "result" && meaningOk === false;
   const secondNote = phase === "result" && secondOk === false
     ? multi
@@ -5688,7 +5875,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
             placeholder={two ? "e.g. maa" : "e.g. k / chicken"}
             className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${readOk === true && phase === "result" ? "border-emerald-400 bg-emerald-500/20" : readOk === false && phase === "result" ? "border-rose-400 bg-rose-500/20" : readOk != null ? "border-white/25" : "border-white/15 focus:border-amber-400"}`}
           />
-          {two && phase !== "read" && (
+          {two && phase !== "read" && phase !== "slip" && (
             <>
               <label htmlFor="review-meaning" className="mt-4 block text-center text-xs font-bold uppercase tracking-widest text-slate-400">2 · Meaning</label>
               <input
@@ -5707,6 +5894,22 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
                 className={`mt-2 w-full rounded-2xl border bg-black/30 px-4 py-3 text-center text-lg text-white outline-none ${meaningOk === true && phase === "result" ? "border-emerald-400 bg-emerald-500/20" : meaningOk === false && phase === "result" ? "border-rose-400 bg-rose-500/20" : meaningOk != null ? "border-white/25" : "border-white/15 focus:border-amber-400"}`}
               />
             </>
+          )}
+          {slip && (
+            <div className="mt-3" data-review-slip={slip.kind}>
+              <p className="text-center text-sm text-amber-300">{phase === "slip" ? (slip.kind === "length" ? "Close. Long or short vowel?" : "Close. Puffed or plain?") : null}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {slip.options.map((o) => {
+                  const state = !slip.pick ? "border-white/15 bg-white/[0.04] hover:bg-white/[0.08]" : o.right ? "border-emerald-400 bg-emerald-500/20" : slip.pick === o.label ? "border-rose-400 bg-rose-500/20" : "border-white/10 opacity-50";
+                  return (
+                    <button key={o.label} type="button" disabled={phase !== "slip"} onClick={() => pickSlip(o)} data-slip-opt={o.right ? "right" : "wrong"} className={`rounded-2xl border-2 px-2 py-2.5 text-center transition ${state}`}>
+                      <div className="font-semibold text-white">{o.label}</div>
+                      <div className="text-[11px] text-slate-400">{o.note}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
           {nudge && <p data-review-nudge className="mt-2 text-center text-sm text-amber-300">{nudge}</p>}
           {kind && phase !== "read" && (
@@ -5751,7 +5954,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
               <AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} compact />
             </div>
           )}
-          {phase !== "second" && (
+          {phase !== "second" && phase !== "slip" && (
             <div className="mt-4 flex gap-2" data-review-actions>
               {allOk && !practice && (
                 <button type="button" onClick={() => next(true)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/5" title="Right, but you weren't sure: it will come back sooner">
@@ -10637,6 +10840,36 @@ function KeyboardDojo({ mode, srs = {}, setSrs, kb = {}, setKb, logActivity }) {
   );
 }
 
+/** Practice tab (A4): tools as a grid, grouped by skill; tools that aren't useful yet stay hidden. */
+function PracticeHub({ levelsOpen, sandbox, seen, onOpen }) {
+  const open = (t) => sandbox || !t.level || levelsOpen.has(t.level);
+  const shown = PRACTICE_TOOLS.filter(open);
+  const hidden = PRACTICE_TOOLS.filter((t) => !open(t));
+  const groups = [...new Set(shown.map((t) => t.group))];
+  return (
+    <div className="space-y-5" data-practice-hub>
+      {groups.map((g) => (
+        <section key={g}>
+          <h2 className="mb-2 px-1 text-xs font-bold uppercase tracking-widest text-slate-400">{g}</h2>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {shown.filter((t) => t.group === g).map((t) => (
+              <button key={t.id} type="button" onClick={() => onOpen(t)} data-tool={t.id} className="relative flex flex-col items-start gap-1 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-left transition hover:bg-white/[0.08] active:scale-[0.98]">
+                {!seen[t.id] && <span className="absolute right-2 top-2 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-black">New</span>}
+                <t.icon size={20} className="text-amber-300" />
+                <span className="font-bold text-white">{t.label}</span>
+                <span className="text-xs text-slate-400">{t.blurb}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+      {hidden.length > 0 && (
+        <p className="px-1 text-sm text-slate-400" data-tools-hidden><Lock size={13} className="mr-1 inline text-slate-500" />Opening later: {hidden.map((t) => `${t.label} (Level ${t.level})`).join(", ")}.</p>
+      )}
+    </div>
+  );
+}
+
 function SubTabs({ tabs, active, onChange }) {
   return (
     <div className="mb-5 flex gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.03] p-1">
@@ -11128,6 +11361,12 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
           <Chip active={s.prefs.pitchNumbers} onClick={() => s.setPref("pitchNumbers", !s.prefs.pitchNumbers)}>{s.prefs.pitchNumbers ? "Pitch numbers shown (33, 214)" : "Pitch numbers hidden"}</Chip>
         </div>
       </SettingRow>
+      <SettingRow label="Vacation" hint="Away for a while? Reviews stop coming due and your streak holds. When you come back, every due date moves forward by the time you were away.">
+        <div className="flex flex-wrap items-center gap-2" data-vacation>
+          <Chip active={!!s.prefs.vacation} onClick={s.toggleVacation}>{s.prefs.vacation ? "On vacation: tap to come back" : "Start a vacation"}</Chip>
+          {s.prefs.vacation && <span className="text-xs text-slate-400">since {new Date(s.prefs.vacation.since).toLocaleDateString()}</span>}
+        </div>
+      </SettingRow>
       <SettingRow label="Daily goal">
         <div className="flex flex-wrap gap-2">
           {[5, 12, 20].map((m) => <Chip key={m} active={s.dailyMinutes === m} onClick={() => s.setDailyMinutes(m)}>{m} min</Chip>)}
@@ -11222,7 +11461,7 @@ const READ_TABS = [
 // Older saved tabs map onto the new hubs.
 const LEGACY_TAB = { reactor: ["lab", "reactor"], orbit: ["lab", "orbit"], slicer: ["read", "slicer"], shrine: ["today"] };
 
-// 0.33: Today, Learn, Practice (Ear, Write, Lab), Read, Me.
+// 0.33: Today, Learn, Practice (Ear, Write, Lab), Read, Me. 0.34: "practice" is the tool grid.
 const TABS = [
   { id: "today", label: "Today", icon: Home },
   { id: "learn", label: "Learn", icon: MapIcon },
@@ -11236,6 +11475,23 @@ const PRACTICE_TABS = [
   { id: "lab", label: "Lab", icon: FlaskConical },
 ];
 const isPracticeTab = (t) => PRACTICE_TABS.some((p) => p.id === t);
+/**
+ * 0.34 (A4): Practice is a grid of tools. A tool stays hidden until it is useful
+ * (`level`: the course level that opens it), and the first visit shows a short intro.
+ */
+const PRACTICE_TOOLS = [
+  { id: "dojo", tab: "ear", sub: "dojo", group: "Listen and speak", label: "Ear Dojo", icon: Ear, blurb: "Hear a word, name its tone.", intro: "Each trial plays one word from a set like มา · ม้า · หมา with the text hidden. Pick the tone you heard; a miss plays your pick and then the right one." },
+  { id: "shadow", tab: "ear", sub: "shadow", group: "Listen and speak", label: "Shadow Mirror", icon: Mic, blurb: "Say it back and see your pitch.", intro: "Hear a syllable, say it, and watch your pitch drawn over the target. Set your voice once so high and low are measured against your own range." },
+  { id: "talk", tab: "ear", sub: "talk", group: "Listen and speak", label: "Talk Paths", icon: MessageCircle, blurb: "Short conversations you take part in.", intro: "Pick your answer at each turn, say it out loud, and the conversation goes on from what you chose.", level: 8 },
+  { id: "bank", tab: "ear", sub: "bank", group: "Listen and speak", label: "Voice Bank", icon: Music, blurb: "Real voices instead of text-to-speech.", intro: "Ask a Thai or Lao speaker to record words for you. Their recordings replace the phone's voice everywhere in the app." },
+  { id: "write", tab: "tracer", group: "Write", label: "Write", icon: PenTool, blurb: "Trace, write from memory, type.", intro: "Start every letter at its head (the little loop), then follow the body. From memory hides the letter; Keyboard teaches the Thai layout." },
+  { id: "reactor", tab: "lab", sub: "reactor", group: "How the script works", label: "Tone Reactor", icon: FlaskConical, blurb: "Build a syllable, watch its tone.", intro: "Pick a consonant class, a live or dead ending, a vowel length and a tone mark. The reactor works out the tone and shows the rule it used.", level: 2 },
+  { id: "orbit", tab: "lab", sub: "orbit", group: "How the script works", label: "Vowel Orbit", icon: Orbit, blurb: "Where each vowel sits.", intro: "Vowels go in front of, above, below, after or around the consonant. Spin a consonant through them to see each shape." },
+  { id: "bridge", tab: "lab", sub: "bridge", group: "How the script works", label: "Mekong Predictor", icon: Languages, blurb: "Thai spelling to Lao, by rule.", intro: "Ten rules turn a Thai spelling into Lao and back. Build the other script's word from tiles.", level: 3 },
+  { id: "clock", tab: "lab", sub: "clock", group: "Numbers and words", label: "Market Clock", icon: Clock, blurb: "Prices, numbers and the time.", intro: "Read prices and times the way they're said in a market or a taxi: baht, satang and the six-hour clock." },
+  { id: "corral", tab: "lab", sub: "corral", group: "Numbers and words", label: "Classifiers", icon: Layers, blurb: "Counting words: ตัว, คน, อัน.", intro: "Thai counts with a classifier: noun, number, classifier. Sort words into the right pen." },
+];
+const toolFor = (tab, earTab, labTab) => PRACTICE_TOOLS.find((t) => t.tab === tab && (!t.sub || t.sub === (tab === "ear" ? earTab : labTab)));
 /** The bottom-bar tab a screen belongs to. */
 const navTab = (t) => (isPracticeTab(t) ? "practice" : t);
 
@@ -11245,7 +11501,6 @@ export default function SuvarnaKani() {
   const [tab, setTabRaw] = useState(launchGo === "decoder" ? "read" : launchGo === "ear" ? "ear" : launchGo === "reviews" ? "today" : LEGACY_TAB[initial.tab]?.[0] || initial.tab || "today");
   const [practiceTab, setPracticeTab] = useState(initial.practiceTab || (isPracticeTab(initial.tab) ? initial.tab : "ear"));
   const setTab = (t) => {
-    if (t === "practice") { setTabRaw(practiceTab); return; }
     if (isPracticeTab(t)) setPracticeTab(t);
     setTabRaw(t);
   };
@@ -11270,7 +11525,12 @@ export default function SuvarnaKani() {
     return fixed;
   });
   const [ear, setEar] = useState(() => ({ ...emptyEar(), ...(initial.ear || {}) }));
-  const [log, setLog] = useState(initial.log || {});
+  // One-off (0.34, Josh's request): 16 Nov 2026 was missed; count it as a rest day so the streak carries on.
+  const [log, setLog] = useState(() => {
+    const l = initial.log || {};
+    if (initial.marks?.restore20261116 || l["2026-11-16"]?.rest) return l;
+    return { ...l, "2026-11-16": { ...(l["2026-11-16"] || {}), rest: 1 } };
+  });
   const [dailyMinutes, setDailyMinutes] = useState(initial.dailyMinutes || 12);
   const [onboarded, setOnboarded] = useState(!!initial.onboarded || !!(initial.srs && Object.keys(initial.srs).length));
   const [prefs, setPrefs] = useState(() => loadPrefs(initial.prefs));
@@ -11293,7 +11553,7 @@ export default function SuvarnaKani() {
   });
   const [drills, setDrills] = useState(() => initial.drills || {});
   const [library, setLibrary] = useState(() => initial.library || {});
-  const [marks, setMarks] = useState(() => initial.marks || {});
+  const [marks, setMarks] = useState(() => ({ ...(initial.marks || {}), restore20261116: true }));
   const [kb, setKb] = useState(() => initial.kb || {});
   // Home-screen shortcuts (?go=reviews|ear|decoder) and text shared from other apps (?text=).
   const launch = useMemo(() => {
@@ -11313,6 +11573,7 @@ export default function SuvarnaKani() {
   const updateReady = useUpdateReady();
   runtimePrefs.haptics = prefs.haptics;
   runtimePrefs.roman = prefs.roman;
+  runtimePrefs.vacationSince = prefs.vacation?.since ?? null;
   useEffect(() => {
     document.documentElement.style.fontSize = prefs.textSize === 100 ? "" : `${prefs.textSize}%`;
   }, [prefs.textSize]);
@@ -11326,7 +11587,9 @@ export default function SuvarnaKani() {
     if (meta) meta.setAttribute("content", theme === "light" ? "#FAF7F0" : prefs.trueBlack ? "#000000" : "#0B0F19");
   }, [theme, prefs.trueBlack]);
   // Back from another tab returns to the Shrine instead of closing the app.
+  // Back from a tool returns to the Practice grid; back from any other tab returns to Today.
   useBackClose(tab !== "today", () => setTab("today"));
+  useBackClose(isPracticeTab(tab), () => setTab("practice"));
   const logActivity = useCallback((delta) => {
     setLog((prev) => {
       const key = todayKey();
@@ -11359,7 +11622,8 @@ export default function SuvarnaKani() {
   }, [log]); // eslint-disable-line react-hooks/exhaustive-deps
   const finishOnboarding = (a) => {
     if (a.mode) setMode(a.mode);
-    if (a.level === "reads") setSandbox(true);
+    // 0.34: readers get a placement run on Today instead of every level opening at once.
+    if (a.level === "reads") setPref("placementAsk", true);
     if (a.minutes) setDailyMinutes(a.minutes);
     setOnboarded(true);
   };
@@ -11371,6 +11635,23 @@ export default function SuvarnaKani() {
     window.scrollTo?.(0, 0);
   };
   const [inspect, setInspect] = useState(null);
+  // Vacation (B3): reviews stop coming due and the streak holds. Coming back moves every due date
+  // forward by the time away, and marks those days as rest days.
+  const toggleVacation = () => {
+    const since = prefs.vacation?.since;
+    if (since == null) { setPref("vacation", { since: Date.now() }); return; }
+    const away = Math.max(0, Date.now() - since);
+    const shift = (deck) => Object.fromEntries(Object.entries(deck).map(([k, v]) => [k, k.startsWith("__") || !v || !(v.stage >= 1 && v.stage < 5) || !(v.next > since) ? v : { ...v, next: v.next + away }]));
+    setSrs((d) => shift(d));
+    setSentSrs((d) => shift(d));
+    setProdSrs((d) => shift(d));
+    setLog((prev) => {
+      const next = { ...prev };
+      for (let t = since; todayKey(t) < todayKey(); t += DAY) next[todayKey(t)] = { ...(next[todayKey(t)] || {}), rest: 1 };
+      return next;
+    });
+    setPref("vacation", null);
+  };
   // Practice tools as the daily session shows them (A1).
   const renderTool = (kind) => {
     if (kind === "ear") return <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />;
@@ -11495,18 +11776,27 @@ export default function SuvarnaKani() {
             </div>
           </Card>
         )}
-        {isPracticeTab(tab) && (
-          <div className="mb-3 grid grid-cols-3 gap-1 rounded-2xl bg-amber-500/10 p-1" role="tablist" aria-label="Practice" data-practice-switch>
-            {PRACTICE_TABS.map((t) => (
-              <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-sm font-bold transition ${tab === t.id ? "bg-amber-500 text-black" : "text-slate-300 hover:text-white"}`}>
-                <t.icon size={16} /> {t.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {tab === "practice" && <PracticeHub levelsOpen={levelsOpen} sandbox={sandbox} seen={prefs.toolsSeen || {}} onOpen={(t) => { if (t.tab === "ear") setEarTab(t.sub); if (t.tab === "lab") setLabTab(t.sub); setTab(t.tab); window.scrollTo?.(0, 0); }} />}
+        {isPracticeTab(tab) && (() => {
+          const tool = toolFor(tab, earTab, labTab);
+          return (
+            <>
+              <div className="mb-4 flex items-center gap-2">
+                <button type="button" onClick={() => setTab("practice")} data-practice-back className="flex items-center gap-1 rounded-xl border border-white/10 px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/5"><ChevronLeft size={16} />Practice</button>
+                {tool && <span className="text-sm font-bold text-white">{tool.label}</span>}
+              </div>
+              {tool && !(prefs.toolsSeen || {})[tool.id] && (
+                <div className="mb-4 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-4" data-tool-intro={tool.id}>
+                  <div className="text-xs font-bold uppercase tracking-widest text-amber-300">New: {tool.label}</div>
+                  <p className="mt-1 text-sm text-slate-200">{tool.intro}</p>
+                  <button type="button" onClick={() => setPref("toolsSeen", { ...(prefs.toolsSeen || {}), [tool.id]: true })} className="mt-3 rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-black">Got it</button>
+                </div>
+              )}
+            </>
+          );
+        })()}
         {tab === "ear" && (
           <>
-            <SubTabs tabs={EAR_TABS} active={earTab} onChange={setEarTab} />
             {earTab === "dojo" && <EarDojo ear={ear} setEar={setEar} logActivity={logActivity} />}
             {earTab === "shadow" && <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />}
             {earTab === "talk" && (levelsOpen.has(8) ? <TalkPaths mode={mode} shadow={shadow} logActivity={logActivity} /> : <ZoneLock tool="Talk Paths" level={8} />)}
@@ -11516,7 +11806,6 @@ export default function SuvarnaKani() {
         {tab === "tracer" && <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} kb={kb} setKb={setKb} />}
         {tab === "lab" && (
           <>
-            <SubTabs tabs={LAB_TABS} active={labTab} onChange={setLabTab} />
             {labTab === "reactor" && <Reactor mode={mode} font={font} />}
             {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
             {labTab === "clock" && <MarketClock mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
@@ -11555,7 +11844,7 @@ export default function SuvarnaKani() {
       <SettingsSheet
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
-        s={{ mode, setMode, font, setFont, sandbox, setSandbox, rate, setRate, muted, setMuted, dailyMinutes, setDailyMinutes, prefs, setPref }}
+        s={{ mode, setMode, font, setFont, sandbox, setSandbox, rate, setRate, muted, setMuted, dailyMinutes, setDailyMinutes, prefs, setPref, toggleVacation }}
         getState={() => stateRef.current}
         onReset={resetProgress}
         confirmReset={confirmReset}
@@ -11576,4 +11865,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
