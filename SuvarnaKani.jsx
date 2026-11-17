@@ -2581,7 +2581,7 @@ const verCmp = (a, b) => {
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
   { v: "0.36.0", title: "Real Thai voices", points: [
-    "553 of the app's Thai words and 45 of its sentences now play recordings of real Thai speakers from Mozilla Common Voice, up to three people per word, a different one each time you tap. They download the first time you hear them, then work offline.",
+    "551 of the app's Thai words and 45 of its sentences now play recordings of real Thai speakers from Mozilla Common Voice, up to three people per word, a different one each time you tap. They download the first time you hear them, then work offline.",
     "Words with no recording, like the letter names, still use your phone's voice. Lao is unchanged. Settings → Voices can switch native speakers off.",
   ] },
   { v: "0.35.0", title: "Hear it", points: [

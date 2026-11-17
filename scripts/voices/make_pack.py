@@ -157,6 +157,25 @@ def prepare(args):
     print(f"Next: mfa align {corpus} thai_mfa thai_mfa {os.path.join(args.work, 'aligned')}")
 
 
+def read_tier(path, names=("phones", "phone")):
+    """Intervals [(start, end, text)] of one tier of a long-format TextGrid."""
+    with open(path, encoding="utf-8") as f:
+        lines = [l.strip() for l in f]
+    out, tier, cur = [], None, {}
+    for l in lines:
+        if l.startswith("name ="):
+            tier = l.split("=", 1)[1].strip().strip('"')
+        elif tier and tier.lower() in names:
+            if l.startswith("xmin ="):
+                cur = {"s": float(l.split("=")[1])}
+            elif l.startswith("xmax =") and "s" in cur:
+                cur["e"] = float(l.split("=")[1])
+            elif l.startswith("text =") and "e" in cur:
+                out.append((cur["s"], cur["e"], l.split("=", 1)[1].strip().strip('"')))
+                cur = {}
+    return out
+
+
 def read_textgrid(path):
     """Word intervals [(start, end, text)] from a long-format TextGrid's word tier."""
     with open(path, encoding="utf-8") as f:
@@ -221,15 +240,8 @@ def cut(src, dst, start=None, end=None, pad=0.06):
     run(cmd)
 
 
-def build(args):
-    words, sentences = load_targets()
-    rows = {os.path.splitext(r["path"])[0]: r for r in load_cv(args.cv, args.min_up)}
-    reject_file = os.path.join(VOICES, "reject.txt")
-    rejected = set()
-    if os.path.exists(reject_file):
-        with open(reject_file, encoding="utf-8") as f:
-            rejected = {l.strip() for l in f if l.strip() and not l.startswith("#")}
-
+def gather(args, words, sentences, rows):
+    """Every candidate clip per target: whole clips that are the text, and word spans from the alignments."""
     cands = defaultdict(list)  # target -> [candidate]
     corpus, aligned = os.path.join(args.work, "corpus"), os.path.join(args.work, "aligned")
     for spk in sorted(os.listdir(corpus)) if os.path.isdir(corpus) else []:
@@ -249,6 +261,38 @@ def build(args):
                 for s, e, w, quiet in word_spans(read_textgrid(tg), words):
                     if args.min_word <= e - s <= args.max_word and not (r["key"] == w):
                         cands[w].append({"r": r, "wav": wav, "span": (s, e), "quiet": quiet})
+    return cands
+
+
+def cand_id(target, c):
+    span = c["span"]
+    return f"{target}|{os.path.splitext(c['r']['path'])[0]}|{span[0]:.3f}" if span else f"{target}|{os.path.splitext(c['r']['path'])[0]}|all"
+
+
+def build(args):
+    words, sentences = load_targets()
+    rows = {os.path.splitext(r["path"])[0]: r for r in load_cv(args.cv, args.min_up)}
+    reject_file = os.path.join(VOICES, "reject.txt")
+    rejected = set()
+    if os.path.exists(reject_file):
+        with open(reject_file, encoding="utf-8") as f:
+            rejected = {l.strip() for l in f if l.strip() and not l.startswith("#")}
+    cands = gather(args, words, sentences, rows)
+    verified_file = os.path.join(args.work, "verified.json")
+    if os.path.exists(verified_file):
+        # Words keep only clips that passed `verify`, cut where it found the word.
+        with open(verified_file, encoding="utf-8") as f:
+            verified = json.load(f)
+        for target in list(cands):
+            if target in sentences and target not in words:
+                continue
+            kept = []
+            for c in cands[target]:
+                v = verified.get(cand_id(target, c))
+                if v and v["ok"]:
+                    kept.append({**c, "span": tuple(v["span"]) if v["span"] else None, "pad": v.get("pad", 0.06)})
+            cands[target] = kept
+        print(f"using {verified_file}: {sum(len(v) for t, v in cands.items() if t in words)} verified word clips")
 
     out_dir = os.path.join(VOICES, "th")
     os.makedirs(out_dir, exist_ok=True)
@@ -279,7 +323,7 @@ def build(args):
                 continue  # too quiet or empty
             dst = os.path.join(out_dir, fname)
             if not os.path.exists(dst):
-                cut(c["wav"], dst, *(span if span else (None, None)))
+                cut(c["wav"], dst, *(span if span else (None, None)), pad=c.get("pad", 0.06))
             seen.add(c["r"]["speaker"])
             picked.append(c)
             clips.setdefault(target, []).append([fname, sid, c["r"]["gender"]])
@@ -306,23 +350,160 @@ def build(args):
     print(f"{len(used)} clips: {wcount} of {len(words)} words, {len(clips) - wcount} sentences, {index['speakers']} speakers → {out_dir}")
 
 
+def load_dict(path):
+    prons = defaultdict(list)
+    with open(path, encoding="utf-8") as f:
+        for l in f:
+            p = l.rstrip("\n").split("\t")
+            if len(p) >= 2 and p[-1] not in prons[p[0]]:
+                prons[p[0]].append(p[-1])
+    return prons
+
+
+def verify(args):
+    """Check every word clip with the aligner as a small closed-set recogniser.
+
+    Each clip may be its word or any of ~75 decoys: words of about the same
+    length, and the word with a stray syllable before or after it (a neighbour's
+    sound bleeding in). The aligner picks whichever pronunciation fits the audio
+    best. A clip passes when that is the word itself. When it picks the word
+    plus a stray syllable, the clip is re-cut to just the word's phones and
+    checked again. On 28 clips heard by a learner this caught 9 of the 11 bad
+    ones. Writes WORK/verified.json, which `build` then uses.
+    """
+    import random
+    random.seed(7)
+    words, sentences = load_targets()
+    rows = {os.path.splitext(r["path"])[0]: r for r in load_cv(args.cv, args.min_up)}
+    cands = gather(args, words, sentences, rows)
+    D = load_dict(args.dict)
+    by_len = defaultdict(list)
+    for prs in D.values():
+        for pr in prs:
+            by_len[len(pr.split())].append(pr)
+    syllables = by_len[2] + by_len[3]
+
+    def target_prons(text):
+        out = [""]
+        for t in tokenize(text, args.dict).split():
+            if t not in D:
+                return []
+            out = [(a + " " + b).strip() for a in out for b in D[t]][:8]
+        return out
+
+    results, todo = {}, []
+    for target, cs in cands.items():
+        if target not in words:
+            continue
+        tp = target_prons(target)
+        for c in cs:
+            span = c["span"] or (None, None)
+            todo.append((cand_id(target, c), target, tp, c["wav"], span[0], span[1], 0.06))
+
+    def run_round(items, label):
+        d = os.path.join(args.work, "verify", label)
+        if os.path.exists(d):
+            import shutil
+            shutil.rmtree(d)
+        os.makedirs(os.path.join(d, "x"))
+        meta = {}
+        with open(os.path.join(d, "check.dict"), "w", encoding="utf-8") as dic:
+            for i, (cid, target, tp, wav, s, e, pad) in enumerate(items):
+                if not tp:
+                    continue
+                n = len(tp[0].split())
+                decoys = set()
+                for k in (n - 1, n, n + 1):
+                    if by_len[k]:
+                        decoys.update(random.sample(by_len[k], min(25, len(by_len[k]))))
+                for _ in range(10):
+                    decoys.add(random.choice(syllables) + " " + tp[0])
+                    decoys.add(tp[0] + " " + random.choice(syllables))
+                decoys -= set(tp)
+                for pr in tp + sorted(decoys):
+                    dic.write(f"clip{i}\t{pr}\n")
+                name = f"c{i}"
+                cmd = ["ffmpeg", "-y", "-loglevel", "error"]
+                offset = 0.0
+                if s is not None:
+                    offset = max(0.0, s - pad)
+                    cmd += ["-ss", f"{offset:.3f}", "-t", f"{e + pad - offset:.3f}"]
+                run(cmd + ["-i", wav, "-ac", "1", "-ar", "16000", os.path.join(d, "x", name + ".wav")])
+                with open(os.path.join(d, "x", name + ".lab"), "w", encoding="utf-8") as f:
+                    f.write(f"clip{i}")
+                meta[name] = (cid, target, tp, wav, s, e, pad, offset)
+        out = os.path.join(d, "out")
+        env = dict(os.environ)
+        if os.path.dirname(args.mfa):  # MFA calls Kaldi and OpenFst tools that live beside it
+            env["PATH"] = os.path.dirname(os.path.abspath(args.mfa)) + os.pathsep + env.get("PATH", "")
+        subprocess.run([args.mfa, "align", os.path.join(d, "x"), os.path.join(d, "check.dict"), args.acoustic, out,
+                        "--clean", "-j", str(args.jobs), "--single_speaker", "--no_tokenization"],
+                       check=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        verdicts = {}
+        for name, m in meta.items():
+            tg = os.path.join(out, name + ".TextGrid")
+            if not os.path.exists(tg):
+                tg = os.path.join(out, "x", name + ".TextGrid")
+            ph = [p for p in read_tier(tg) if p[2] and p[2] not in ("sil", "sp", "spn")] if os.path.exists(tg) else []
+            verdicts[name] = (m, ph)
+        return verdicts
+
+    print(f"checking {len(todo)} word clips (round 1)")
+    retry = []
+    for name, (m, ph) in run_round(todo, "round1").items():
+        cid, target, tp, wav, s, e, pad, offset = m
+        got = [p[2] for p in ph]
+        if " ".join(got) in tp:
+            results[cid] = {"ok": True, "span": [s, e] if s is not None else None, "pad": pad}
+            continue
+        results[cid] = {"ok": False, "span": None, "got": " ".join(got)}
+        # The word plus a stray syllable: re-cut to just the word's phones.
+        for pr in tp:
+            want = pr.split()
+            for j in range(len(got) - len(want) + 1):
+                if got[j:j + len(want)] == want:
+                    ns, ne = offset + ph[j][0], offset + ph[j + len(want) - 1][1]
+                    retry.append((cid, target, tp, wav, ns, ne, 0.03))
+                    break
+            else:
+                continue
+            break
+    print(f"re-checking {len(retry)} trimmed clips (round 2)")
+    if retry:
+        for name, (m, ph) in run_round(retry, "round2").items():
+            cid, target, tp, wav, s, e, pad, offset = m
+            if " ".join(p[2] for p in ph) in tp and e - s >= args.min_word:
+                results[cid] = {"ok": True, "span": [s, e], "pad": pad, "trimmed": True}
+    with open(os.path.join(args.work, "verified.json"), "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False)
+    ok = sum(1 for v in results.values() if v["ok"])
+    print(f"{ok} of {len(results)} word clips passed ({sum(1 for v in results.values() if v.get('trimmed'))} after trimming)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("prepare", "build"):
+    for name in ("prepare", "verify", "build"):
         p = sub.add_parser(name)
         p.add_argument("--cv", required=True, help="Common Voice Thai folder (validated.tsv, clips/)")
         p.add_argument("--work", required=True, help="working folder for the corpus and alignments")
         p.add_argument("--min-up", type=int, default=2, help="minimum up-votes per clip")
     sub.choices["prepare"].add_argument("--candidates", type=int, default=8, help="speakers to align per word")
     sub.choices["prepare"].add_argument("--dict", help="MFA pronunciation dictionary (thai_mfa.dict): split transcripts into its words")
+    v = sub.choices["verify"]
+    v.add_argument("--dict", required=True, help="MFA pronunciation dictionary (thai_mfa.dict)")
+    v.add_argument("--acoustic", required=True, help="MFA acoustic model (thai_mfa.zip)")
+    v.add_argument("--mfa", default="mfa", help="path to the mfa command")
+    v.add_argument("--jobs", type=int, default=4)
+    v.add_argument("--min-word", type=float, default=0.18)
+    v.add_argument("--max-word", type=float, default=2.5)
     b = sub.choices["build"]
     b.add_argument("--per-text", type=int, default=3, help="speakers kept per word or sentence")
     b.add_argument("--min-word", type=float, default=0.18, help="shortest word clip, seconds")
     b.add_argument("--max-word", type=float, default=2.5, help="longest word clip, seconds")
     b.add_argument("--min-db", type=float, default=-42.0, help="quietest mean level kept, dB")
     a = ap.parse_args()
-    prepare(a) if a.cmd == "prepare" else build(a)
+    {"prepare": prepare, "verify": verify, "build": build}[a.cmd](a)
 
 
 if __name__ == "__main__":
