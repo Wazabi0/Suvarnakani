@@ -2046,22 +2046,49 @@ function looseRoman(s) {
   return normalizeAnswer(s).replace(/ue/g, "u").replace(/ae/g, "e").replace(/([kpt])h/g, "$1").replace(/ch|j/g, "c").replace(/^g|(?<=[^n])g/g, "k").replace(/r/g, "l").replace(/([a-z])\1+/g, "$1").replace(/w$/, "o").replace(/y$/, "i");
 }
 /**
- * A Thai letter card takes only Thai sounds: ช is ch, not the s of Lao ຊ.
- * Its `accept` list is shared with the Lao course, so answers that are only a
- * Lao reading (x, s for ช) are dropped in the Thai course.
+ * The Thai course takes only Thai readings. Items share one `accept` list with
+ * the Lao course, so in the Thai course an answer that is only the Lao reading
+ * is dropped: พูด is phûut, not the Lao word wao, and ช is ch, not the s of ຊ.
+ * Answers that loosely match the Thai reading stay (jop / chop for จบ).
  */
 const romanParts = (r) => (r || "").split(/\s*·\s*|\s*\/\s*/).filter(Boolean);
+/**
+ * A short answer that is another letter's sound: k for ข is ก, p for พ is ป.
+ * Puffed and plain sounds are different letters, so a letter card asks for the
+ * right one. Final-sound cards and a letter's own alternative reading (ฑ th / d) stay.
+ */
+let letterSounds = null;
+function otherLetterSound(item, n) {
+  if (/final/.test(item.thRoman)) return false;
+  const own = romanParts(item.thRoman).map((p) => normalizeAnswer(p.split(/\s|\(/)[0]));
+  if (own.includes(n)) return false;
+  if (!letterSounds) {
+    letterSounds = new Set(CURRICULUM.filter((i) => i.tier === "glyph" && !/final/.test(i.thRoman)).map((i) => normalizeAnswer(romanParts(i.thRoman)[0].split(/\s|\(/)[0])));
+  }
+  return letterSounds.has(n);
+}
+const thaiCourseItem = (item) => item.toneSet !== "lo" && !!item.loRoman;
 function thaiLetterOnly(item, list) {
-  if (item.tier !== "glyph" || item.toneSet === "lo" || !item.loRoman) return list;
-  // Only short sound answers are at stake; anything written in the Thai romanisation stays.
-  const thText = normalizeAnswer(`${item.thRoman} ${romanize(item.thRoman, "rtgs")}`);
-  const lo = new Set(romanParts(item.loRoman).map(normalizeAnswer));
-  return list.filter((a) => { const n = normalizeAnswer(a); return n.length > 2 || thText.includes(n) || !lo.has(n); });
+  if (!thaiCourseItem(item)) return list;
+  const thForms = [...romanParts(item.thRoman), ...romanParts(romanize(item.thRoman, "rtgs"))];
+  const thLoose = new Set(thForms.map(looseRoman));
+  const thText = normalizeAnswer(thForms.join(" "));
+  const lo = romanParts(item.loRoman);
+  const loNorm = new Set(lo.map(normalizeAnswer));
+  const loLoose = new Set(lo.map(looseRoman));
+  return list.filter((a) => {
+    const n = normalizeAnswer(a);
+    const l = looseRoman(a);
+    if (item.tier === "glyph" && n.length <= 2 && otherLetterSound(item, n)) return false;
+    if (thLoose.has(l) || thText.includes(n) && n.length <= 2) return true;
+    if (item.tier === "glyph") return n.length > 2 || !loNorm.has(n);
+    return !loNorm.has(n) && !loLoose.has(l);
+  });
 }
 function isCorrect(item, input) {
   const n = normalizeAnswer(input);
   if (!n) return false;
-  const thaiCard = item.tier === "glyph" && item.toneSet !== "lo";
+  const thaiCard = thaiCourseItem(item);
   const readings = [...thaiLetterOnly(item, item.accept), item.thRoman, thaiCard ? null : item.loRoman, romanize(item.thRoman, "rtgs")].filter(Boolean).flatMap((r) => r.split(/\s*·\s*|\s*\/\s*/));
   const pool = [...readings, ...item.meaning.split(/[\/·,()]/)];
   if (pool.some((a) => normalizeAnswer(a) === n)) return true;
@@ -2097,7 +2124,7 @@ function editDistance(a, b) {
   return row[b.length];
 }
 function readingForms(item) {
-  const thaiCard = item.tier === "glyph" && item.toneSet !== "lo";
+  const thaiCard = thaiCourseItem(item);
   return [item.thRoman, thaiCard ? null : item.loRoman, item.thRoman && romanize(item.thRoman, "rtgs")].filter(Boolean).flatMap((r) => r.split(/\s*·\s*|\s*\/\s*/)).filter(Boolean);
 }
 const answerSplitCache = new Map();
@@ -2110,7 +2137,7 @@ function answerSplit(item) {
   const loose = readings.map(looseRoman);
   const whole = item.meaning.replace(/\([^)]*\)/g, "").trim();
   const meanings = [whole, ...item.meaning.split(/[/·,()…?]/)].map((m) => m.trim()).filter(Boolean);
-  (item.accept || []).forEach((a) => {
+  thaiLetterOnly(item, item.accept || []).forEach((a) => {
     if (/\d/.test(a)) { meanings.push(a); return; }
     const o = consonantOutline(a);
     const isReading = loose.includes(looseRoman(a)) || outlines.some((r) => editDistance(r, o) <= (Math.max(r.length, o.length) >= 4 ? 1 : 0));
