@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.36.2";
+const APP_VERSION = "0.37.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2622,6 +2622,12 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.37.0", title: "Examples and patterns", points: [
+    "Word pages and lessons show up to three lines that use the word, each in a different way. Lines you can already read come first; words you haven't met yet are grey.",
+    "Once a word is solid (Naga Adept), the Sentence deck adds a fill-the-gap line for it.",
+    "New Thai patterns deck: 44 patterns such as ไม่…เลย, กำลัง…อยู่, เคย, กว่า and noun + number + counting word, each with a short note, three examples and fill-the-gap reviews. It opens with the Little words bed, three new patterns a day.",
+    "Word Garden boxes now teach common words a little earlier (checked against the Thai National Corpus and the Thai Textbook Corpus). Counting, days and months keep their order.",
+  ] },
   { v: "0.36.2", title: "Stricter answers", points: [
     "Letter cards want the letter's own sound: k for ข, p for พ, t for ท and ch for จ are now wrong, because those are the sounds of ก, ป, ต and ช.",
     "Thai words no longer accept the Lao word: wao for พูด, het for ทำ, ngaam for สวย and about 260 more were being marked right. Loose spellings of the Thai reading (chop for จบ, khao for ข้าว) still count.",
@@ -4486,6 +4492,7 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
       <Ledger open={ledgerOpen} onClose={() => setLedgerOpen(false)} log={log} srs={srs} ear={ear} mode={mode} />
 
       <SentenceDeck mode={mode} font={font} deck={sentSrs} setDeck={setSentSrs} saved={decoderSaved} mined={mined} sandbox={sandbox} logActivity={logActivity} course={course} stageOf={stageOf} />
+      {mode !== "lo" && <PatternDeck deck={sentSrs} setDeck={setSentSrs} sandbox={sandbox} logActivity={logActivity} stageOf={stageOf} />}
       <ProductionCard on={prodOn} onTurnOn={() => setPref?.("production", true)} cards={prodList} deck={prodSrs} sandbox={sandbox} script={prodScript(mode)} closeCount={prodClose} onOpen={() => setProdOpen(true)} />
 
       {/* River passport: one stamp per Guardian Trial. */}
@@ -5005,6 +5012,338 @@ function SentenceSession({ open, onClose, cards, queue, deck, setDeck, mode, log
           <button onClick={() => say(card)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm text-slate-200"><Volume2 size={16} /></button>
           <button onClick={next} className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">{idx === line.length - 1 ? "Finish" : "Next"}</button>
         </div>
+      )}
+    </Modal>
+  );
+}
+
+/* ============================================================================
+ * Thai patterns deck (C4). About forty A1 patterns as their own cards: a short
+ * note, three examples, then fill-the-gap reviews where the gap is the pattern
+ * word. `@id|name|note`, then `Thai words spaced, [gap]|English`. A pattern opens
+ * once you've started the Little words bed and its own gap words are learned.
+ * ========================================================================== */
+const PATTERNS_SRC = `@mai|ไม่ + word|Put ไม่ right before a verb or describing word to say "not".
+ฉัน [ไม่] ชอบ|I don't like it.
+อาหาร [ไม่] เผ็ด|The food isn't spicy.
+เขา [ไม่] มา|He isn't coming.
+@mai-loei|ไม่ … เลย|Add เลย after it for "not at all".
+ไม่ อร่อย [เลย]|Not tasty at all.
+ฉัน ไม่ เข้าใจ [เลย]|I don't understand at all.
+ไม่ แพง [เลย]|Not expensive at all.
+@mai-chai|ไม่ใช่ + noun|For "isn't" before a noun, use ไม่ใช่, not ไม่ เป็น.
+เขา [ไม่ใช่] ครู|He isn't a teacher.
+นี่ [ไม่ใช่] ของ ฉัน|This isn't mine.
+[ไม่ใช่] วันนี้|Not today.
+@pen|เป็น + noun|เป็น links a person or thing to what it is. Describing words need no "be": อาหาร อร่อย is "the food is tasty".
+ฉัน [เป็น] ครู|I'm a teacher.
+เขา [เป็น] หมอ|He's a doctor.
+เธอ [เป็น] เพื่อน ฉัน|She's my friend.
+@khue|คือ (is, means)|คือ says what something is exactly, like an equals sign.
+นี่ [คือ] บ้าน ฉัน|This is my house.
+ความหมาย [คือ] อะไร|What does it mean?
+เขา [คือ] พ่อ ฉัน|He is my father.
+@mii|มี (have, there is)|มี means both "have" and "there is".
+ฉัน [มี] แมว|I have a cat.
+[มี] น้ำ ไหม|Is there any water?
+ที่นี่ [มี] ร้านอาหาร|There's a restaurant here.
+@mai-q|… ไหม (yes/no question)|Put ไหม at the end to turn a line into a yes/no question.
+ชอบ [ไหม]|Do you like it?
+เผ็ด [ไหม]|Is it spicy?
+ไป [ไหม]|Are you going?
+@rue-plao|… หรือเปล่า (or not?)|หรือเปล่า at the end asks "… or not?", a little more direct than ไหม.
+เขา มา [หรือเปล่า]|Is he coming or not?
+หิว [หรือเปล่า]|Are you hungry?
+แพง [หรือเปล่า]|Is it expensive?
+@chai-mai|… ใช่ไหม (right?)|ใช่ ไหม at the end checks something you think is true.
+คุณ เป็น คน ไทย [ใช่] ไหม|You're Thai, right?
+นี่ ของ คุณ [ใช่] ไหม|This is yours, right?
+พรุ่งนี้ ไป [ใช่] ไหม|We're going tomorrow, right?
+@ja|จะ + verb (will)|จะ before a verb points to the future.
+พรุ่งนี้ ฉัน [จะ] ไป|I'll go tomorrow.
+เขา [จะ] มา|He'll come.
+ฝน [จะ] ตก|It's going to rain.
+@laeo|… แล้ว (already)|แล้ว at the end says it has happened, or that things have changed.
+ฉัน กิน [แล้ว]|I've eaten already.
+เขา มา [แล้ว]|He's here now.
+หิว [แล้ว]|I'm hungry now.
+@yang-mai|ยัง ไม่ (not yet)|ยัง ไม่ before a verb: it hasn't happened yet.
+ฉัน [ยัง] ไม่ กิน|I haven't eaten yet.
+เขา [ยัง] ไม่ มา|He hasn't come yet.
+[ยัง] ไม่ รู้|I don't know yet.
+@rue-yang|… หรือยัง (yet?)|หรือยัง at the end asks whether it has happened yet.
+กิน ข้าว [หรือยัง]|Have you eaten yet?
+เขา มา [หรือยัง]|Has he come yet?
+พร้อม [หรือยัง]|Are you ready yet?
+@kamlang|กำลัง + verb (right now)|กำลัง before a verb: it's happening right now. อยู่ often follows.
+ฉัน [กำลัง] กิน ข้าว อยู่|I'm eating right now.
+เขา [กำลัง] ทำงาน อยู่|He's working right now.
+ฝน [กำลัง] ตก|It's raining right now.
+@yuu|verb + อยู่ (ongoing)|อยู่ after a verb says it's still going on.
+เขา นอน [อยู่]|He's sleeping.
+แม่ ทำอาหาร [อยู่]|Mum is cooking.
+ฉัน ทำงาน [อยู่]|I'm working.
+@khoei|เคย + verb (ever)|เคย: have done it before. ไม่ เคย: never.
+คุณ [เคย] ไป ลาว ไหม|Have you ever been to Laos?
+ฉัน [เคย] กิน ส้มตำ|I've had som tam before.
+เขา ไม่ [เคย] มา|He's never come.
+@dai|verb + ได้ (can)|ได้ after the verb (and anything after it) says you can. ไม่ ได้ there: can't.
+ฉัน พูด ภาษาไทย [ได้]|I can speak Thai.
+ไป [ได้] ไหม|Can I go?
+ฉัน ไป ไม่ [ได้]|I can't go.
+@mai-dai|ไม่ได้ + verb (didn't)|ไม่ได้ before a verb says it didn't happen.
+ฉัน [ไม่ได้] ไป|I didn't go.
+เขา [ไม่ได้] พูด|He didn't say so.
+ฉัน [ไม่ได้] กิน|I didn't eat.
+@tong|ต้อง + verb (must)|ต้อง before a verb: have to.
+ฉัน [ต้อง] ไป|I have to go.
+คุณ [ต้อง] จ่าย|You have to pay.
+[ต้อง] รอ|You have to wait.
+@yaak|อยาก + verb (want to)|อยาก before a verb: want to do it. For things, use อยาก ได้.
+ฉัน [อยาก] ดื่ม กาแฟ|I want to drink coffee.
+เขา [อยาก] ไป ทะเล|He wants to go to the sea.
+[อยาก] นอน|I want to sleep.
+@khuan|ควร + verb (should)|ควร before a verb: should.
+คุณ [ควร] พัก|You should rest.
+[ควร] ไป หา หมอ|You should see a doctor.
+เรา [ควร] ไป แล้ว|We should go now.
+@aat-ja|อาจจะ (might)|อาจจะ before the verb: maybe, might.
+[อาจจะ] ฝนตก|It might rain.
+เขา [อาจจะ] มา สาย|He might be late.
+ฉัน [อาจจะ] ไป|I might go.
+@hai|ให้ (give, for, let)|ให้ means give, and after a verb "for someone". At the start: let.
+แม่ [ให้] เงิน ฉัน|Mum gave me money.
+ฉัน ซื้อ [ให้] คุณ|I bought it for you.
+[ให้] ฉัน ช่วย|Let me help.
+@chuay|ช่วย … หน่อย (please do)|ช่วย at the start and หน่อย at the end make a polite request.
+[ช่วย] ปิด ประตู หน่อย|Please close the door.
+[ช่วย] พูด ช้า หน่อย|Please speak slowly.
+[ช่วย] ถือ หน่อย|Please hold this.
+@khor|ขอ + thing (may I have)|ขอ before a thing asks for it.
+[ขอ] น้ำ หน่อย|Some water, please.
+[ขอ] เมนู|The menu, please.
+[ขอ] เช็คบิล|The bill, please.
+@noi|… หน่อย (a little, softer)|หน่อย at the end softens a request.
+ขอ น้ำ [หน่อย]|Some water, please.
+รอ [หน่อย]|Wait a moment.
+ลด [หน่อย] ได้ ไหม|Can you lower the price a little?
+@classifier|noun + number + counting word|Thai counts with a counting word after the number: noun, number, counter.
+กาแฟ สอง [แก้ว]|Two cups of coffee.
+แมว สาม [ตัว]|Three cats.
+หนังสือ สอง [เล่ม]|Two books.
+@nii|noun + นี้ (this …)|นี้ after a noun (or its counting word): this one.
+คน [นี้]|this person
+เสื้อ ตัว [นี้]|this shirt
+ร้าน [นี้] อร่อย|This shop is good.
+@thii|ที่ (that, which, who)|ที่ after a noun starts a description: the one that ….
+คน [ที่] ใส่ เสื้อ แดง|the person in the red shirt
+ร้าน [ที่] ฉัน ชอบ|the shop that I like
+อาหาร [ที่] อร่อย|food that tastes good
+@khong|ของ (of, 's)|ของ links a thing to its owner: thing ของ owner.
+บ้าน [ของ] ฉัน|my house
+เพื่อน [ของ] เขา|his friend
+[ของ] ใคร|Whose is it?
+@kwaa|… กว่า (more than)|กว่า after a describing word: more … than.
+นี่ ถูก [กว่า]|This one is cheaper.
+เขา สูง [กว่า] ฉัน|He's taller than me.
+วันนี้ ร้อน [กว่า] เมื่อวาน|Today is hotter than yesterday.
+@thii-sut|… ที่สุด (the most)|ที่สุด after a describing word: the most.
+อร่อย [ที่สุด]|the tastiest
+เขา สูง [ที่สุด]|He's the tallest.
+ร้าน นี้ ถูก [ที่สุด]|This shop is the cheapest.
+@maak|… มาก (very)|มาก after the word: very, a lot.
+อร่อย [มาก]|Very tasty.
+ร้อน [มาก]|Very hot.
+ขอบคุณ [มาก]|Thank you very much.
+@koen-pai|… เกินไป (too)|เกินไป after a describing word: too much.
+แพง [เกินไป]|Too expensive.
+เผ็ด [เกินไป]|Too spicy.
+ไกล [เกินไป]|Too far.
+@duay|… ด้วย (too, also)|ด้วย at the end: as well.
+ฉัน ไป [ด้วย]|I'm coming too.
+ขอ น้ำ [ด้วย]|Water too, please.
+เขา ชอบ [ด้วย]|He likes it too.
+@ko|ก็ (also, then)|ก็ before the verb: also, or "then" after an if.
+ฉัน [ก็] ชอบ|I like it too.
+เขา [ก็] ไป|He's going too.
+ถ้า ว่าง [ก็] มา|If you're free, then come.
+@thaa|ถ้า … (if)|ถ้า starts the condition; ก็ can start the result.
+[ถ้า] ฝนตก ฉัน ไม่ ไป|If it rains, I won't go.
+[ถ้า] หิว กิน เลย|If you're hungry, go ahead and eat.
+[ถ้า] ไม่ แพง ฉัน ซื้อ|If it's not expensive, I'll buy it.
+@phro|เพราะ (because)|เพราะ starts the reason.
+ฉัน ไม่ ไป [เพราะ] ฝนตก|I'm not going because it's raining.
+เขา มา สาย [เพราะ] รถ ติด|He's late because of the traffic.
+ฉัน ชอบ [เพราะ] อร่อย|I like it because it's tasty.
+@tae|แต่ (but)|แต่ joins two opposite ideas.
+อร่อย [แต่] แพง|Tasty but expensive.
+ฉัน อยาก ไป [แต่] ไม่ ว่าง|I want to go but I'm busy.
+เล็ก [แต่] ดี|Small but good.
+@rue|หรือ (or)|หรือ between two choices.
+ชา [หรือ] กาแฟ|Tea or coffee?
+ร้อน [หรือ] เย็น|Hot or cold?
+วันนี้ [หรือ] พรุ่งนี้|Today or tomorrow?
+@kan|… กัน (together, each other)|กัน at the end: together. ไป กัน: let's go.
+ไป [กัน]|Let's go.
+กิน ข้าว [กัน]|Let's eat together.
+เรา เป็น เพื่อน [กัน]|We're friends.
+@q-end|question word at the end|Thai question words stay where the answer goes, usually at the end.
+คุณ ชื่อ [อะไร]|What's your name?
+คุณ ไป [ที่ไหน]|Where are you going?
+นี่ ราคา [เท่าไร]|How much is this?
+@yaa|อย่า + verb (don't)|อย่า before a verb tells someone not to.
+[อย่า] ไป|Don't go.
+[อย่า] ลืม|Don't forget.
+[อย่า] กลัว|Don't be afraid.
+@loei|verb + เลย (go ahead)|เลย after a verb: go ahead, right away.
+กิน [เลย]|Go ahead and eat.
+ไป [เลย]|Go ahead.
+นั่ง [เลย]|Have a seat.`;
+const PATTERNS = (() => {
+  const out = [];
+  PATTERNS_SRC.split("\n").forEach((line) => {
+    if (line.startsWith("@")) { const [id, name, note] = line.slice(1).split("|"); out.push({ id, name, note, ex: [] }); return; }
+    const [body, en] = line.split("|");
+    const toks = body.trim().split(/\s+/);
+    const k = toks.findIndex((t) => /^\[.*\]$/.test(t));
+    const words = toks.map((t) => t.replace(/^\[|\]$/g, ""));
+    out[out.length - 1].ex.push({ words, gap: words[k], text: words.join(""), tts: words.join(" "), en });
+  });
+  return out;
+})();
+const PATTERN_NEW_PER_DAY = 3;
+/** Pattern cards for the Thai course: `ready` once the Little words bed is started
+ *  and every course word used as a gap is learned (Novice Monk). */
+function patternCards(stageOf = () => 0) {
+  const lex = thaiLexicon();
+  const grammarStarted = GARDEN_ITEMS.some((i) => i.garden === "grammar" && stageOf(i.id) >= 1);
+  return PATTERNS.map((p) => {
+    const needs = [...new Set(p.ex.map((e) => lex.get(e.gap)?.id).filter(Boolean))];
+    return { id: `pt-${p.id}`, pattern: p, script: "th", needs, ready: grammarStarted && needs.every((id) => stageOf(id) >= 2) };
+  });
+}
+/** One review of a pattern: an example (rotating with reps) and gap choices from other patterns. */
+function patternQuestion(card, reps = 0, rnd = Math.random) {
+  const p = card.pattern;
+  const ex = p.ex[reps % p.ex.length];
+  const others = [...new Set(PATTERNS.flatMap((q) => q.ex.map((e) => e.gap)))].filter((g) => g !== ex.gap && !ex.words.includes(g));
+  const pick = [...others].sort(() => rnd() - 0.5).slice(0, 3);
+  const k = ex.words.indexOf(ex.gap);
+  return { ...ex, prompt: ex.words.map((w, i) => (i === k ? "＿＿" : w)).join(""), answer: ex.gap, opts: [ex.gap, ...pick].sort(() => rnd() - 0.5) };
+}
+function patternSession(cards, deck, now, sandbox) {
+  const day = todayKey(now);
+  const newToday = deck.__pnew?.day === day ? deck.__pnew.n : 0;
+  const due = cards.filter((c) => deck[c.id] && deck[c.id].stage < 5 && (sandbox || deck[c.id].next <= now));
+  const fresh = cards.filter((c) => !deck[c.id] && (sandbox || c.ready)).slice(0, Math.max(0, PATTERN_NEW_PER_DAY - newToday));
+  return { due, fresh };
+}
+
+function PatternDeck({ deck = {}, setDeck, sandbox, logActivity, stageOf }) {
+  const [open, setOpen] = useState(false);
+  const cards = useMemo(() => patternCards(stageOf), [stageOf]);
+  const { due, fresh } = patternSession(cards, deck, Date.now(), sandbox);
+  const started = cards.filter((c) => deck[c.id]).length;
+  const ready = cards.filter((c) => c.ready).length;
+  return (
+    <>
+    <Card className="p-4 sm:p-5" data-pattern-deck>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-sky-300"><Layers size={13} /> Thai patterns</div>
+          <p className="text-xs text-slate-400">{started ? `${started}/${cards.length} patterns started.` : ready ? `${ready} patterns ready: ไม่…เลย, กำลัง, กว่า and more.` : "Opens with the Little words bed: word order and the small words that make Thai mean things."}</p>
+        </div>
+        <button disabled={!due.length && !fresh.length} onClick={() => setOpen(true)} className="shrink-0 rounded-xl bg-sky-400 px-3 py-2 text-xs font-bold text-black disabled:bg-white/10 disabled:text-slate-400">
+          {due.length || fresh.length ? `${due.length} due · ${fresh.length} new` : started ? "Done for today" : "Not open yet"}
+        </button>
+      </div>
+    </Card>
+    {open && <PatternSession onClose={() => setOpen(false)} queue={[...due, ...fresh].slice(0, 10)} deck={deck} setDeck={setDeck} logActivity={logActivity} />}
+    </>
+  );
+}
+
+function PatternSession({ onClose, queue, deck, setDeck, logActivity }) {
+  const [line] = useState(() => queue);
+  const [qs] = useState(() => queue.map((c) => patternQuestion(c, deck[c.id]?.reps || 0)));
+  const [idx, setIdx] = useState(0);
+  const [learned, setLearned] = useState(() => new Set());
+  const [pick, setPick] = useState(null);
+  const card = line[idx];
+  const q = qs[idx];
+  const fam = FONT_STACKS.loop.th;
+  const say = (t) => getAudio().speakHumanVoice(t);
+  if (!card) {
+    return (
+      <Modal open onClose={onClose} title="Thai patterns">
+        <div className="py-6 text-center"><Check className="mx-auto text-emerald-300" size={28} /><p className="mt-2 text-white">Done for now.</p></div>
+        <button onClick={onClose} className="w-full rounded-2xl bg-sky-400 py-3 font-bold text-black">Close</button>
+      </Modal>
+    );
+  }
+  const p = card.pattern;
+  if (!deck[card.id] && !learned.has(card.id)) {
+    return (
+      <Modal open onClose={onClose} title={`New pattern · ${idx + 1} / ${line.length}`}>
+        <div data-pattern-intro>
+          <div className="text-3xl text-white" lang="th" style={{ fontFamily: fam }}>{p.name}</div>
+          <p className="mt-2 text-sm text-slate-300">{p.note}</p>
+          <div className="mt-4 space-y-2">
+            {p.ex.map((e) => (
+              <button key={e.text} type="button" onClick={() => say(e.tts)} className="flex w-full items-center gap-3 rounded-2xl border border-white/5 bg-white/[0.03] p-3 text-left">
+                <Volume2 size={16} className="shrink-0 text-sky-300" />
+                <div className="min-w-0">
+                  <div className="text-xl text-white" lang="th" style={{ fontFamily: fam }}>{e.words.map((w, i) => <span key={i} className={w === e.gap ? "text-sky-300" : ""}>{w}</span>)}</div>
+                  <div className="text-xs text-slate-400">{e.en}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setLearned(new Set([...learned, card.id]))} className="mt-4 w-full rounded-2xl bg-sky-400 py-3 font-bold text-black">Try it</button>
+        </div>
+      </Modal>
+    );
+  }
+  const choose = (o) => {
+    if (pick) return;
+    setPick(o);
+    const ok = o === q.answer;
+    haptic(ok ? "ok" : "miss");
+    say(q.tts);
+    setDeck?.((d) => {
+      const cur = d[card.id];
+      const day = todayKey();
+      const n = d.__pnew?.day === day ? d.__pnew.n : 0;
+      const next = { ...scheduleItem(cur || { stage: 1, next: 0 }, { read: ok ? 3 : 1 }), reps: (cur?.reps || 0) + 1 };
+      logReview(card.id, "pattern", ok ? 3 : 1);
+      return { ...d, [card.id]: next, ...(!cur ? { __pnew: { day, n: n + 1 } } : {}) };
+    });
+    logActivity?.({ reviews: 1, reviewsRight: ok ? 1 : 0 });
+  };
+  return (
+    <Modal open onClose={onClose} title={`Thai patterns · ${idx + 1} / ${line.length}`}>
+      <div className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400">Fill the gap · {p.name}</div>
+      <div className="mt-3 rounded-3xl bg-white/[0.04] p-5 text-center">
+        <div className="text-3xl leading-[1.7] text-white" lang="th" style={{ fontFamily: fam }}>{pick ? q.text : q.prompt}</div>
+        <div className="mt-1 text-sm text-slate-300">{q.en}</div>
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        {q.opts.map((o) => {
+          const right = pick && o === q.answer;
+          const wrong = pick === o && o !== q.answer;
+          return (
+            <button key={o} data-pattern-opt onClick={() => choose(o)} className={`rounded-2xl border px-4 py-3 text-2xl text-white transition ${right ? "border-emerald-400 bg-emerald-500/20" : wrong ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04]"}`} style={{ fontFamily: fam }}>{o}</button>
+          );
+        })}
+      </div>
+      {pick && (
+        <>
+          {pick !== q.answer && <p className="mt-3 text-sm text-slate-300">{p.note}</p>}
+          <div className="mt-4 flex gap-2">
+            <button onClick={() => say(q.tts)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm text-slate-200"><Volume2 size={16} /></button>
+            <button onClick={() => { setPick(null); setIdx(idx + 1); }} className="flex-1 rounded-2xl bg-sky-400 py-3 font-bold text-black">{idx === line.length - 1 ? "Finish" : "Next"}</button>
+          </div>
+        </>
       )}
     </Modal>
   );
@@ -12148,4 +12487,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };

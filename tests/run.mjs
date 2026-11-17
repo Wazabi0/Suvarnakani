@@ -693,5 +693,29 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(T.textKey("ฉัน กิน") === T.textKey("ฉันกิน"), "text keys ignore spaces");
 }
 
+// 0.37.0 C4: Thai patterns deck.
+{
+  check(T.PATTERNS.length >= 40, `about forty patterns (${T.PATTERNS.length})`);
+  check(new Set(T.PATTERNS.map((p) => p.id)).size === T.PATTERNS.length, "pattern ids are unique");
+  T.PATTERNS.forEach((p) => {
+    check(p.ex.length === 3 && p.name && p.note, `pattern ${p.id} has a name, a note and three examples`);
+    p.ex.forEach((e) => check(e.gap && e.words.includes(e.gap) && e.en && !/[\[\]]/.test(e.text), `pattern ${p.id}: "${e.text}" has its gap`));
+  });
+  const q = T.patternQuestion(T.patternCards()[0], 1, () => 0.3);
+  check(q.opts.length === 4 && q.opts.includes(q.answer) && new Set(q.opts).size === 4 && q.prompt.includes("＿＿"), "a pattern question has four different choices and a blank");
+  T.patternCards().forEach((c) => [0, 1, 2].forEach((r) => {
+    const qq = T.patternQuestion(c, r);
+    check(qq.opts.filter((o) => o === qq.answer).length === 1 && qq.opts.filter((o) => o !== qq.answer).every((o) => !qq.words.includes(o)), `${c.id}: no choice also fits by appearing in the line`);
+  }));
+  check(T.patternCards(() => 0).every((c) => !c.ready), "patterns are closed before the Little words bed");
+  const grammar = new Set(T.GARDEN_ITEMS.filter((i) => i.garden === "grammar").map((i) => i.id));
+  const all2 = T.patternCards((id) => 2);
+  check(all2.every((c) => c.ready), "every pattern opens once its words are learned");
+  const s = T.patternSession(all2, {}, Date.now(), false);
+  check(s.fresh.length === T.PATTERN_NEW_PER_DAY && s.due.length === 0, "three new patterns a day");
+  const onlyGrammar = T.patternCards((id) => (grammar.has(id) ? 2 : 0));
+  check(onlyGrammar.some((c) => c.ready), "learning the Little words bed opens some patterns");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
