@@ -647,7 +647,24 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(T.isCorrect(xo, "s") || T.isCorrect(xo, "x"), "Lao ຊ still takes s or x");
   let leaks = 0;
   T.courseItems("th").filter((i) => i.tier === "glyph").forEach((i) => T.thaiLetterOnly(i, i.accept).length !== i.accept.length && (leaks += 1));
-  console.log(`  Thai letter cards that had Lao-only answers: ${leaks}`);
+  console.log(`  Thai letter cards with answers dropped: ${leaks}`);
+}
+
+// 0.36.2: the Thai course takes only Thai readings, and letters only their own sound.
+{
+  const th = T.courseItems("th");
+  const g = (c) => th.find((i) => i.th === c && i.tier === "glyph");
+  const w = (c) => th.find((i) => i.th === c && i.tier !== "glyph");
+  check(!T.isCorrect(g("ข"), "k") && T.isCorrect(g("ข"), "kh"), "ข is kh, not k");
+  check(!T.isCorrect(g("พ"), "p") && T.isCorrect(g("พ"), "ph"), "พ is ph, not p");
+  check(!T.isCorrect(g("ท"), "t") && T.isCorrect(g("ท"), "th"), "ท is th, not t");
+  check(!T.isCorrect(g("จ"), "ch") && T.isCorrect(g("จ"), "j"), "จ is j, not the ch of ช");
+  check(T.isCorrect(g("ฑ"), "d"), "ฑ keeps its d reading");
+  check(!T.readingMatch(w("พูด"), "wao") && !T.isCorrect(w("พูด"), "wao"), "พูด does not take the Lao word wao");
+  check(!T.readingMatch(w("ทำ"), "het"), "ทำ does not take the Lao het");
+  check(T.readingMatch(w("จบ"), "chop") && T.readingMatch(w("ข้าว"), "khaaw"), "loose Thai spellings still pass");
+  const xo = T.courseItems("lo").find((i) => i.lo === "ເວົ້າ");
+  if (xo) check(T.readingMatch(xo, "wao"), "the Lao course still takes wao");
 }
 
 console.log(`${passed} passed, ${failed} failed`);
