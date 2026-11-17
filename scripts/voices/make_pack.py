@@ -37,8 +37,8 @@ csv.field_size_limit(sys.maxsize)
 
 
 def key(text):
-    """Same as the app's nativeKey(): Thai letters only, no spaces."""
-    return THAI.sub("", text or "")
+    """Same as the app's nativeKey(): Thai letters only, no spaces, sara am composed (MFA writes ำ as ํ + า)."""
+    return re.sub("\u0e4d([\u0e48-\u0e4b]?)\u0e32", "\\1\u0e33", THAI.sub("", text or ""))
 
 
 def load_targets():
@@ -74,12 +74,34 @@ def run(cmd):
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def tokenize(text):
+_TOKENIZER = {}
+
+
+def tokenize(text, dict_path=None):
+    """Space-separated words. With the MFA dictionary, splits only into words it can pronounce."""
     try:
         from pythainlp.tokenize import word_tokenize  # optional
-        return " ".join(w for w in word_tokenize(text, keep_whitespace=False) if w.strip())
     except ImportError:
         return text
+    if dict_path and "trie" not in _TOKENIZER:
+        from pythainlp.util import Trie
+        with open(dict_path, encoding="utf-8") as f:
+            _TOKENIZER["trie"] = Trie({l.split("\t", 1)[0] for l in f if l.strip()})
+    trie = _TOKENIZER.get("trie")
+    toks = word_tokenize(text, custom_dict=trie, keep_whitespace=False) if trie else word_tokenize(text, keep_whitespace=False)
+    return " ".join(t for t in toks if t.strip())
+
+
+def token_hits(tokens, words, max_join=4):
+    """Targets spelled by 1 to max_join consecutive tokens."""
+    hits = set()
+    for i in range(len(tokens)):
+        joined = ""
+        for j in range(i, min(len(tokens), i + max_join)):
+            joined += tokens[j]
+            if joined in words:
+                hits.add(joined)
+    return hits
 
 
 def prepare(args):
@@ -87,10 +109,15 @@ def prepare(args):
     rows = load_cv(args.cv, args.min_up)
     # For each target word, the clips that contain it, spread over speakers.
     by_word = defaultdict(list)
-    for r in rows:
-        for w in words:
-            if w in r["key"]:
-                by_word[w].append(r)
+    for n, r in enumerate(rows):
+        if not any(w in r["key"] for w in words):
+            continue
+        # Count a clip for a word only where the word stands as whole tokens (กา is not in การ).
+        r["lab"] = tokenize(r["text"], args.dict)
+        for w in token_hits([key(t) for t in r["lab"].split()], words):
+            by_word[w].append(r)
+        if (n + 1) % 20000 == 0:
+            print(f"  {n + 1} / {len(rows)} sentences scanned")
     chosen = {}
     for w, rs in by_word.items():
         seen = set()
@@ -107,7 +134,13 @@ def prepare(args):
             chosen[r["path"]] = r
     corpus = os.path.join(args.work, "corpus")
     os.makedirs(corpus, exist_ok=True)
-    for i, r in enumerate(chosen.values()):
+    os.makedirs(args.work, exist_ok=True)
+    with open(os.path.join(args.work, "needed.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(sorted(chosen)) + "\n")
+    missing = {p for p in chosen if not os.path.exists(os.path.join(args.cv, "clips", p))}
+    if missing:
+        print(f"{len(missing)} of {len(chosen)} chosen clips are not in {args.cv}/clips yet (list: needed.txt); converting the rest.")
+    for i, r in enumerate(r for r in chosen.values() if r["path"] not in missing):
         spk = hashlib.sha1(r["speaker"].encode()).hexdigest()[:10]
         d = os.path.join(corpus, spk)
         os.makedirs(d, exist_ok=True)
@@ -116,7 +149,7 @@ def prepare(args):
         if not os.path.exists(wav):
             run(["ffmpeg", "-y", "-i", os.path.join(args.cv, "clips", r["path"]), "-ac", "1", "-ar", "16000", wav])
         with open(os.path.join(d, base + ".lab"), "w", encoding="utf-8") as f:
-            f.write(tokenize(r["text"]))
+            f.write(r.get("lab") or tokenize(r["text"], args.dict))
         if (i + 1) % 200 == 0:
             print(f"  {i + 1} / {len(chosen)} clips converted")
     covered = sum(1 for w in words if by_word.get(w))
@@ -271,6 +304,7 @@ def main():
         p.add_argument("--work", required=True, help="working folder for the corpus and alignments")
         p.add_argument("--min-up", type=int, default=2, help="minimum up-votes per clip")
     sub.choices["prepare"].add_argument("--candidates", type=int, default=8, help="speakers to align per word")
+    sub.choices["prepare"].add_argument("--dict", help="MFA pronunciation dictionary (thai_mfa.dict): split transcripts into its words")
     b = sub.choices["build"]
     b.add_argument("--per-text", type=int, default=3, help="speakers kept per word or sentence")
     b.add_argument("--min-word", type=float, default=0.18, help="shortest word clip, seconds")
