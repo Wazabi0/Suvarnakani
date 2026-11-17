@@ -1,2 +1,4 @@
 node_modules/
 package-lock.json
+voices/targets.json
+voices/th/review.html

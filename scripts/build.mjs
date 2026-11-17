@@ -2,7 +2,7 @@
 // compiled Tailwind CSS inlined. Only Google Fonts load from the network.
 import { build } from "esbuild";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 
@@ -117,15 +117,24 @@ writeFileSync(join(dist, "manifest.webmanifest"), JSON.stringify({
   // Share text from Google Lens, LINE or Chrome straight into the Decoder.
   share_target: { action: "./", method: "GET", params: { title: "title", text: "text", url: "url" } },
 }, null, 2));
+// Native speaker clips (C1): voices/th/ holds index.json and the clips made by
+// scripts/voices. They are copied as-is; the app downloads each clip the first
+// time it plays and the service worker keeps it.
+rmSync(join(dist, "voices"), { recursive: true, force: true });
+if (existsSync(join(root, "voices", "th", "index.json"))) {
+  cpSync(join(root, "voices", "th"), join(dist, "voices", "th"), { recursive: true, filter: (src) => !src.endsWith("review.html") });
+  console.log("copied native voice pack into dist/voices");
+}
 writeFileSync(join(dist, "sw.js"), `// App shell and the bundled fonts are cached on install, so the app works
 // offline from the first launch. Google Fonts (only used if the build could not
 // bundle them) are cached as they load.
 const SHELL = "suvarnakani-${version}";
 const FONTS = "suvarnakani-fonts";
+const VOICES = "suvarnakani-voices";
 const FILES = ${JSON.stringify(["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "icon-monochrome-512.png", ...fontFiles])};
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(SHELL).then((c) => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener("activate", (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== FONTS).map((k) => caches.delete(k)))));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== FONTS && k !== VOICES).map((k) => caches.delete(k)))));
   self.clients.claim();
 });
 self.addEventListener("fetch", (e) => {
@@ -135,6 +144,15 @@ self.addEventListener("fetch", (e) => {
       const hit = await c.match(e.request);
       const net = fetch(e.request).then((r) => { if (r.ok || r.type === "opaque") c.put(e.request, r.clone()); return r; }).catch(() => hit);
       return hit || net;
+    }));
+  } else if (url.origin === location.origin && url.pathname.includes("/voices/") && !url.pathname.endsWith(".json")) {
+    // Native clips: kept across app updates once heard.
+    e.respondWith(caches.open(VOICES).then(async (c) => {
+      const hit = await c.match(e.request);
+      if (hit) return hit;
+      const r = await fetch(e.request);
+      if (r.ok) c.put(e.request, r.clone());
+      return r;
     }));
   } else if (url.origin === location.origin) {
     e.respondWith(caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || fetch(e.request)));

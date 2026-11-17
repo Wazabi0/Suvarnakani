@@ -605,5 +605,34 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(T.PRACTICE_TOOLS.find((t) => t.id === "talk").level === 8 && T.PRACTICE_TOOLS.find((t) => t.id === "bridge").level === 3, "tools open with their levels");
 }
 
+// 0.35: hear-it reviews (B4) and native voice clips (C1).
+{
+  const word = T.courseItems("th").find((i) => i.tier !== "glyph" && i.th === "ข้าว");
+  const glyph = T.courseItems("th").find((i) => i.tier === "glyph");
+  const st = (stage, spellN = 0) => ({ stage, fsrs: { read: { last: 0, S: 5 } }, stats: { spell: [0, spellN] } });
+  eq(T.hearOrSpell(st(2), word), "spell", "Novice Monk keeps the text on spelling turns");
+  eq(T.hearOrSpell(st(3, 0), word), "hear-spell", "Naga Adept words: hear it, pick the spelling");
+  eq(T.hearOrSpell(st(3, 1), word), "hear-meaning", "then hear it, pick the meaning");
+  eq(T.hearOrSpell(st(4, 1), glyph), "hear-spell", "letters always ask for the spelling");
+  eq(T.hearOrSpell(st(4), word, false), "spell", "hear-it off in Settings");
+  eq(T.reviewDirection(st(3), word), "hear-spell", "a first spelling turn past Novice Monk is hear-it");
+  eq(T.reviewDirection({ stage: 1 }, word), "read", "new items stay on reading");
+  const opts = T.hearMeaningOptions(word, T.courseItems("th").filter((i) => i.tier !== "glyph" && i.id !== word.id).slice(0, 8));
+  check(opts.length === 4 && opts[0] === word && new Set(opts.map((o) => T.plainMeaning(o.meaning).toLowerCase())).size === 4, "four distinct meanings, the word's own included");
+  eq(T.plainMeaning("child (เด็ก)"), "child", "meaning choices hide Thai in brackets");
+
+  eq(T.nativeKey("สวัสดี ครับ!"), "สวัสดีครับ", "native keys drop spaces and non-Thai");
+  T.applyNativeIndex({ source: "test", clips: { "กิน": [["a.mp3", "s1", "f"], ["b.mp3", "s2", "m"]], "ห้อง น้ำ": [["c.mp3", "s1", "f"]] } }, "v/");
+  check(T.nativeInfo.loaded && T.nativeInfo.words === 2 && T.nativeInfo.speakers === 2 && T.nativeInfo.clips === 3, "index counts words, clips and speakers");
+  eq([T.nativeClip("กิน").f, T.nativeClip("กิน").f, T.nativeClip("กิน").f], ["v/a.mp3", "v/b.mp3", "v/a.mp3"], "plays rotate speakers");
+  eq(T.nativeClip("กิน", "male").f, "v/b.mp3", "a dialogue speaker gets a clip of their gender");
+  eq(T.nativeClip("ห้องน้ำ")?.f, "v/c.mp3", "keys ignore spacing");
+  eq(T.nativeClip("ข้าว"), null, "no clip, phone voice");
+  T.runtimePrefs.nativeVoices = false;
+  eq(T.nativeClip("กิน"), null, "native voices off in Settings");
+  T.runtimePrefs.nativeVoices = true;
+  T.applyNativeIndex({ clips: {} });
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
