@@ -717,5 +717,18 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(onlyGrammar.some((c) => c.ready), "learning the Little words bed opens some patterns");
 }
 
+// 0.39.0: the shipped voice pack: every clip exists, LOTUS clips come first.
+{
+  const { existsSync } = await import("node:fs");
+  const idx = JSON.parse(readFileSync(join(root, "voices/th/index.json"), "utf8"));
+  const lists = Object.values(idx.clips);
+  const files = lists.flat().map((c) => c[0]);
+  check(files.every((f) => existsSync(join(root, "voices/th", f))), "every clip in the voice index exists");
+  check(new Set(files).size === files.length, "no clip is listed twice");
+  check(lists.every((l) => { const k = l.findIndex((c) => !c[1].startsWith("L")); return k === -1 || l.slice(k).every((c) => !c[1].startsWith("L")); }), "LOTUS clips come before Common Voice clips");
+  check(lists.filter((l) => l[0][1].startsWith("L")).length >= 250 && /LOTUS/.test(idx.source), "about 260 words have LOTUS clips and the source credits LOTUS");
+  check(lists.every((l) => new Set(l.map((c) => c[1])).size === l.length), "one clip per speaker per word");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

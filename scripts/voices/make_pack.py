@@ -360,6 +360,57 @@ def load_dict(path):
     return prons
 
 
+def mfa_check(args, items, label, by_len, syllables):
+    """One closed-set round: items are (id, target, prons, wav, start, end, pad). Returns name → (item, phones)."""
+    import random
+    d = os.path.join(args.work, "verify", label)
+    if os.path.exists(d):
+        import shutil
+        shutil.rmtree(d)
+    os.makedirs(os.path.join(d, "x"))
+    meta = {}
+    with open(os.path.join(d, "check.dict"), "w", encoding="utf-8") as dic:
+        for i, (cid, target, tp, wav, s, e, pad) in enumerate(items):
+            if not tp:
+                continue
+            n = len(tp[0].split())
+            decoys = set()
+            for k in (n - 1, n, n + 1):
+                if by_len[k]:
+                    decoys.update(random.sample(by_len[k], min(25, len(by_len[k]))))
+            for _ in range(10):
+                decoys.add(random.choice(syllables) + " " + tp[0])
+                decoys.add(tp[0] + " " + random.choice(syllables))
+            decoys -= set(tp)
+            for pr in tp + sorted(decoys):
+                dic.write(f"clip{i}\t{pr}\n")
+            name = f"c{i}"
+            cmd = ["ffmpeg", "-y", "-loglevel", "error"]
+            offset = 0.0
+            if s is not None:
+                offset = max(0.0, s - pad)
+                cmd += ["-ss", f"{offset:.3f}", "-t", f"{e + pad - offset:.3f}"]
+            run(cmd + ["-i", wav, "-ac", "1", "-ar", "16000", os.path.join(d, "x", name + ".wav")])
+            with open(os.path.join(d, "x", name + ".lab"), "w", encoding="utf-8") as f:
+                f.write(f"clip{i}")
+            meta[name] = (cid, target, tp, wav, s, e, pad, offset)
+    out = os.path.join(d, "out")
+    env = dict(os.environ)
+    if os.path.dirname(args.mfa):  # MFA calls Kaldi and OpenFst tools that live beside it
+        env["PATH"] = os.path.dirname(os.path.abspath(args.mfa)) + os.pathsep + env.get("PATH", "")
+    subprocess.run([args.mfa, "align", os.path.join(d, "x"), os.path.join(d, "check.dict"), args.acoustic, out,
+                    "--clean", "-j", str(args.jobs), "--single_speaker", "--no_tokenization"],
+                   check=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    verdicts = {}
+    for name, m in meta.items():
+        tg = os.path.join(out, name + ".TextGrid")
+        if not os.path.exists(tg):
+            tg = os.path.join(out, "x", name + ".TextGrid")
+        ph = [p for p in read_tier(tg) if p[2] and p[2] not in ("sil", "sp", "spn")] if os.path.exists(tg) else []
+        verdicts[name] = (m, ph)
+    return verdicts
+
+
 def verify(args):
     """Check every word clip with the aligner as a small closed-set recogniser.
 
@@ -400,57 +451,9 @@ def verify(args):
             span = c["span"] or (None, None)
             todo.append((cand_id(target, c), target, tp, c["wav"], span[0], span[1], 0.06))
 
-    def run_round(items, label):
-        d = os.path.join(args.work, "verify", label)
-        if os.path.exists(d):
-            import shutil
-            shutil.rmtree(d)
-        os.makedirs(os.path.join(d, "x"))
-        meta = {}
-        with open(os.path.join(d, "check.dict"), "w", encoding="utf-8") as dic:
-            for i, (cid, target, tp, wav, s, e, pad) in enumerate(items):
-                if not tp:
-                    continue
-                n = len(tp[0].split())
-                decoys = set()
-                for k in (n - 1, n, n + 1):
-                    if by_len[k]:
-                        decoys.update(random.sample(by_len[k], min(25, len(by_len[k]))))
-                for _ in range(10):
-                    decoys.add(random.choice(syllables) + " " + tp[0])
-                    decoys.add(tp[0] + " " + random.choice(syllables))
-                decoys -= set(tp)
-                for pr in tp + sorted(decoys):
-                    dic.write(f"clip{i}\t{pr}\n")
-                name = f"c{i}"
-                cmd = ["ffmpeg", "-y", "-loglevel", "error"]
-                offset = 0.0
-                if s is not None:
-                    offset = max(0.0, s - pad)
-                    cmd += ["-ss", f"{offset:.3f}", "-t", f"{e + pad - offset:.3f}"]
-                run(cmd + ["-i", wav, "-ac", "1", "-ar", "16000", os.path.join(d, "x", name + ".wav")])
-                with open(os.path.join(d, "x", name + ".lab"), "w", encoding="utf-8") as f:
-                    f.write(f"clip{i}")
-                meta[name] = (cid, target, tp, wav, s, e, pad, offset)
-        out = os.path.join(d, "out")
-        env = dict(os.environ)
-        if os.path.dirname(args.mfa):  # MFA calls Kaldi and OpenFst tools that live beside it
-            env["PATH"] = os.path.dirname(os.path.abspath(args.mfa)) + os.pathsep + env.get("PATH", "")
-        subprocess.run([args.mfa, "align", os.path.join(d, "x"), os.path.join(d, "check.dict"), args.acoustic, out,
-                        "--clean", "-j", str(args.jobs), "--single_speaker", "--no_tokenization"],
-                       check=True, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        verdicts = {}
-        for name, m in meta.items():
-            tg = os.path.join(out, name + ".TextGrid")
-            if not os.path.exists(tg):
-                tg = os.path.join(out, "x", name + ".TextGrid")
-            ph = [p for p in read_tier(tg) if p[2] and p[2] not in ("sil", "sp", "spn")] if os.path.exists(tg) else []
-            verdicts[name] = (m, ph)
-        return verdicts
-
     print(f"checking {len(todo)} word clips (round 1)")
     retry = []
-    for name, (m, ph) in run_round(todo, "round1").items():
+    for name, (m, ph) in mfa_check(args, todo, "round1", by_len, syllables).items():
         cid, target, tp, wav, s, e, pad, offset = m
         got = [p[2] for p in ph]
         if " ".join(got) in tp:
@@ -470,7 +473,7 @@ def verify(args):
             break
     print(f"re-checking {len(retry)} trimmed clips (round 2)")
     if retry:
-        for name, (m, ph) in run_round(retry, "round2").items():
+        for name, (m, ph) in mfa_check(args, retry, "round2", by_len, syllables).items():
             cid, target, tp, wav, s, e, pad, offset = m
             if " ".join(p[2] for p in ph) in tp and e - s >= args.min_word:
                 results[cid] = {"ok": True, "span": [s, e], "pad": pad, "trimmed": True}
