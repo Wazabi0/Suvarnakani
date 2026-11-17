@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.37.0";
+const APP_VERSION = "0.38.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -1344,7 +1344,59 @@ const GARDEN_SRC = `#food
 ประโยค|ປະໂຫຍກ|prà-yòok|sentence|ประโยคยาว|a long sentence
 ความหมาย|ຄວາມໝາຍ|khwaam-mǎai|meaning|ความหมายคืออะไร|what does it mean?
 แปล|ແປ|plɛɛ|translate|แปลว่าอะไร|what does it mean?
-ฝึก|ຝຶກ|fʉ̀k|practise|ฝึกทุกวัน|practise every day`;
+ฝึก|ຝຶກ|fʉ̀k|practise|ฝึกทุกวัน|practise every day
+#core
+ว่า|ວ່າ|wâa|that (after say, think)|เขาบอกว่าไม่ไป|he said that he's not going
+กัน|ກັນ|kan|together / each other|ไปด้วยกัน|let's go together
+อย่าง|ຢ່າງ|yàang|kind / like / way|อย่างนี้|like this
+ตาม|ຕາມ|taam|follow / according to|ตามฉันมา|follow me
+เมื่อ|ເມື່ອ|mʉ̂a|when (in the past)|เมื่อเช้านี้|this morning (earlier)
+เรื่อง|ເລື່ອງ|rʉ̂ang|story / matter|เรื่องนี้|this matter
+อีก|ອີກ|ìik|again / more|ขออีกหนึ่ง|one more, please
+ไว้|ໄວ້|wái|put aside / keep|เก็บไว้|keep it
+เพื่อ|ເພື່ອ|phʉ̂a|in order to / for|เรียนเพื่องาน|study for work
+เลย|ເລີຍ|ləəy|at all / go ahead|ไม่ชอบเลย|I don't like it at all
+กว่า|ກວ່າ|kwàa|more than|ดีกว่า|better
+ทุก|ທຸກ|thúk|every|ทุกวัน|every day
+เช่น|ເຊັ່ນ|chên|such as|ผลไม้เช่นมะม่วง|fruit such as mango
+เสียง|ສຽງ|sǐang|sound / voice|เสียงดัง|loud
+ครั้ง|ເທື່ອ|khráng|time (once, twice)|สองครั้ง|twice
+อื่น|ອື່ນ|ʉ̀ʉn|other|คนอื่น|other people
+บาง|ບາງ|baang|some|บางคน|some people
+คง|ຄົງ|khong|probably|คงไม่มา|probably won't come
+หลาย|ຫຼາຍ|lǎai|many|หลายคน|many people
+พอ|ພໍ|phɔɔ|enough|พอแล้ว|that's enough
+สามารถ|ສາມາດ|sǎa-mâat|can (formal)|สามารถพูดได้|is able to speak
+เอง|ເອງ|eeng|oneself|ทำเอง|do it yourself
+บ้าง|ແດ່|bâang|some / a bit|กินบ้าง|eat some
+แบบ|ແບບ|bɛ̀ɛp|style / type|แบบนี้|this kind
+สำหรับ|ສຳລັບ|sǎm-ràp|for|สำหรับคุณ|for you
+เดียว|ດຽວ|diaw|single / only one|คนเดียว|alone
+ที่สุด|ທີ່ສຸດ|thîi-sùt|the most|ดีที่สุด|the best
+ระหว่าง|ລະຫວ່າງ|rá-wàang|between / during|ระหว่างทาง|on the way
+แรก|ທຳອິດ|rɛ̂ɛk|first|ครั้งแรก|the first time
+ตาย|ຕາຍ|taai|die|ปลาตาย|the fish died
+ตรง|ກົງ|trong|straight / exactly|ตรงนี้|right here
+พา|ພາ|phaa|take (someone) along|พาไปเที่ยว|take someone out
+ปัญหา|ບັນຫາ|pan-hǎa|problem|ไม่มีปัญหา|no problem
+ตอน|ຕອນ|tɔɔn|while / part of the day|ตอนเด็ก|as a child
+อย่า|ຢ່າ|yàa|don't|อย่าลืม|don't forget
+หมด|ໝົດ|mòt|used up / all gone|หมดแล้ว|all gone
+นาน|ດົນ|naan|a long time|รอนาน|wait a long time
+ตั้งแต่|ຕັ້ງແຕ່|tâng-tɛ̀ɛ|since|ตั้งแต่เช้า|since the morning
+ผ่าน|ຜ່ານ|phàan|pass / through|ผ่านไป|pass by
+สัก|ສັກ|sàk|about / just one|สักครู่|just a moment
+ทราบ|ຊາບ|sâap|know (polite)|ทราบแล้ว|noted, understood
+เก็บ|ເກັບ|kèp|collect / keep|เก็บเงิน|save money
+ติด|ຕິດ|tìt|stuck / attached|รถติด|traffic jam
+จับ|ຈັບ|jàp|catch / hold|จับมือ|hold hands
+ตัวอย่าง|ຕົວຢ່າງ|tua-yàang|example|ตัวอย่างประโยค|an example sentence
+ข้าง|ຂ້າງ|khâang|side|ข้างบ้าน|next door
+ไม้|ໄມ້|máai|wood|โต๊ะไม้|a wooden table
+วิธี|ວິທີ|wí-thii|way / method|วิธีทำ|how to make it
+ค่า|ຄ່າ|khâa|fee / cost|ค่าแท็กซี่|the taxi fare
+โอกาส|ໂອກາດ|oo-kàat|chance|มีโอกาส|have a chance
+คืน|ຄືນ|khʉʉn|night / give back|คืนนี้|tonight`;
 
 /* The beds you see, each split into boxes of about 8 to 15 words on one topic,
  * most useful words first. `#bed|title|Thai|Lao|colour`, then `+Box title|words`;
@@ -1355,6 +1407,9 @@ const GARDEN_LAYOUT = `#grammar|Little words|คำพื้นฐาน|ຄຳ�
 +Not, will, already|เป็น มี ไม่ จะ แล้ว คือ ต้อง ยัง เคย กำลัง ควร อาจจะ
 +Questions|อะไร ใคร ทำไม ที่ไหน ไหน ยังไง เมื่อไร กี่ หรือเปล่า
 +Joining words|ที่ และ ของ ใน แต่ หรือ ก็ จาก บน เพราะ ด้วย ใต้ ถ้า
++For, like, such as|ว่า เพื่อ สำหรับ ตาม อย่าง เช่น แบบ
++Every, some, other|ทุก บาง บ้าง หลาย อื่น อีก เดียว แรก พอ สัก เอง
++Probably, at all, don't|คง สามารถ เลย อย่า กัน กว่า ที่สุด
 #food|Food and ordering|อาหารและการสั่ง|ອາຫານແລະການສັ່ງ|#F59E0B
 +Hungry? Order!|สั่ง หิว ดื่ม อิ่ม อร่อย หวาน เมนู ร้านอาหาร เค็ม เผ็ด เปรี้ยว เช็คบิล
 +On the plate|เนื้อ หมู ผัก ไข่ กุ้ง ทอด ก๋วยเตี๋ยว ข้าวเหนียว ต้ม ผัด ย่าง ลาบ ส้มตำ อาหารเช้า
@@ -1371,10 +1426,12 @@ const GARDEN_LAYOUT = `#grammar|Little words|คำพื้นฐาน|ຄຳ�
 +Clock and calendar|ก่อน ปี เดือน ชั่วโมง หลัง นาที สัปดาห์ เร็ว สาย ช้า
 +Days of the week|วันจันทร์ วันอังคาร วันพุธ วันพฤหัส วันศุกร์ วันเสาร์ วันอาทิตย์
 +*Months|มกราคม กุมภาพันธ์ มีนาคม เมษายน พฤษภาคม มิถุนายน กรกฎาคม สิงหาคม กันยายน ตุลาคม พฤศจิกายน ธันวาคม
++How long and when|นาน คืน ตอน เมื่อ ตั้งแต่ ครั้ง
 #travel|Getting around|การเดินทาง|ການເດີນທາງ|#22D3EE
 +Which way?|ไป ตรงไป หยุด ซ้าย ใกล้ ทาง เดิน ไกล เลี้ยว วิ่ง ข้างหน้า ที่นี่ ที่นั่น ข้างหลัง แผนที่
 +Getting a ride|ขึ้น เรือ รถไฟ รถเมล์ ลง เครื่องบิน แท็กซี่ ถนน มอเตอร์ไซค์ ตั๋ว สถานี สนามบิน
 +Around town|ร้าน เข้า วัด เมือง โรงแรม ออก โรงพยาบาล ธนาคาร เที่ยว ตำรวจ สะพาน
++Sides and ways|ข้าง ตรง ระหว่าง ผ่าน พา
 #shop|Shopping and colours|การซื้อของ|ການຊື້ເຄື່ອງ|#F87171
 +At the shop|ขาย ซื้อ จ่าย ลด แพง ใส่ ขนาด ถุง บัตร ทอน เงินสด ห้าง
 +Colours|สี ขาว แดง ดำ เขียว เหลือง ฟ้า ส้ม ชมพู น้ำเงิน เทา
@@ -1384,6 +1441,7 @@ const GARDEN_LAYOUT = `#grammar|Little words|คำพื้นฐาน|ຄຳ�
 +Around the house|ห้อง ประตู หน้าต่าง ไฟ เก้าอี้ เตียง ห้องนอน ห้องครัว กุญแจ ทีวี ตู้เย็น แอร์
 +My day|ตื่น อาบน้ำ ล้าง นอน แปรงฟัน ซัก ฝัน ทำอาหาร ง่วง ทำความสะอาด
 +Things I use|หนังสือ โทรศัพท์ กระดาษ ปากกา ร่ม กระจก สบู่ ผ้าเช็ดตัว
++Keep, hold, all gone|เก็บ ไว้ จับ ติด หมด ไม้ ตาย
 #body|Body and health|ร่างกายและสุขภาพ|ຮ່າງກາຍແລະສຸຂະພາບ|#34D399
 +Head to toe|หน้า หัว มือ หู ตัว เท้า คอ หัวใจ แขน ฟัน จมูก ท้อง เลือด ผิว
 +At the doctor|เจ็บ ยา ป่วย ช่วย ไอ ปวด สบาย ระวัง แข็งแรง หายใจ แพ้ ไข้ ร้านขายยา
@@ -1405,7 +1463,8 @@ const GARDEN_LAYOUT = `#grammar|Little words|คำพื้นฐาน|ຄຳ�
 +Animals|สัตว์ วัว แมว งู ลิง ควาย เป็ด มด ยุง
 #work|School and work|โรงเรียนและงาน|ໂຮງຮຽນແລະວຽກ|#818CF8
 +Learning a language|ภาษา คำ ความหมาย ประโยค โรงเรียน แปล ภาษาไทย ฝึก ภาษาอังกฤษ ห้องเรียน สอบ การบ้าน
-+At work|งาน ทำงาน บริษัท ประชุม ลูกค้า เจ้านาย ที่ทำงาน เงินเดือน`;
++At work|งาน ทำงาน บริษัท ประชุม ลูกค้า เจ้านาย ที่ทำงาน เงินเดือน
++Ideas and problems|เรื่อง ปัญหา วิธี ตัวอย่าง โอกาส ค่า เสียง ทราบ`;
 
 /** Lao spelling written with Thai letters, for the Thai voice and the Thai reading engine. */
 const LAO_TO_THAI = { ກ: "ก", ຂ: "ข", ຄ: "ค", ງ: "ง", ຈ: "จ", ສ: "ส", ຊ: "ซ", ຍ: "ย", ດ: "ด", ຕ: "ต", ຖ: "ถ", ທ: "ท", ນ: "น", ບ: "บ", ປ: "ป", ຜ: "ผ", ຝ: "ฝ", ພ: "พ", ຟ: "ฟ", ມ: "ม", ຢ: "อย", ຣ: "ร", ລ: "ล", ວ: "ว", ຫ: "ห", ອ: "อ", ຮ: "ฮ", ໜ: "หน", ໝ: "หม",
@@ -2622,6 +2681,10 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.38.0", title: "51 common words", points: [
+    "The Word Garden adds 51 of the most common Thai words it didn't teach yet, such as ว่า, เพื่อ, ทุก, อีก, กว่า, ปัญหา and ตั้งแต่, each with its Lao word and an example.",
+    "They sit in new boxes at the end of their beds (Little words, Numbers and time, Getting around, Home, School and work), so boxes you've already opened stay as they are.",
+  ] },
   { v: "0.37.0", title: "Examples and patterns", points: [
     "Word pages and lessons show up to three lines that use the word, each in a different way. Lines you can already read come first; words you haven't met yet are grey.",
     "Once a word is solid (Naga Adept), the Sentence deck adds a fill-the-gap line for it.",
