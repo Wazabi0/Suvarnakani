@@ -868,5 +868,23 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(plan.planned.some((s) => s.id === "sprint" && s.tool === "sprint"), "Today plan has a sprint step");
 }
 
+// 0.44.0: script passport (R6).
+{
+  let seed = 5; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (const test of T.PASSPORT_TESTS) {
+    check(T.passportReady(test.id, {}, true) && !T.passportReady(test.id, {}, false), `${test.id}: open in sandbox, closed with no letters`);
+    const qs = T.passportQuestions(test.id, {}, true, rnd);
+    check(qs.length === 20, `${test.id}: 20 questions (${qs.length})`);
+    qs.forEach((q) => q.steps.forEach((st) => check(st.options.filter((o) => o.right).length >= 1 && new Set(st.options.map((o) => o.label)).size === st.options.length, `${test.id} ${q.text}: one right option, distinct labels`)));
+  }
+  const ans = (n, ok, ms) => Array.from({ length: n }, (_, i) => ({ ok: i < ok, ms }));
+  eq(T.passportStamp("consonants", ans(20, 19, 1500)).stamp, "gold", "95% and fast is gold");
+  eq(T.passportStamp("consonants", ans(20, 19, 5000)).stamp, "silver", "95% and slow is silver");
+  eq(T.passportStamp("consonants", ans(20, 17, 1000)).stamp, null, "85% is no stamp");
+  let st = T.passportRecord({}, "vowels", T.passportStamp("vowels", ans(20, 20, 1000)), "2026-11-20");
+  st = T.passportRecord(st, "vowels", T.passportStamp("vowels", ans(20, 10, 1000)), "2026-11-21");
+  check(st.vowels.stamp === "gold" && st.vowels.tries === 2 && st.vowels.last.right === 10, "a worse retake keeps the best stamp");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
