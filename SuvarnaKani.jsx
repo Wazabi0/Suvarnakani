@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.40.0";
+const APP_VERSION = "0.41.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -549,7 +549,99 @@ function romanize(learner, system = "learner") {
  * Curriculum (3 levels). ttsTh / ttsLo contain ONLY Thai script and are what
  * the Thai TTS voice reads. ttsLo is a Thai-script approximation of the Lao.
  * ------------------------------------------------------------------------- */
-const CURRICULUM = [
+/* ---------------------------------------------------------------------------
+ * Vowel and tone-mark cards (0.41, R1). Before this, vowels and tone marks were
+ * only met inside syllables and words. Each sign is now a letter card of its own:
+ * where it sits around the letter (◌), its sound, and a second question, long or
+ * short for vowels, the tone it gives on a Middle-class letter for marks. They sit
+ * in the level where words first need them, and words wait for them in the unlock
+ * chain like they wait for consonants. `loLevel` moves a card earlier in the Lao
+ * course; `thOnly` signs have no Lao card. Lao forms still need a native check.
+ * ------------------------------------------------------------------------- */
+const SIGN_SPOTS = { front: "written in front, said after the letter", above: "sits above the letter", below: "hangs below the letter", after: "comes after the letter", around: "wraps around the letter", aboveAfter: "above and after the letter" };
+const SCRIPT_SIGNS = [
+  // Level 1
+  { id: "vw-aa", level: 1, th: "◌า", lo: "◌າ", thRoman: "aa · sà-rà aa", loRoman: "aa · sa aa", meaning: "long aa vowel", long: true, spot: "after", accept: ["aa", "a", "ah", "saraa"], ttsTh: "สระอา", ttsLo: "สระอา",
+    mnemonic: "A tall post after the letter: the sound stands up long, aa. กา (crow).", trap: "◌า (long aa) vs ◌ะ (short a): า is one straight post, ะ is two little loops." },
+  { id: "vw-i", level: 1, th: "◌ิ", lo: "◌ິ", thRoman: "i · sà-rà ì", loRoman: "i · sa i", meaning: "short i vowel", long: false, spot: "above", accept: ["i", "ih", "sarai"], ttsTh: "สระอิ", ttsLo: "สระอิ",
+    mnemonic: "A small bare roof over the letter: a quick, short i. กิน (eat).", trap: "◌ิ (short i) vs ◌ี (long ii): the long one has a little flagpole standing up." },
+  { id: "vw-ii", level: 1, th: "◌ี", lo: "◌ີ", thRoman: "ii · sà-rà ii", loRoman: "ii · sa ii", meaning: "long ii vowel", long: true, spot: "above", accept: ["ii", "i", "ee", "saraii"], ttsTh: "สระอี", ttsLo: "สระอี",
+    mnemonic: "The roof gets a flagpole, and the flag makes the i last longer: ii. ดี (good).", trap: "◌ี (one pole, ii) vs ◌ื (two poles, ʉʉ)." },
+  { id: "vw-ai-muan", level: 1, th: "ใ◌", lo: "ໃ◌", thRoman: "ai · mái múan", loRoman: "ai · mai muan", meaning: "ai vowel (rolled-stick spelling)", long: false, spot: "front", accept: ["ai", "ay", "maimuan", "muan"], ttsTh: "ไม้ม้วน", ttsLo: "ไม้ม้วน",
+    mnemonic: "Mái múan, the rolled stick: its top curls back over itself. Only about 20 words use it: ใจ, ใช่, ใหม่, ใคร.", trap: "ใ (curled top) and ไ (plain top) sound the same. ใ is the rare one." },
+  { id: "mk-tho", level: 1, mark: "tho", th: "◌้", lo: "◌້", thRoman: "mái thoo · tone mark 2", loRoman: "mai tho · tone mark 2", meaning: "tone mark 2: Falling on a Middle letter", loMeaning: "tone mark 2 (mai tho)", tone: ["falling"], spot: "above", accept: ["maitho", "maithoo", "tho", "thoo", "too"], ttsTh: "ไม้โท", ttsLo: "ไม้โท",
+    mnemonic: "It looks like a small 2, and โท means two: the second mark. On a Middle letter the voice falls, as you drop your bag at home: บ้าน.", loMnemonic: "It looks like a small 2: the second mark, mai tho, as in ບ້ານ (house).", trap: "◌้ (a 2) vs ◌๊ (a 7-like squiggle, mai tri)." },
+  // Level 2
+  { id: "vw-am", level: 2, th: "◌ำ", lo: "◌ຳ", thRoman: "am · sà-rà am", loRoman: "am · sa am", meaning: "am vowel (short a + m)", long: false, spot: "aboveAfter", accept: ["am", "um", "saraam"], ttsTh: "สระอำ", ttsLo: "สระอำ",
+    mnemonic: "A little circle on top of า: the circle is an m. One sign packs a short a and an m: น้ำ (water).", trap: "◌ำ is short but live, because it ends in m." },
+  { id: "mk-ek", level: 2, mark: "ek", th: "◌่", lo: "◌່", thRoman: "mái èek · tone mark 1", loRoman: "mai ek · tone mark 1", meaning: "tone mark 1: Low on a Middle letter", loMeaning: "tone mark 1 (mai ek)", tone: ["low"], spot: "above", accept: ["maiek", "ek", "eek", "maieek"], ttsTh: "ไม้เอก", ttsLo: "ไม้เอก",
+    mnemonic: "One straight tick, and เอก means one: the first mark. On a Middle letter it pulls the voice low: ไก่ (chicken).", loMnemonic: "One straight tick: the first mark, mai ek, as in ໄກ່ (chicken).", trap: "On a Low-class letter mai ek gives Falling, not Low: แม่ (mother)." },
+  { id: "vw-ai-malai", level: 2, th: "ไ◌", lo: "ໄ◌", thRoman: "ai · mái má-laai", loRoman: "ai · mai malai", meaning: "ai vowel (the common spelling)", long: false, spot: "front", accept: ["ai", "ay", "maimalai", "malai"], ttsTh: "ไม้มลาย", ttsLo: "ไม้มลาย",
+    mnemonic: "Mái má-laai, the straight stick: the everyday way to write ai, as in ไป, ไก่ and ไม่.", trap: "ไ vs ใ: same sound. ไ is the one you will see almost every time." },
+  // Level 3
+  { id: "vw-a-han", level: 3, th: "◌ั", lo: "◌ັ", thRoman: "a · mái hǎn-aa-kàat", loRoman: "a · mai kan", meaning: "short a, only when a final follows", long: false, spot: "above", accept: ["a", "maihanakat", "hanakat", "maihan"], ttsTh: "ไม้หันอากาศ", ttsLo: "ไม้หันอากาศ",
+    mnemonic: "A little sickle on top chops the a short, and a final letter always follows: รัก (love), กับ (with).", trap: "◌ั never ends a syllable. An open short a is written ◌ะ." },
+  { id: "vw-u", level: 3, th: "◌ุ", lo: "◌ຸ", thRoman: "u · sà-rà ù", loRoman: "u · sa u", meaning: "short u vowel", long: false, spot: "below", accept: ["u", "oo", "sarau"], ttsTh: "สระอุ", ttsLo: "สระอุ",
+    mnemonic: "A small hook hanging under the letter: a short u. ดุ (fierce).", trap: "◌ุ (short u, one hook) vs ◌ู (long uu, with a tail)." },
+  { id: "vw-ae", level: 3, th: "แ◌", lo: "ແ◌", thRoman: "ɛɛ · sà-rà ɛɛ", loRoman: "ae · sa ae", meaning: "long ɛɛ vowel (as in 'bad')", long: true, spot: "front", accept: ["ae", "aae", "e", "eh", "saraae"], ttsTh: "สระแอ", ttsLo: "สระแอ",
+    mnemonic: "Two เ side by side: the mouth opens twice as wide, ɛɛ as in 'bad'. แม่ (mother).", trap: "แ◌ (two hooks, ɛɛ) vs เ◌ (one hook, ee)." },
+  { id: "mk-karan", level: 3, thOnly: true, th: "◌์", lo: "", thRoman: "silent · thanthakhàat", loRoman: "", meaning: "silencer: the letter under it is not said", spot: "above", accept: ["silent", "karan", "thanthakhat", "mute", "kaaran"], ttsTh: "การันต์", ttsLo: "การันต์",
+    mnemonic: "A little cross-out on top: skip that letter. ไปรษณีย์ (post office) ends in ii, and the ย is silent.", trap: "◌์ is not a tone mark. It mostly appears in loanwords from Sanskrit and English." },
+  // Level 4
+  { id: "vw-uu", level: 4, th: "◌ู", lo: "◌ູ", thRoman: "uu · sà-rà uu", loRoman: "uu · sa uu", meaning: "long uu vowel", long: true, spot: "below", accept: ["uu", "u", "oo", "sarauu"], ttsTh: "สระอู", ttsLo: "สระอู",
+    mnemonic: "The hook under the letter grows a tail, and the tail drags the sound out: uu. ลูก (child).", trap: "◌ู (tail, long) vs ◌ุ (no tail, short)." },
+  { id: "vw-a", level: 4, loLevel: 3, th: "◌ะ", lo: "◌ະ", thRoman: "a · sà-rà à", loRoman: "a · sa a", meaning: "short a vowel", long: false, spot: "after", accept: ["a", "ah", "sara"], ttsTh: "สระอะ", ttsLo: "สระอะ",
+    mnemonic: "Two little loops after the letter cut the sound off short: a. ประ- in ประเทศ.", trap: "◌ะ ends an open short syllable. With a final it changes to ◌ั." },
+  { id: "vw-ee", level: 4, loLevel: 2, th: "เ◌", lo: "ເ◌", thRoman: "ee · sà-rà ee", loRoman: "e · sa e", meaning: "long ee vowel", long: true, spot: "front", accept: ["ee", "e", "ay", "saraee"], ttsTh: "สระเอ", ttsLo: "สระเอ",
+    mnemonic: "One hook written in front, but said after the letter: write it first, say it second. เท (pour) is thee.", trap: "เ◌ (one hook, ee) vs แ◌ (two hooks, ɛɛ). เ also starts many longer vowels: เ◌ือ, เ◌ีย, เ◌า." },
+  { id: "vw-oo", level: 4, th: "โ◌", lo: "ໂ◌", thRoman: "oo · sà-rà oo", loRoman: "o · sa o", meaning: "long oo vowel", long: true, spot: "front", accept: ["oo", "o", "oh", "saraoo"], ttsTh: "สระโอ", ttsLo: "สระโอ",
+    mnemonic: "A tall hook in front, like a hand raised to say 'oh': oo. โต (big).", trap: "โ◌ (tall, oo) vs เ◌ (short, ee): look at the height." },
+  // Level 5: Vowel Universe
+  { id: "vw-e", level: 5, th: "เ◌ะ", lo: "ເ◌ະ", thRoman: "e · sà-rà è", loRoman: "e · sa e", meaning: "short e vowel", long: false, spot: "around", accept: ["e", "eh", "sarae"], ttsTh: "สระเอะ", ttsLo: "สระเอะ",
+    mnemonic: "เ in front, ะ behind: the loops chop ee down to a short e. เตะ (kick).", trap: "เ◌ alone is long ee; adding ะ makes it short." },
+  { id: "vw-ae-short", level: 5, th: "แ◌ะ", lo: "ແ◌ະ", thRoman: "ɛ · sà-rà ɛ̀", loRoman: "ae · sa ae", meaning: "short ɛ vowel", long: false, spot: "around", accept: ["ae", "e", "eh"], ttsTh: "สระแอะ", ttsLo: "สระแอะ",
+    mnemonic: "แ in front, ะ behind: an open ɛ, cut short. แกะ (sheep).", trap: "แ◌ะ (short) vs แ◌ (long)." },
+  { id: "vw-o", level: 5, th: "โ◌ะ", lo: "ໂ◌ະ", thRoman: "o · sà-rà ò", loRoman: "o · sa o", meaning: "short o vowel", long: false, spot: "around", accept: ["o", "oh", "sarao"], ttsTh: "สระโอะ", ttsLo: "สระโอะ",
+    mnemonic: "โ in front, ะ behind: oo chopped short. โต๊ะ (table). With a final it hides completely: นก is nók.", trap: "With a final, short o is not written at all in Thai: นก, รถ. Lao writes it as ◌ົ." },
+  { id: "vw-aw-short", level: 5, th: "เ◌าะ", lo: "ເ◌າະ", thRoman: "ɔ · sà-rà ɔ̀", loRoman: "o · sa o", meaning: "short ɔ vowel (as in 'hot')", long: false, spot: "around", accept: ["o", "aw", "or", "oh"], ttsTh: "สระเอาะ", ttsLo: "สระเอาะ",
+    mnemonic: "Three pieces, เ + า + ะ, for one short sound: ɔ as in 'hot'. เกาะ (island).", trap: "Don't read it as เ◌า (ao). The ะ at the end turns it into a short ɔ." },
+  { id: "vw-aw", level: 5, th: "◌อ", lo: "◌ໍ", thRoman: "ɔɔ · sà-rà ɔɔ", loRoman: "o · sa o", meaning: "long ɔɔ vowel (as in 'saw')", long: true, spot: "after", accept: ["aw", "or", "o", "aaw", "oor"], ttsTh: "สระออ", ttsLo: "สระออ",
+    mnemonic: "The silent อ, used as a vowel after another letter: a long ɔɔ as in 'saw'. ขอ (ask for).", trap: "อ is a consonant in front of a vowel and the vowel ɔɔ after a consonant. Lao writes it as ◌ໍ on top: ຂໍ." },
+  { id: "vw-oe", level: 5, th: "เ◌อ", lo: "ເ◌ີ", thRoman: "əə · sà-rà əə", loRoman: "oe · sa oe", meaning: "long əə vowel (as in 'her')", long: true, spot: "around", accept: ["oe", "er", "ur", "uh", "eu"], ttsTh: "สระเออ", ttsLo: "สระเออ",
+    mnemonic: "เ in front, อ behind: the 'uh' vowel, əə as in 'her'. เจอ (meet).", trap: "With a final it changes shape to เ◌ิ◌: เงิน (money)." },
+  { id: "vw-ia", level: 5, th: "เ◌ีย", lo: "ເ◌ຍ", thRoman: "ia · sà-rà ia", loRoman: "ia · sa ia", meaning: "ia vowel", long: true, spot: "around", accept: ["ia", "ie", "iya", "ea"], ttsTh: "สระเอีย", ttsLo: "สระเอีย",
+    mnemonic: "เ in front, ◌ี on top, ย behind: the i slides into a: ia. เรียน (study).", trap: "เ◌ีย (ia) vs เ◌ือ (ʉa) vs ◌ัว (ua): the three gliding vowels. Lao folds this one into ◌ຽ before a final." },
+  { id: "vw-uea", level: 5, th: "เ◌ือ", lo: "ເ◌ືອ", thRoman: "ʉa · sà-rà ʉa", loRoman: "uea · sa uea", meaning: "ʉa vowel", long: true, spot: "around", accept: ["uea", "ua", "eua", "uah", "uee"], ttsTh: "สระเอือ", ttsLo: "สระเอือ",
+    mnemonic: "It wraps three sides of the letter, like the tiger เสือ circling its prey: ʉa.", trap: "เ◌ือ (ʉa) vs เ◌ีย (ia): ◌ื with อ, or ◌ี with ย." },
+  { id: "vw-ua", level: 5, th: "◌ัว", lo: "◌ົວ", thRoman: "ua · sà-rà ua", loRoman: "ua · sa ua", meaning: "ua vowel", long: true, spot: "aboveAfter", accept: ["ua", "uua", "ooa", "wa"], ttsTh: "สระอัว", ttsLo: "สระอัว",
+    mnemonic: "◌ั on top, ว behind: the lotus opens, บัว (lotus).", trap: "With a final, ◌ั drops and only ว stays: ขวด (bottle), not ขัวด." },
+  { id: "vw-ao", level: 5, loLevel: 2, th: "เ◌า", lo: "ເ◌ົາ", thRoman: "ao · sà-rà ao", loRoman: "ao · sa ao", meaning: "ao vowel (short a + w glide)", long: false, spot: "around", accept: ["ao", "aw", "ow", "au"], ttsTh: "สระเอา", ttsLo: "สระเอา",
+    mnemonic: "เ in front and า behind, said together as ao, like 'how'. เขา (he, she).", trap: "เ◌า (ao) vs เ◌าะ (ɔ): watch for the ะ at the end." },
+  { id: "vw-ue", level: 5, th: "◌ึ", lo: "◌ຶ", thRoman: "ʉ · sà-rà ʉ̀", loRoman: "ue · sa ue", meaning: "short ʉ vowel (u with a smile)", long: false, spot: "above", accept: ["ue", "eu", "u", "uh"], ttsTh: "สระอึ", ttsLo: "สระอึ",
+    mnemonic: "◌ิ with a tail: say 'oo' with your lips spread, short. ถึง (arrive).", trap: "◌ึ (short, one tail) vs ◌ื (long, two poles)." },
+  { id: "vw-uue", level: 5, th: "◌ื", lo: "◌ື", thRoman: "ʉʉ · sà-rà ʉʉ", loRoman: "ue · sa ue", meaning: "long ʉʉ vowel", long: true, spot: "above", accept: ["ue", "uue", "eu", "u", "uu"], ttsTh: "สระอือ", ttsLo: "สระอือ",
+    mnemonic: "Two poles on the roof: a long ʉʉ, 'oo' with a smile. ลืม (forget).", trap: "With no final, Thai adds a silent อ after it: มือ (hand)." },
+  { id: "mk-taikhu", level: 5, thOnly: true, th: "◌็", lo: "", thRoman: "short · mái tài-khúu", loRoman: "", meaning: "shortener: makes the vowel short", spot: "above", accept: ["short", "taikhu", "maitaikhu", "shortener"], ttsTh: "ไม้ไต่คู้", ttsLo: "ไม้ไต่คู้",
+    mnemonic: "A tiny 8 on top that squeezes the vowel short: เด็ก (child) is dèk, not dèek.", trap: "◌็ is not a tone mark. ก็ (also) is read gɔ̂: a short ɔ with a falling tone." },
+  { id: "mk-tri", level: 5, mark: "tri", th: "◌๊", lo: "◌໊", thRoman: "mái trii · tone mark 3", loRoman: "mai tri · tone mark 3", meaning: "tone mark 3: High (Middle letters only)", loMeaning: "tone mark 3 (mai tri), rare", tone: ["high"], spot: "above", accept: ["maitri", "maitrii", "tri", "trii"], ttsTh: "ไม้ตรี", ttsLo: "ไม้ตรี",
+    mnemonic: "A little squiggle like a 7, and ตรี means three: the third mark. Only on Middle letters, and it gives High: โต๊ะ (table).", loMnemonic: "The third mark, mai tri. Rare: mostly in loanwords and sounds.", trap: "◌๊ (mai tri, High) vs ◌้ (mai tho): tri has the extra wiggle." },
+  { id: "mk-jat", level: 5, mark: "jat", th: "◌๋", lo: "◌໋", thRoman: "mái jàt-ta-waa · tone mark 4", loRoman: "mai chattava · tone mark 4", meaning: "tone mark 4: Rising (Middle letters only)", loMeaning: "tone mark 4 (mai chattava), rare", tone: ["rising"], spot: "above", accept: ["maijattawa", "jattawa", "chattawa", "jattava", "jat"], ttsTh: "ไม้จัตวา", ttsLo: "ไม้จัตวา",
+    mnemonic: "A little plus sign, and จัตวา means four: the fourth mark. Middle letters only, and it gives Rising: ก๋วยเตี๋ยว (noodle soup).", loMnemonic: "The fourth mark, mai chattava. Rare: mostly in loanwords and sounds.", trap: "◌๋ (a plus) vs ◌๊ (a squiggle): Rising vs High." },
+].map((s) => ({ tier: "glyph", sign: true, tone: [], ...s }));
+/** Insert each sign card after the last letter card of its level (or first in a level with none). */
+function withScriptSigns(list) {
+  const out = [...list];
+  SCRIPT_SIGNS.forEach((s) => {
+    let at = -1;
+    out.forEach((it, i) => { if (it.level === s.level && it.tier === "glyph") at = i; });
+    if (at < 0) at = out.findIndex((it) => it.level === s.level) - 1;
+    if (at < -1) at = out.length - 1;
+    out.splice(at + 1, 0, s);
+  });
+  return out;
+}
+
+const CURRICULUM = withScriptSigns([
   // ---------------- Level 1: The Golden Monks ----------------
   { id: "g-ko", level: 1, tier: "glyph", th: "ก", lo: "ກ", thRoman: "k / g · gaw gài", loRoman: "k · ko kai", meaning: "k sound · chicken (ไก่)", accept: ["k", "g", "ko", "gor", "gaw", "kokai", "gorgai", "chicken"], ttsTh: "กอ ไก่", ttsLo: "กอ ไก่", cls: "mid", tone: ["mid"],
     loop: "A loopless letter. Start at the little beak on the upper left, arch over the top, then drop the right leg.", mnemonic: "A Golden Monk bows to feed his chicken (ไก่). Calm and centred: the Mid tone.", street: "Street fonts keep the same silhouette, so ก is one of the easiest letters to read on signs.", trap: "ก vs ถ: ถ has a loop at its bottom-left foot. ก never does." },
@@ -852,7 +944,7 @@ const CURRICULUM = [
     mnemonic: "Like '…': กรุงเทพฯ is the short form of Bangkok's very long official name.", trap: "Read only the part before it; don't pronounce the mark.", bridge: "Lao has ຯ but rarely uses it." },
   { id: "v-ruedu", level: 9, tier: "vocab", th: "ฤดู", lo: "ລະດູ", thRoman: "rʉ́-duu", loRoman: "la du", meaning: "season", accept: ["ruedu", "rudu", "reudu", "season"], ttsTh: "ฤดู", ttsLo: "ละดู", tone: ["high", "mid"],
     mnemonic: "ฤ is a Sanskrit vowel-letter, read rʉ́ here (ri or rəə in other words).", trap: "ฤ is not ร: it carries its own vowel.", bridge: "Lao spells it out with ລ: ລະດູ." },
-];
+]);
 
 // Each course has its own colour world (see the roadmap's course designs).
 const LEVELS = [
@@ -1719,7 +1811,7 @@ const LAO_ONLY_ITEMS = [
     mnemonic: "The dog's ຫ is tucked into ມ: ໝາ rises like a howl.", bridge: "Thai หม ↔ Lao ໝ: หมา ↔ ໝາ." },
   { id: "lo-lo-h", level: 3, tier: "glyph", th: "", lo: "ຫຼ", thRoman: "", loRoman: "l (high) · lo", meaning: "l with High-class tones (ຫ + ◌ຼ)", accept: ["l", "lo", "hlo", "highl"], ttsTh: "หลอ", ttsLo: "หลอ", cls: "high", tone: [],
     mnemonic: "The little ◌ຼ hanging under ຫ is a folded ລ: together they make a High-class l.", bridge: "Thai หล ↔ Lao ຫຼ: ตลาด ↔ ຕະຫຼາດ." },
-  { id: "lo-v-o", level: 5, tier: "glyph", th: "", lo: "◌ົ", thRoman: "", loRoman: "o (short) · mai kong", meaning: "short o before a final (ໄມ້ກົງ)", accept: ["o", "shorto", "maikong", "kong"], ttsTh: "โอะ", ttsLo: "โอะ", tone: [],
+  { id: "lo-v-o", level: 2, tier: "glyph", th: "", lo: "◌ົ", thRoman: "", loRoman: "o (short) · mai kong", meaning: "short o before a final (ໄມ້ກົງ)", accept: ["o", "shorto", "maikong", "kong"], ttsTh: "โอะ", ttsLo: "โอะ", tone: [],
     mnemonic: "Thai hides the short o (นก); Lao writes it on top: ນົກ.", bridge: "นก ↔ ນົກ, รถ ↔ ລົດ: the hidden o law." },
   { id: "lo-v-ia", level: 5, tier: "glyph", th: "", lo: "◌ຽ", thRoman: "", loRoman: "ia · before a final", meaning: "ia vowel when a final follows (Thai เ◌ีย)", accept: ["ia", "ie", "iya", "iia"], ttsTh: "เอีย", ttsLo: "เอีย", tone: [],
     mnemonic: "ເ◌ຍ folds into ◌ຽ once a final consonant joins: ຮຽນ (study).", bridge: "เรียน ↔ ຮຽນ, เปลี่ยน ↔ ປ່ຽນ." },
@@ -1740,10 +1832,10 @@ function courseItems(mode) {
   const out = [];
   [...CURRICULUM, ...LAO_ONLY_ITEMS, ...GARDEN_ITEMS].forEach((it) => {
     if (it.tier === "glyph") {
-      if (seen.has(it.lo)) return;
+      if (it.thOnly || !it.lo || seen.has(it.lo)) return;
       seen.add(it.lo);
       const cls = it.cls ? laoClassOf([...it.lo][0]) || it.cls : it.cls;
-      out.push({ ...it, cls, tone: [], parts: undefined, toneSet: "lo" });
+      out.push({ ...it, level: it.loLevel ?? it.level, meaning: it.loMeaning || it.meaning, mnemonic: it.loMnemonic || it.mnemonic, cls, tone: [], parts: undefined, toneSet: "lo" });
       return;
     }
     const syl = laoSyllables(it.lo);
@@ -1795,18 +1887,21 @@ function letterGate(srs = {}, mode = "th", sandbox = false) {
  * Monk (it has climbed the Apprentice ladder). The scripts checked follow the
  * course mode. Letters no glyph lesson teaches never block anything.
  * ------------------------------------------------------------------------- */
+/** The characters a letter card teaches. A vowel card counts only its vowel signs, so the อ in เ◌ือ doesn't stand in for the consonant อ. */
+const CONSONANT_CHAR = /[\u0E01-\u0E2E\u0E81-\u0EAE\u0EDC-\u0EDF]/;
+const glyphUnits = (it, k) => [...(it[k] || "")].filter((c) => SCRIPT_CHAR.test(c) && !(it.sign && CONSONANT_CHAR.test(c)));
 const chainScripts = (mode) => (mode === "lo" ? ["lo"] : mode === "th" ? ["th"] : ["th", "lo"]);
 const glyphCharCache = {};
 function glyphChars(mode) {
   if (glyphCharCache[mode]) return glyphCharCache[mode];
   const set = new Set();
-  courseItems(mode).forEach((it) => { if (it.tier === "glyph") chainScripts(mode).forEach((k) => [...(it[k] || "")].forEach((c) => { if (SCRIPT_CHAR.test(c)) set.add(c); })); });
+  courseItems(mode).forEach((it) => { if (it.tier === "glyph") chainScripts(mode).forEach((k) => glyphUnits(it, k).forEach((c) => set.add(c))); });
   return (glyphCharCache[mode] = set);
 }
 /** Letters whose glyph lesson has reached Novice Monk. */
 function masteredLetters(srs, mode) {
   const set = new Set();
-  courseItems(mode).forEach((it) => { if (it.tier === "glyph" && (srs[it.id]?.stage || 0) >= 2) chainScripts(mode).forEach((k) => [...(it[k] || "")].forEach((c) => set.add(c))); });
+  courseItems(mode).forEach((it) => { if (it.tier === "glyph" && (srs[it.id]?.stage || 0) >= 2) chainScripts(mode).forEach((k) => glyphUnits(it, k).forEach((c) => set.add(c))); });
   return set;
 }
 /**
@@ -1823,6 +1918,48 @@ function unlockChain(srs = {}, mode = "th", sandbox = false) {
   };
   return { mastered, waiting, ready: (it) => waiting(it).length === 0 };
 }
+/* ---------------------------------------------------------------------------
+ * Script first (0.41, R5, opt-in): letter, vowel and tone-mark lessons run ahead of
+ * the word levels, most-used first, in a rolling wave. A new one joins whenever
+ * fewer than SCRIPT_WAVE letter cards are still young (not yet past their 8-hour
+ * review), so the whole script arrives in days instead of weeks. Words still wait
+ * for their letters to reach Novice Monk, and levels still open with their trials.
+ * ------------------------------------------------------------------------- */
+/** A sign card as a pattern over written words: ◌ stands for one or two consonants and an optional tone mark. */
+function signRegex(item, script) {
+  const cons = script === "lo" ? "[\u0E81-\u0EAE\u0EDC\u0EDD]{1,2}\u0EBC?[\u0EC8-\u0ECB]?" : "[\u0E01-\u0E2E]{1,2}[\u0E48-\u0E4B]?";
+  const marked = item.mark ? cons.replace(/\[[^\]]*\]\?$/, "") : cons;
+  return new RegExp((item[script] || "").split("◌").map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(marked));
+}
+const SCRIPT_WAVE = 8;
+const SCRIPT_YOUNG_RUNG = 2; // ladder rung 2 = the 4h and 8h reviews are behind it
+const scriptOrderCache = {};
+/** Course letter cards (not garden), most-used first: a card ranks by its rarest letter's count in the course's words. */
+function scriptOrder(mode) {
+  const key = mode === "lo" ? "lo" : mode === "th" ? "th" : "dual";
+  if (scriptOrderCache[key]) return scriptOrderCache[key];
+  const course = courseItems(mode);
+  const scripts = chainScripts(mode);
+  // How many words use each letter (or match each vowel pattern); a card ranks by its rarest part.
+  const words = course.filter((it) => it.tier !== "glyph");
+  const freq = {};
+  words.forEach((it) => scripts.forEach((k) => new Set(it[k] || "").forEach((c) => { freq[c] = (freq[c] || 0) + 1; })));
+  const score = (it) => {
+    if (it.sign) return Math.max(0, ...scripts.filter((k) => it[k]).map((k) => { const re = signRegex(it, k); return words.filter((w) => w[k] && re.test(w[k])).length; }));
+    const units = [...new Set(scripts.flatMap((k) => glyphUnits(it, k)))];
+    return units.length ? Math.min(...units.map((c) => freq[c] || 0)) : 0;
+  };
+  const glyphs = course.filter((i) => i.tier === "glyph" && !i.garden).map((it, n) => ({ it, n, s: score(it) }));
+  return (scriptOrderCache[key] = glyphs.sort((a, b) => b.s - a.s || a.it.level - b.it.level || a.n - b.n).map((x) => x.it));
+}
+/** Letter cards script-first adds to the lessons now: the next ones in frequency order, up to the wave's free room. */
+function scriptFirstLessons(srs = {}, mode = "th") {
+  const order = scriptOrder(mode);
+  const young = order.filter((i) => { const s = srs[i.id]; return s && s.stage === 1 && s.ladder != null && s.ladder < SCRIPT_YOUNG_RUNG; }).length;
+  const room = Math.max(0, SCRIPT_WAVE - young);
+  return order.filter((i) => (srs[i.id]?.stage || 0) === 0).slice(0, room);
+}
+
 /** The share of a level that must be at Novice Monk before the next level opens. */
 const LEVEL_PASS = 0.9;
 /**
@@ -2129,7 +2266,7 @@ function otherLetterSound(item, n) {
   const own = romanParts(item.thRoman).map((p) => normalizeAnswer(p.split(/\s|\(/)[0]));
   if (own.includes(n)) return false;
   if (!letterSounds) {
-    letterSounds = new Set(CURRICULUM.filter((i) => i.tier === "glyph" && !/final/.test(i.thRoman)).map((i) => normalizeAnswer(romanParts(i.thRoman)[0].split(/\s|\(/)[0])));
+    letterSounds = new Set(CURRICULUM.filter((i) => i.tier === "glyph" && !i.sign && !/final/.test(i.thRoman)).map((i) => normalizeAnswer(romanParts(i.thRoman)[0].split(/\s|\(/)[0])));
   }
   return letterSounds.has(n);
 }
@@ -2648,7 +2785,7 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false, toolsSeen: {}, vacation: null, placementAsk: false, nativeVoices: true, hearIt: true };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false, toolsSeen: {}, vacation: null, placementAsk: false, nativeVoices: true, hearIt: true, scriptFirst: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 /** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
 function loadPrefs(saved) {
@@ -2688,6 +2825,12 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.41.0", title: "Vowel and tone-mark cards, script first", points: [
+    "25 Thai vowels now have cards of their own, from ◌า and ◌ี to เ◌ือ and ◌ัว, and so do the four tone marks, ◌์ and ◌็. Each shows where it sits around the letter and the first course word that uses it.",
+    "Reviews ask a second question: long or short for vowels, and for tone marks the tone they give on a Middle-class letter.",
+    "They sit in the level where words first need them, and words wait for them like they wait for consonants. The Lao course gets the same cards, still to be checked by a Lao speaker.",
+    "New in Settings: Script first. Letters, vowels and marks come ahead of the word levels, most-used first, eight at a time, so the whole script arrives in days instead of weeks.",
+  ] },
   { v: "0.40.0", title: "Letter pictures", points: [
     "All 44 Thai consonants now have a picture: the word each letter is named after, drawn into the letter's own shape. ก becomes the chicken, ข the egg, อ the basin.",
     "It draws itself when you meet a letter in a lesson and in the item inspector. Tap it to watch again. With reduced motion on, the picture just shows.",
@@ -4200,13 +4343,21 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
     }
   }, [srs, unlockedLevels]); // eslint-disable-line react-hooks/exhaustive-deps
   const currentLevel = Math.max(...COURSE_LEVELS.filter((l) => unlockedLevels.has(l.n)).map((l) => l.n));
+  const scriptFirst = !!prefs.scriptFirst && !sandbox;
   const lessonQueue = useMemo(() => {
     const fresh = course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && chain.ready(i) && boxOpen(i));
-    const core = fresh.filter((i) => !i.garden).sort((a, b) => a.level - b.level);
+    // Script first: letter cards come in frequency order, from any level, ahead of everything else.
+    let core = fresh.filter((i) => !i.garden).sort((a, b) => a.level - b.level);
+    if (scriptFirst) {
+      const rank = new Map(scriptOrder(mode).map((it, n) => [it.id, n]));
+      const ahead = scriptFirstLessons(srs, mode);
+      const letters = [...new Set([...ahead, ...core.filter((i) => i.tier === "glyph")])].sort((a, b) => rank.get(a.id) - rank.get(b.id));
+      core = [...letters, ...core.filter((i) => i.tier !== "glyph")];
+    }
     const order = (i) => { const k = garden.indexOf(i.garden); return k < 0 ? 99 : k; };
     const words = fresh.filter((i) => i.garden).sort((a, b) => order(a) - order(b));
     return interleave(core, words, 3, 2);
-  }, [srs, unlockedLevels, course, garden, chain, boxes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [srs, unlockedLevels, course, garden, chain, boxes, scriptFirst, mode]); // eslint-disable-line react-hooks/exhaustive-deps
   // Unstarted items in open levels still waiting on letters (shown under Lessons).
   const waitingCount = useMemo(() => course.filter((i) => unlockedLevels.has(i.level) && stageOf(i.id) === 0 && !chain.ready(i) && boxOpen(i) && (!i.garden || garden.includes(i.garden))).length, [course, unlockedLevels, chain, garden, boxes]); // eslint-disable-line react-hooks/exhaustive-deps
   const reviewQueue = useMemo(
@@ -4739,6 +4890,40 @@ function LetterPicture({ item, mode }) {
   );
 }
 
+/**
+ * Where a vowel or tone mark sits (0.41): the sign drawn on ก (ກ in Lao) with the
+ * sign in gold, a line saying where it goes, and the first course word that uses it.
+ */
+function signExample(item, script) {
+  const re = signRegex(item, script);
+  return courseItems(script === "lo" ? "lo" : "th").find((i) => i.tier !== "glyph" && i[script] && re.test(i[script])) || null;
+}
+function SignSpot({ item, mode }) {
+  if (!item?.sign) return null;
+  const scripts = (mode === "lo" ? ["lo"] : mode === "th" ? ["th"] : ["th", "lo"]).filter((k) => item[k]);
+  if (!scripts.length) return null;
+  return (
+    <div data-sign-spot className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+      <div className="text-[11px] font-bold uppercase tracking-wider" style={{ color: COLORS.gold }}>Where it goes</div>
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-6">
+        {scripts.map((k) => {
+          const base = k === "lo" ? "ກ" : "ก";
+          const ex = signExample(item, k);
+          return (
+            <div key={k} className="text-center">
+              <div className="text-6xl leading-[1.5]" lang={k} style={{ fontFamily: FONT_STACKS.loop[k] }}>
+                {[...item[k].replace("◌", base)].map((c, i) => <span key={i} className={c === base ? "text-white" : undefined} style={c === base ? undefined : { color: COLORS.gold }}>{c}</span>)}
+              </div>
+              {ex && <div className="text-xs text-slate-300"><span className="text-base" lang={k}>{ex[k]}</span> · {k === "lo" ? ex.loRoman : R(ex.thRoman.split(" ·")[0])} · {plainMeaning(ex.meaning)}</div>}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-1 text-center text-xs text-slate-400">{item.mark ? "A tone mark sits above the letter (above the vowel too, if there is one)." : `This vowel ${SIGN_SPOTS[item.spot] || "goes with the letter"}.`}</p>
+    </div>
+  );
+}
+
 function ItemHero({ item, mode, font }) {
   const color = TIER[item.tier].color;
   const [anat, setAnat] = useState(false);
@@ -4893,6 +5078,7 @@ function LessonModal({ open, queue, mode, font, srs, onClose, onFinish }) {
         <>
           <ItemHero item={item} mode={mode} font={font} />
           <LetterPicture item={item} mode={mode} />
+          <SignSpot item={item} mode={mode} />
           <div className="mt-4 flex justify-center">
             <AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} />
           </div>
@@ -4917,7 +5103,7 @@ function LessonModal({ open, queue, mode, font, srs, onClose, onFinish }) {
           <div className="sk-on-color rounded-3xl p-6 text-center" style={{ background: `linear-gradient(160deg, ${TIER[item.tier].color}, ${TIER[item.tier].color}88)` }}>
             <DualText th={item.th} lo={item.lo} mode={mode} font={font} className="text-6xl leading-[1.35] text-white" />
           </div>
-          <p className="mt-4 text-center text-xs font-bold uppercase tracking-widest text-slate-400">{item.tier === "glyph" ? "Which letter is this?" : "How does it sound?"}</p>
+          <p className="mt-4 text-center text-xs font-bold uppercase tracking-widest text-slate-400">{item.sign ? "Which sign is this?" : item.tier === "glyph" ? "Which letter is this?" : "How does it sound?"}</p>
           <div className="mt-2 grid grid-cols-2 gap-2">
             {tryOptions.map((o) => {
               const right = o.id === item.id;
@@ -6111,6 +6297,7 @@ function diagnoseReading(item, input) {
 function diagnoseTone(item, picked) {
   const right = item.tone[0];
   if (picked === right) return null;
+  if (item.mark) return `On a Middle-class letter ${MARKS[item.mark].plain} gives ${TONES[right].name}: ก${MARKS[item.mark].th} is ${TONES[right].name}. ${item.trap || ""}`.trim();
   if (item.toneSet === "lo") return item.loParts ? `${item.loSyl[0]}: ${explainLaoTone(item.loParts[0])}` : `This word is ${TONES[right].name} (${TONES[right].chao}).`;
   const p = item.parts;
   if (!p) return `This word is ${TONES[right].name} (${TONES[right].chao}). Listen and compare with ${TONES[picked].name}.`;
@@ -6137,6 +6324,11 @@ function diagnoseTone(item, picked) {
   return `It's ${TONES[right].name}, not ${P}.${tail}`;
 }
 
+function diagnoseLength(item, picked) {
+  const right = item.long ? "long" : "short";
+  if (picked === right) return null;
+  return `${item.toneSet === "lo" ? item.lo : item.th} is a ${right} vowel. ${item.trap || ""}`.trim();
+}
 function diagnoseClass(item, picked) {
   if (picked === item.cls) return null;
   if (item.toneSet === "lo") return `${item.lo} is ${CLASSES[item.cls].name} class, not ${CLASSES[picked].name}. ${LAO_CLASS_RULE[item.cls]}`;
@@ -6145,7 +6337,11 @@ function diagnoseClass(item, picked) {
 
 /** Which second question an item gets after its reading: tone or class. */
 function secondPrompt(item) {
-  if (item.tier === "glyph") return item.cls ? "class" : null;
+  if (item.tier === "glyph") {
+    if (item.cls) return "class";
+    if (typeof item.long === "boolean") return "length";
+    return item.mark && item.tone?.length ? "tone" : null;
+  }
   return item.tone.length ? "tone" : null;
 }
 
@@ -6215,6 +6411,23 @@ function ToneMini({ tone, height = 34 }) {
   );
 }
 
+/** Long or short, for vowel cards (0.41). */
+function LengthChoice({ onPick, picked, correct, disabled }) {
+  return (
+    <div className="grid grid-cols-2 gap-2" data-length-choice>
+      {[["long", "Long", "held, like aa"], ["short", "Short", "clipped, like a"]].map(([k, label, note]) => {
+        const state = picked == null ? "idle" : k === correct ? "right" : k === picked ? "wrong" : "idle";
+        return (
+          <button key={k} type="button" disabled={disabled} onClick={() => onPick(k)} data-length-opt={k}
+            className={`rounded-2xl border p-3 text-center transition active:scale-95 ${state === "right" ? "border-emerald-400 bg-emerald-500/15" : state === "wrong" ? "border-rose-400 bg-rose-500/15" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}>
+            <div className="text-sm font-semibold text-white">{label}</div>
+            <div className="text-[11px] text-slate-400">{note}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 function ClassChoice({ onPick, picked, correct, disabled }) {
   return (
     <div className="grid grid-cols-3 gap-2">
@@ -6336,7 +6549,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const sylTones = kind === "tone" ? item.tone : [];
   const multi = sylTones.length > 1;
   const sylLabels = multi ? syllableLabels(item) : [];
-  const secondRight = kind === "tone" ? item.tone[tonePicks.length] ?? item.tone[0] : kind === "class" ? item.cls : null;
+  const secondRight = kind === "tone" ? item.tone[tonePicks.length] ?? item.tone[0] : kind === "class" ? item.cls : kind === "length" ? (item.long ? "long" : "short") : null;
   const secondOk = multi
     ? (tonePicks.length < sylTones.length ? null : tonePicks.every((t, i) => t === sylTones[i]))
     : pick == null ? null : pick === secondRight;
@@ -6448,11 +6661,11 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
   const secondNote = phase === "result" && secondOk === false
     ? multi
       ? sylTones.map((t, i) => (tonePicks[i] === t ? null : `${sylLabels[i]} is ${TONES[t].name} (${TONES[t].chao}), not ${TONES[tonePicks[i]].name}.${item.loParts ? ` ${explainLaoTone(item.loParts[i])}` : ""}`)).filter(Boolean).join(" ")
-      : kind === "tone" ? diagnoseTone(item, pick) : diagnoseClass(item, pick)
+      : kind === "tone" ? diagnoseTone(item, pick) : kind === "length" ? diagnoseLength(item, pick) : diagnoseClass(item, pick)
     : null;
   const allOk = phase === "result" && readOk && (!two || meaningOk) && secondOk !== false;
   const missLabel = (() => {
-    const parts = [!readOk && "reading", meaningMissed && "meaning", secondOk === false && (kind === "tone" ? "tone" : "class")].filter(Boolean);
+    const parts = [!readOk && "reading", meaningMissed && "meaning", secondOk === false && (kind === "tone" ? "tone" : kind === "length" ? "length" : "class")].filter(Boolean);
     if (!parts.length) return "Correct";
     const text = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
     return `${text[0].toUpperCase()}${text.slice(1)} missed`;
@@ -6598,7 +6811,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
           {kind && phase !== "read" && (
             <div className="mt-4">
               <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
-                {n2} · {multi ? "Tone of each syllable (keys 1–5)" : kind === "tone" ? "Which tone? (keys 1–5)" : "Which consonant class?"}
+                {n2} · {multi ? "Tone of each syllable (keys 1–5)" : item.mark ? "On a Middle-class letter, which tone?" : kind === "tone" ? "Which tone? (keys 1–5)" : kind === "length" ? "Long or short vowel?" : "Which consonant class?"}
               </div>
               {multi && (
                 <div className="mb-3 flex flex-wrap justify-center gap-2">
@@ -6618,6 +6831,7 @@ function ReviewModal({ open, queue, directions = {}, mode, font, onClose, onAnsw
               )}
               {multi && phase === "result" ? null : kind === "tone"
                 ? <ToneChoice key={tonePicks.length} onPick={onPick} picked={multi ? null : pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} options={item.toneSet === "lo" ? LAO_TONE_ORDER : TONE_ORDER} />
+                : kind === "length" ? <LengthChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />
                 : <ClassChoice onPick={onPick} picked={pick} correct={phase === "result" ? secondRight : null} disabled={phase !== "second"} />}
             </div>
           )}
@@ -6665,6 +6879,7 @@ function Inspector({ item, mode, font, srs, onClose }) {
         <div>
           <ItemHero item={item} mode={mode} font={font} />
           <LetterPicture item={item} mode={mode} />
+          <SignSpot item={item} mode={mode} />
           <div className="mt-3 flex justify-center"><AudioButtons ttsTh={item.ttsTh} ttsLo={item.ttsLo} loRaw={item.lo} tones={item.tone} mode={mode} /></div>
           <div className="mt-3 text-center text-xs text-slate-400">
             SRS stage: <StageIcon stage={st} size={13} className="mb-0.5 inline" /> <span className="font-bold text-white">{SRS_STAGES[st].name}</span> ({SRS_STAGES[st].plain})
@@ -12093,6 +12308,11 @@ function SettingsSheet({ open, onClose, s, getState, onReset, confirmReset }) {
           <Chip active={s.prefs.pitchNumbers} onClick={() => s.setPref("pitchNumbers", !s.prefs.pitchNumbers)}>{s.prefs.pitchNumbers ? "Pitch numbers shown (33, 214)" : "Pitch numbers hidden"}</Chip>
         </div>
       </SettingRow>
+      <SettingRow label="Script first" hint="Learn every letter, vowel and tone mark first, most-used first. A new one joins your lessons whenever fewer than 8 letter cards are still young (not yet past their 8-hour review). Words still wait until their letters are learned, and levels still open with their trials.">
+        <div className="flex flex-wrap gap-2" data-script-first>
+          <Chip active={!!s.prefs.scriptFirst} onClick={() => s.setPref("scriptFirst", !s.prefs.scriptFirst)}>{s.prefs.scriptFirst ? "Script first on" : "Script first off"}</Chip>
+        </div>
+      </SettingRow>
       <SettingRow label="Hear-it reviews" hint="Once a word is solid (Naga Adept), some spelling turns play only the sound: pick the spelling, or for words, the meaning. Turn off if you often review where you can't listen.">
         <div className="flex flex-wrap gap-2" data-hear-pref>
           <Chip active={s.prefs.hearIt !== false} onClick={() => s.setPref("hearIt", s.prefs.hearIt === false)}>{s.prefs.hearIt !== false ? "Hear-it on" : "Hear-it off"}</Chip>
@@ -12604,4 +12824,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { glyphUnits, secondPrompt, signExample, scriptOrder, scriptFirstLessons, SCRIPT_WAVE, SCRIPT_SIGNS, LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };

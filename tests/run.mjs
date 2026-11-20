@@ -744,5 +744,50 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(!T.letterPicFor({ tier: "word", th: "ไก่" }, "th"), "words get no letter picture");
 }
 
+// 0.41.0: vowel and tone-mark cards (R1) and script first (R5).
+{
+  const signs = T.CURRICULUM.filter((i) => i.sign);
+  check(signs.length === 31, `31 sign cards, found ${signs.length}`);
+  check(new Set(T.CURRICULUM.map((i) => i.id)).size === T.CURRICULUM.length, "course ids stay unique");
+  for (const mode of ["th", "lo"]) {
+    const course = T.courseItems(mode);
+    const field = mode;
+    const signLevel = {};
+    course.filter((i) => i.tier === "glyph").forEach((i) => [...T.glyphUnits(i, field)].forEach((c) => { signLevel[c] = Math.min(signLevel[c] ?? 99, i.level); }));
+    // No core word waits on a vowel or mark card from a later level (consonants already overlap levels on purpose).
+    const signChars = new Set(course.filter((i) => i.sign).flatMap((i) => T.glyphUnits(i, field)));
+    course.filter((i) => i.tier !== "glyph" && !i.garden).forEach((i) => {
+      const late = [...(i[field] || "")].filter((c) => signChars.has(c) && signLevel[c] > i.level);
+      check(!late.length, `${mode} ${i.id} ${i[field]} waits on ${late.join(" ")} from a later level`);
+    });
+  }
+  const lo = T.courseItems("lo");
+  check(!lo.some((i) => i.id === "mk-karan" || i.id === "mk-taikhu"), "Thai-only signs have no Lao card");
+  check(lo.find((i) => i.id === "vw-ee").level === 2 && T.courseItems("th").find((i) => i.id === "vw-ee").level === 4, "loLevel moves ເ◌ earlier in the Lao course only");
+  const aa = signs.find((i) => i.id === "vw-aa");
+  check(T.isCorrect(aa, "aa") && T.isCorrect(aa, "sara aa") && !T.isCorrect(aa, "ii"), "◌า takes aa, not ii");
+  check(T.secondPrompt(aa) === "length" && T.secondPrompt(signs.find((i) => i.id === "mk-ek")) === "tone" && T.secondPrompt(signs.find((i) => i.id === "mk-karan")) === null, "vowels ask long or short, marks ask the tone");
+  check(T.secondPrompt(lo.find((i) => i.id === "mk-ek")) === null, "Lao tone-mark cards skip the Thai tone question");
+  signs.filter((i) => i.mark).forEach((i) => check(T.computeTone({ cls: "mid", live: true, long: true, mark: i.mark }).tone === i.tone[0], `${i.id} tone matches the engine on a Middle letter`));
+  const ko = T.CURRICULUM.find((i) => i.th === "อ" && i.tier === "glyph");
+  check(T.isCorrect(ko, "o"), "the consonant อ still takes o after the vowel cards");
+  const wordWait = T.unlockChain({}, "th").waiting(T.CURRICULUM.find((i) => i.id === "s-kaa"));
+  check(wordWait.includes("า"), "กา waits for the ◌า card");
+  const ex = T.signExample(signs.find((i) => i.id === "vw-uea"), "th");
+  check(ex && ex.th.includes("ือ"), "เ◌ือ finds an example word");
+  // Script first
+  const order = T.scriptOrder("th");
+  check(order.length === T.courseItems("th").filter((i) => i.tier === "glyph" && !i.garden).length, "script order covers every letter card");
+  check(order.slice(0, 12).some((i) => i.th === "◌า") && order.slice(0, 12).some((i) => i.th === "น"), "most-used letters come first");
+  check(order.indexOf(order.find((i) => i.th === "ฬ")) > order.length - 15, "rare letters come last");
+  const first = T.scriptFirstLessons({}, "th");
+  check(first.length === T.SCRIPT_WAVE, "a fresh start gets one wave");
+  const young = Object.fromEntries(first.map((i) => [i.id, { stage: 1, ladder: 1 }]));
+  check(T.scriptFirstLessons(young, "th").length === 0, "no new letters while the wave is young");
+  const grown = Object.fromEntries(first.map((i, n) => [i.id, { stage: 1, ladder: n < 3 ? 2 : 1 }]));
+  const next = T.scriptFirstLessons(grown, "th");
+  check(next.length === 3 && next.every((i) => !grown[i.id]), "letters past their 8-hour review make room for new ones");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
