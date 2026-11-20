@@ -886,5 +886,84 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(st.vowels.stamp === "gold" && st.vowels.tries === 2 && st.vowels.last.right === 10, "a worse retake keeps the best stamp");
 }
 
+// Speech engine reliability (0.44.2): dropped utterances, lost end events, stalled clips, Read aloud waiting.
+{
+  const log = [];
+  let fault = "ok";
+  let speaks = 0;
+  const synth = {
+    speaking: false, pending: false, paused: false,
+    cancel() { const u = this.cur; this.cur = null; this.speaking = false; if (u && !u.done) { u.done = true; u.onerror?.({ error: "interrupted" }); } },
+    resume() { this.paused = false; },
+    speak(u) {
+      speaks += 1;
+      if (fault === "dropFirst" && speaks === 1) { log.push(`drop:${u.text}`); return; }
+      this.cur = u; this.speaking = true;
+      setTimeout(() => { if (this.cur !== u) return; log.push(`start:${u.text}`); u.onstart?.(); }, 5);
+      if (fault === "noEnd") { setTimeout(() => { if (this.cur === u) { this.speaking = false; this.cur = null; } }, 30); return; }
+      setTimeout(() => { if (this.cur !== u || u.done) return; u.done = true; this.cur = null; this.speaking = false; log.push(`end:${u.text}`); u.onend?.(); }, 25);
+    },
+    getVoices: () => [], addEventListener() {},
+  };
+  let audioFault = "ok";
+  class FakeAudio {
+    constructor(url) { this.url = url; this.duration = 0.02; }
+    play() {
+      if (audioFault === "stall") { log.push(`stall:${this.url}`); return Promise.resolve(); }
+      setTimeout(() => { if (this.paused) return; log.push(`clip:${this.url}`); this.onplaying?.(); setTimeout(() => !this.paused && this.onended?.(), 20); }, 5);
+      return Promise.resolve();
+    }
+    pause() { this.paused = true; }
+  }
+  globalThis.window = { speechSynthesis: synth };
+  globalThis.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; } };
+  globalThis.Audio = FakeAudio;
+  const a = new T.SuvarnaMobileAudioEngine();
+
+  eq(await a.speakSequence([{ th: "กา" }, { th: "ขา" }], 10), true, "a two-part sequence is heard to the end");
+  check(log.join() === "start:กา,end:กา,start:ขา,end:ขา", `both parts play in order (${log.join()})`);
+
+  log.length = 0; fault = "dropFirst"; speaks = 0;
+  eq(await a.speakHumanVoice("มา"), true, "a dropped utterance is retried");
+  check(log.join() === "drop:มา,start:มา,end:มา", `the retry is heard (${log.join()})`);
+
+  log.length = 0; fault = "noEnd";
+  eq(await a.speakSequence([{ th: "นา" }, { th: "ตา" }], 10), true, "a lost end event doesn't hang the sequence");
+  check(log.join() === "start:นา,start:ตา", `the second part still plays (${log.join()})`);
+
+  log.length = 0; fault = "ok";
+  const first = a.speakHumanVoice("ปา");
+  await new Promise((r) => setTimeout(r, 10));
+  const second = a.speakHumanVoice("ดา");
+  eq(await first, false, "a sound cut off by another resolves false");
+  eq(await second, true, "the new sound plays");
+
+  T.applyNativeIndex({ clips: { "กิน": [["kin.mp3", "s1", "f"]] } }, "v/");
+  log.length = 0; audioFault = "ok";
+  eq(await a.speakHumanVoice("กิน"), true, "a native clip plays");
+  check(log.join() === "clip:v/kin.mp3", `the clip, not the speech voice, is used (${log.join()})`);
+  log.length = 0; audioFault = "stall";
+  eq(await a.speakHumanVoice("กิน"), true, "a stalled clip gives way");
+  check(log.join() === "stall:v/kin.mp3,start:กิน,end:กิน", `the speech voice reads it instead (${log.join()})`);
+  T.applyNativeIndex({ clips: {} });
+
+  a.muted = true;
+  eq(await a.speakHumanVoice("กา"), false, "muted resolves at once");
+  delete globalThis.window; delete globalThis.SpeechSynthesisUtterance; delete globalThis.Audio;
+}
+
+// Daily plan budget (0.44.2): filled by priority, so a 12-minute day keeps the Ear set.
+{
+  const lq = Array.from({ length: 10 }, (_, i) => ({ id: "x" + i }));
+  const plan = (mins, rc) => T.planToday({ srs: {}, reviewCount: rc, lessonQueue: lq, leeches: [{ th: "ก" }], log: {}, dailyMinutes: mins, decode: true, sprint: true });
+  const ids = (p) => p.planned.map((st) => st.id);
+  const p12 = plan(12, 15);
+  check(ids(p12).includes("ear"), `12 min with 15 reviews keeps the Ear set (${ids(p12)})`);
+  check(p12.total <= 12, "and stays inside 12 minutes");
+  eq(ids(plan(20, 15)), ["reviews", "leech", "lessons", "decode", "sprint", "ear"], "20 min fits everything in screen order");
+  const paused = plan(12, 40);
+  check(ids(paused).includes("lessons") && paused.total <= 12, "paused lessons are shown but don't use up the day");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.44.1";
+const APP_VERSION = "0.44.2";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2708,12 +2708,29 @@ function recordClip(ms = 2500) {
 function playUrl(url, rate = 1) {
   return new Promise((resolve) => {
     const a = new Audio(url);
+    let done = false;
+    let timer = null;
+    // Resolves true when the clip played, false when it could not (offline, not cached, stalled, cut off).
+    const fin = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (playUrl.current === a) playUrl.current = null;
+      resolve(ok);
+    };
+    a.cancel = () => { try { a.pause(); } catch { /* ignore */ } fin(false); };
     playUrl.current = a;
     try { a.preservesPitch = true; a.playbackRate = Math.min(1.3, Math.max(0.7, rate)); } catch { /* old browser */ }
-    // Resolves true when the clip played, false when it could not (offline, not cached).
-    a.onended = () => resolve(true);
-    a.onerror = () => resolve(false);
-    a.play().catch(() => resolve(false));
+    a.onended = () => fin(true);
+    a.onerror = () => fin(false);
+    // A clip that hasn't started within 4 s (slow network) gives way to the speech voice.
+    timer = setTimeout(() => fin(false), 4000);
+    a.onplaying = () => {
+      clearTimeout(timer);
+      const secs = Number.isFinite(a.duration) && a.duration > 0 ? a.duration : 8;
+      timer = setTimeout(() => fin(true), (secs / (a.playbackRate || 1)) * 1000 + 1500);
+    };
+    a.play().catch(() => fin(false));
   });
 }
 
@@ -2825,6 +2842,12 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.44.2", title: "Steadier speech, a fairer daily plan", points: [
+    "Speak buttons no longer skip or stay silent when the phone's speech engine drops a word: it now tries again, and a two-part answer always plays both parts.",
+    "A native recording that is slow to load gives way to the speech voice after 4 seconds instead of staying silent.",
+    "Read aloud waits for each sentence to finish, and Model then you plays your take once the model has finished.",
+    "On a 12-minute day the plan keeps the Ear set; it used to be squeezed out by Sound it out. Paused lessons no longer use up minutes.",
+  ] },
   { v: "0.44.1", title: "Alphabet polish", points: [
     "With Script first on, the Lessons tile shows how many letter cards you've started.",
     "Vowel and mark lessons show the sign as a sum, like ก + ◌า = กา, so the base letter is easy to see.",
@@ -3104,80 +3127,125 @@ class SuvarnaMobileAudioEngine {
     clearTimeout(this.speechTimer);
     this.speechTimer = null;
     this.seqToken = (this.seqToken || 0) + 1;
+    // Settle everything still waiting, so no sequence hangs on an event that never comes.
+    const waiting = [...(this.waiting || [])];
+    this.waiting = new Set();
     try { window.speechSynthesis?.cancel(); } catch { /* ignore */ }
-    try { playUrl.current?.pause(); } catch { /* ignore */ }
+    try { playUrl.current?.cancel(); } catch { /* ignore */ }
+    waiting.forEach((fin) => fin(false));
+  }
+  /** Play one of your own recordings, stopping whatever else is sounding. `delayMs` leaves a gap first. */
+  async playOwn(url, delayMs = 0) {
+    if (!url || this.muted) return false;
+    this.stopTones();
+    this.cancelSpeech();
+    const token = this.seqToken;
+    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+    if (token !== this.seqToken) return false;
+    return playUrl(url, 1);
   }
   /**
    * Speak with a human voice. `ttsThai` must be Thai script. If `laoRaw` is
    * given and the device has a Lao voice, the Lao text is spoken instead.
+   * Resolves true once it has been heard, false if it was cut off or failed.
    */
   speakHumanVoice(ttsThai, laoRaw, opts = {}) {
-    this.speakSequence([{ th: ttsThai, lo: laoRaw, ...opts }]);
+    return this.speakSequence([{ th: ttsThai, lo: laoRaw, ...opts }]);
+  }
+  /**
+   * One utterance through the speech engine, resolving when it ends. Guards
+   * against engine bugs seen on Chrome and Android: an utterance dropped
+   * right after cancel() or while the engine is stuck paused (retried once),
+   * and an end event that never fires (a time cap based on the text length).
+   */
+  utter(e, live, attempt = 0) {
+    const synth = window.speechSynthesis;
+    return new Promise((resolve) => {
+      const lv = e.lo ? this.laoVoice() : null;
+      const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
+      if (!text || !live()) { resolve(!!text); return; }
+      const u = new SpeechSynthesisUtterance(text);
+      this.dress(u, e, !!lv);
+      let started = false;
+      let done = false;
+      let startTimer = null;
+      let capTimer = null;
+      if (!this.waiting) this.waiting = new Set();
+      if (!this.utterances) this.utterances = new Set();
+      const fin = (ok) => {
+        if (done) return;
+        done = true;
+        clearTimeout(startTimer);
+        clearTimeout(capTimer);
+        this.waiting.delete(fin);
+        this.utterances.delete(u);
+        resolve(ok);
+      };
+      // Holding the utterance stops Chrome from collecting it and losing its end event.
+      this.utterances.add(u);
+      this.waiting.add(fin);
+      u.onstart = () => { started = true; };
+      u.onend = () => fin(true);
+      u.onerror = () => fin(false);
+      startTimer = setTimeout(() => {
+        if (done || started || synth.speaking) return;
+        if (attempt > 0 || !live()) { fin(false); return; }
+        // Nothing started: the engine dropped it. Clear the engine and try once more.
+        done = true;
+        clearTimeout(capTimer);
+        this.waiting.delete(fin);
+        this.utterances.delete(u);
+        try { synth.cancel(); } catch { /* ignore */ }
+        setTimeout(() => this.utter(e, live, 1).then(resolve), 150);
+      }, 1800);
+      capTimer = setTimeout(() => fin(started || synth.speaking), Math.min(30000, 3000 + ([...text].length * 260) / (u.rate || 0.85)));
+      try { if (synth.paused) synth.resume(); } catch { /* ignore */ }
+      synth.speak(u);
+    });
   }
   /**
    * Speak several utterances one after another (e.g. "your answer" then "the
    * right answer"). Each entry: { th, lo?, voice?, rate?, who? } where who is
    * "male" or "female" for a dialogue speaker. Starting any other
-   * sound cancels the rest of the sequence.
+   * sound cancels the rest of the sequence. Resolves true when the whole
+   * sequence was heard, false when it was cut off.
    */
   speakSequence(list, gapMs = 450) {
-    if (this.muted || typeof window === "undefined") return;
+    if (this.muted || typeof window === "undefined") return Promise.resolve(false);
+    const synth = "speechSynthesis" in window ? window.speechSynthesis : null;
+    const wasBusy = !!(synth && (synth.speaking || synth.pending)) || !!playUrl.current;
     this.stopTones();
     this.cancelSpeech();
     const token = this.seqToken;
+    const live = () => token === this.seqToken;
     // A Voice Bank recording of the same text wins over the synthetic voice.
     // Then a native speaker's clip (Thai only: a Lao word is never read with a Thai recording).
     const recOf = (e) => (e.lo && voiceBank.get(voiceKey("lo", e.lo))) || (e.th && voiceBank.get(voiceKey("th", e.th))) || (!e.lo && e.th && nativeClip(e.th, e.who)?.f) || null;
     const urls = list.map(recOf); // once, so speaker rotation advances once per play
-    if (urls.some(Boolean) || !("speechSynthesis" in window)) {
-      const run = async () => {
-        for (let i = 0; i < list.length; i += 1) {
-          if (token !== this.seqToken) return;
-          const url = urls[i];
-          // eslint-disable-next-line no-await-in-loop
-          const played = url ? await playUrl(url, (list[i].rate || this.rate) / 0.85) : false;
-          if (token !== this.seqToken) return;
-          if (!played && "speechSynthesis" in window) {
-            // eslint-disable-next-line no-await-in-loop
-            await new Promise((res) => {
-              const e = list[i];
-              const lv = e.lo ? this.laoVoice() : null;
-              const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
-              if (!text) { res(); return; }
-              const u = new SpeechSynthesisUtterance(text);
-              this.dress(u, e, !!lv);
-              u.onend = res;
-              u.onerror = res;
-              window.speechSynthesis.speak(u);
-            });
-          }
-          // eslint-disable-next-line no-await-in-loop
-          if (i + 1 < list.length) await new Promise((r) => setTimeout(r, gapMs));
-        }
-      };
-      this.speechTimer = setTimeout(run, 60);
-      return;
-    }
-    const utterances = list
-      .map((e) => {
-        const lv = e.lo ? this.laoVoice() : null;
-        const text = lv ? sanitizeLao(e.lo) : sanitizeThai(e.th);
-        if (!text) return null;
-        const u = new SpeechSynthesisUtterance(text);
-        this.dress(u, e, !!lv);
-        return u;
-      })
-      .filter(Boolean);
-    if (!utterances.length) return;
-    const play = (i) => {
-      if (token !== this.seqToken || i >= utterances.length) return;
-      const u = utterances[i];
-      u.onend = () => {
-        if (i + 1 < utterances.length) this.speechTimer = setTimeout(() => play(i + 1), gapMs);
-      };
-      window.speechSynthesis.speak(u);
+    const run = async () => {
+      for (let i = 0; i < list.length; i += 1) {
+        if (!live()) return false;
+        // eslint-disable-next-line no-await-in-loop
+        const played = urls[i] ? await playUrl(urls[i], (list[i].rate || this.rate) / 0.85) : false;
+        if (!live()) return false;
+        // eslint-disable-next-line no-await-in-loop
+        if (!played && synth) await this.utter(list[i], live);
+        if (!live()) return false;
+        // eslint-disable-next-line no-await-in-loop
+        if (i + 1 < list.length) await new Promise((r) => setTimeout(r, gapMs));
+      }
+      return live();
     };
-    this.speechTimer = setTimeout(() => play(0), 120);
+    return new Promise((resolve) => {
+      const fin = (ok) => { this.waiting?.delete(fin); resolve(ok); };
+      if (!this.waiting) this.waiting = new Set();
+      this.waiting.add(fin);
+      // Chrome can drop speech started straight after cancel(), so wait a moment longer then.
+      this.speechTimer = setTimeout(() => {
+        this.waiting.delete(fin);
+        run().then(resolve, () => resolve(false));
+      }, wasBusy ? 180 : 40);
+    });
   }
   /** Language, voice, pitch and rate for one utterance. An explicit e.voice (Ear Dojo rotation) wins. */
   dress(u, e, lao) {
@@ -3858,13 +3926,16 @@ function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Dat
  * Each step has `onClick` (opens a review-style sheet) or `tool` (a practice tool shown inside the
  * daily session: "ear", "trace", "mekong", "sign" or "shadow").
  */
+/** Which steps a short day keeps first. Steps not listed come last, in screen order. */
+const PLAN_PRIORITY = ["reviews", "trial", "lessons", "leech", "ear", "sprint", "decode", "prod"];
+const planRank = (id) => { const i = PLAN_PRIORITY.indexOf(id); return i < 0 ? PLAN_PRIORITY.length : i; };
 function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onLeech, practice, trial, prod, decode = false, sprint = false }) {
   const today = log[todayKey()] || {};
   const acc = weekAccuracy(log);
   const lessonBatch = Math.min(lessonQueue.length, dailyMinutes <= 5 ? 3 : 5);
   const lessonsPaused = (acc != null && acc < 0.8) || reviewCount >= 30;
   const steps = [
-    { id: "reviews", label: reviewCount ? `${reviewCount} review${reviewCount > 1 ? "s" : ""}` : "Reviews", short: reviewCount ? `${reviewCount} reviews` : "Reviews", min: Math.max(1, Math.ceil((reviewCount * 10) / 60)), done: reviewCount === 0, note: reviewCount === 0 ? (today.reviews ? `${today.reviews} done today` : "Nothing due") : null, onClick: onReviews, disabled: !reviewCount },
+    { id: "reviews", label: reviewCount ? `${reviewCount} review${reviewCount > 1 ? "s" : ""}` : "Reviews", short: reviewCount ? `${reviewCount} reviews` : "Reviews", min: Math.max(1, Math.ceil((reviewCount * 12) / 60)), done: reviewCount === 0, note: reviewCount === 0 ? (today.reviews ? `${today.reviews} done today` : "Nothing due") : null, onClick: onReviews, disabled: !reviewCount },
   ];
   const earStep = { id: "ear", label: "Ear set", short: "Ear", min: 3, done: (today.ear || 0) >= EAR_DAILY_TRIALS, note: `${Math.min(today.ear || 0, EAR_DAILY_TRIALS)} / ${EAR_DAILY_TRIALS} trials`, tool: "ear" };
   // A ready Guardian Trial comes straight after reviews.
@@ -3891,10 +3962,18 @@ function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, 
   // Opt-in production track: about ten English-to-Thai cards a day.
   if (prod) steps.push({ id: "prod", label: prod.label, short: "Build and say", min: 3, done: prod.done, note: prod.note, onClick: prod.onClick });
   if (practice) steps.push({ id: `practice-${practice.kind}`, label: practice.label, short: { trace: "Trace", mekong: "Mekong", sign: "Sign", shadow: "Shadow" }[practice.kind], thai: practice.thai, min: 3, done: practice.done, note: practice.note, tool: practice.kind });
+  // 0.44.2: the budget is filled by priority, not by screen order, so the Ear set (the only
+  // daily tone-listening) isn't pushed out by the newer read-faster steps on a 12-minute day.
+  // Paused lessons are shown but cost nothing.
+  const cost = (st) => (st.disabled ? 0 : st.min);
   let budget = dailyMinutes;
-  const planned = steps.filter((st) => { const keep = st.id === "reviews" || st.id === "trial" || budget - st.min >= 0; if (keep) budget -= st.min; return keep; });
-  const total = planned.reduce((n, st) => n + st.min, 0);
-  const doneMin = planned.filter((st) => st.done).reduce((n, st) => n + st.min, 0);
+  const keep = new Set();
+  [...steps].sort((x, y) => planRank(x.id) - planRank(y.id)).forEach((st) => {
+    if (st.id === "reviews" || st.id === "trial" || budget - cost(st) >= 0) { keep.add(st.id); budget -= cost(st); }
+  });
+  const planned = steps.filter((st) => keep.has(st.id));
+  const total = planned.reduce((n, st) => n + cost(st), 0);
+  const doneMin = planned.filter((st) => st.done).reduce((n, st) => n + cost(st), 0);
   const nextStep = planned.find((st) => !st.done && !st.disabled) || null;
   const complete = planned.every((st) => st.done || st.disabled);
   return { planned, total, doneMin, nextStep, complete, acc };
@@ -5823,7 +5902,7 @@ function ProductionSession({ open, onClose, queue, deck, setDeck, logActivity })
   const [micErr, setMicErr] = useState("");
   const card = line[idx];
   const dir = dirs[idx];
-  const say = useCallback((c) => { if (!c) return; const a = getAudio(); if (c.script === "lo") a.speakHumanVoice(c.tts, c.word); else a.speakHumanVoice(c.tts); }, []);
+  const say = useCallback((c) => { if (!c) return undefined; const a = getAudio(); return c.script === "lo" ? a.speakHumanVoice(c.tts, c.word) : a.speakHumanVoice(c.tts); }, []);
   useEffect(() => {
     if (!card) return;
     setTiles(prodTiles(card.word, card.script));
@@ -5935,8 +6014,8 @@ function ProductionSession({ open, onClose, queue, deck, setDeck, logActivity })
             <>
               <div className="mt-3 flex flex-wrap justify-center gap-2" data-prod-ab>
                 <button onClick={() => say(card)} className={btn}><Volume2 size={13} className="mr-1 inline" />Model</button>
-                {take && <button onClick={() => playUrl(take)} className={btn}>You</button>}
-                {take && <button onClick={async () => { say(card); await new Promise((r) => setTimeout(r, 1500)); playUrl(take); }} className={`${btn} border-amber-400/50 text-amber-200`}>Model then you</button>}
+                {take && <button onClick={() => getAudio().playOwn(take)} className={btn}>You</button>}
+                {take && <button onClick={async () => { const a = getAudio(); if (await say(card)) await a.playOwn(take, 350); }} className={`${btn} border-amber-400/50 text-amber-200`}>Model then you</button>}
               </div>
               <p className="mt-3 text-center text-sm text-slate-300">How did you do? Count it right if the word and its tone were there, even if the sounds were rough.</p>
               <div className="mt-3 grid grid-cols-3 gap-2" data-prod-grades>
@@ -10465,7 +10544,7 @@ function VoiceBank({ mode }) {
     try {
       const blob = await r.done;
       await saveVoice(item.key, blob);
-      await playUrl(voiceBank.get(item.key));
+      await getAudio().playOwn(voiceBank.get(item.key));
     } catch (e) {
       setErr(micErrorText(e));
     }
@@ -10491,7 +10570,7 @@ function VoiceBank({ mode }) {
           <div className="mt-3 flex justify-center gap-2 text-xs">
             {bank.has(item.key) ? (
               <>
-                <button onClick={() => playUrl(bank.get(item.key))} className="rounded-xl bg-white/10 px-3 py-1.5 text-white"><Play size={12} className="mr-1 inline" />Play recording</button>
+                <button onClick={() => getAudio().playOwn(bank.get(item.key))} className="rounded-xl bg-white/10 px-3 py-1.5 text-white"><Play size={12} className="mr-1 inline" />Play recording</button>
                 <button onClick={() => deleteVoice(item.key)} className="rounded-xl border border-white/10 px-3 py-1.5 text-slate-300">Delete</button>
               </>
             ) : <span className="text-slate-400">Not recorded yet. Tap the mic and read it once, clearly (about two seconds).</span>}
@@ -10644,15 +10723,16 @@ function TakeAB({ take, takeKey, onModel, score, best }) {
     return () => URL.revokeObjectURL(u);
   }, [take]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!url && !bestUrl) return null;
-  const ab = async () => { onModel(); await new Promise((r) => setTimeout(r, 1600)); if (url) await playUrl(url); };
+  // Model first, then your take, once the model has finished (not after a fixed wait).
+  const ab = async () => { if ((await onModel()) && url) await getAudio().playOwn(url, 350); };
   const btn = "rounded-xl border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-100";
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2" data-take-ab>
       <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Hear yourself</span>
       <button onClick={onModel} className={btn}>A · model</button>
-      {url && <button onClick={() => playUrl(url)} className={btn}>B · you</button>}
+      {url && <button onClick={() => getAudio().playOwn(url)} className={btn}>B · you</button>}
       {url && <button onClick={ab} className={`${btn} border-amber-400/50 text-amber-200`}>A then B</button>}
-      {bestUrl && <button onClick={() => playUrl(bestUrl)} className={btn}>Best take{best ? ` · ${best}` : ""}</button>}
+      {bestUrl && <button onClick={() => getAudio().playOwn(bestUrl)} className={btn}>Best take{best ? ` · ${best}` : ""}</button>}
     </div>
   );
 }
@@ -12219,19 +12299,19 @@ function StoryReader({ story, script, srs, prefs, library, setLibrary, logActivi
   const known = Math.round(storyKnown(story, script, srs) * 100);
   useEffect(() => () => { playRef.current.on = false; getAudio().cancelSpeech(); }, []);
   useEffect(() => { if (!timer) return undefined; const id = setInterval(() => tick((n) => n + 1), 250); return () => clearInterval(id); }, [timer]);
-  const speakSentence = (s) => { const a = getAudio(); const tts = s.tokens.map((tk) => tk.tts || tk.t).join(" "); if (script === "lo") a.speakHumanVoice(tts, s.tokens.map((tk) => tk.t).join("")); else a.speakHumanVoice(tts); };
+  const speakSentence = (s) => { const a = getAudio(); const tts = s.tokens.map((tk) => tk.tts || tk.t).join(" "); return script === "lo" ? a.speakHumanVoice(tts, s.tokens.map((tk) => tk.t).join("")) : a.speakHumanVoice(tts); };
   // Read aloud, sentence by sentence, highlighting the one being read.
   const readAloud = async () => {
     if (playRef.current.on) { playRef.current.on = false; getAudio().cancelSpeech(); setPlaying(-1); return; }
     playRef.current.on = true;
-    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
     for (let i = 0; i < sentences.length && playRef.current.on; i += 1) {
       setPlaying(i);
-      speakSentence(sentences[i]);
-      const t0 = Date.now();
-      const minMs = 600 + sentences[i].tokens.length * 250;
+      // Waits for the sentence to finish, whether a recording or the speech voice reads it.
       // eslint-disable-next-line no-await-in-loop
-      await new Promise((res) => { const id = setInterval(() => { const el = Date.now() - t0; if (!playRef.current.on || (el > minMs && !(synth?.speaking || synth?.pending)) || el > 20000) { clearInterval(id); res(); } }, 150); });
+      const heard = await speakSentence(sentences[i]);
+      if (!heard && !getAudio().muted) break; // another sound (or Stop) cut in
+      // eslint-disable-next-line no-await-in-loop
+      if (i + 1 < sentences.length) await new Promise((r) => setTimeout(r, 350));
     }
     playRef.current.on = false;
     setPlaying(-1);
