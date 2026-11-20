@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.41.0";
+const APP_VERSION = "0.42.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2825,6 +2825,11 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.42.0", title: "Sound it out, and tone in three taps", points: [
+    "Sound it out (Practice → Read faster): syllables built only from letters, vowels and marks you've had lessons on, about half of them made up. You can't have memorised them, so you have to read them. Pick how it sounds, then the tone.",
+    "Tone in three taps: tap the class, live or dead ending and mark, then the tone. Eight right in a row and a step drops away, until it's just the syllable and the tone. Two misses bring a step back.",
+    "Today adds a step: sound out 10 new syllables, once you know 4 consonants and 2 vowels. Neither drill changes your reviews. Thai only for now.",
+  ] },
   { v: "0.41.0", title: "Vowel and tone-mark cards, script first", points: [
     "25 Thai vowels now have cards of their own, from ◌า and ◌ี to เ◌ือ and ◌ัว, and so do the four tone marks, ◌์ and ◌็. Each shows where it sits around the letter and the first course word that uses it.",
     "Reviews ask a second question: long or short for vowels, and for tone marks the tone they give on a Middle-class letter.",
@@ -3735,7 +3740,7 @@ const EAR_DAILY_TRIALS = 20;
  */
 function computeStreak(log, now = Date.now(), vacationSince = runtimePrefs.vacationSince) {
   let streak = 0;
-  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) + (log[k].traces || 0) + (log[k].bridge || 0) + (log[k].signs || 0) + (log[k].drills || 0) + (log[k].reads || 0) > 0);
+  const active = (k) => !!log[k] && ((log[k].reviews || 0) + (log[k].ear || 0) + (log[k].lessons || 0) + (log[k].shadow || 0) + (log[k].traces || 0) + (log[k].bridge || 0) + (log[k].signs || 0) + (log[k].drills || 0) + (log[k].reads || 0) + (log[k].decode || 0) > 0);
   const resting = (t) => !!log[todayKey(t)]?.rest || (vacationSince != null && todayKey(t) >= todayKey(vacationSince));
   let t = now;
   if (!active(todayKey(t))) t -= DAY;
@@ -3836,7 +3841,7 @@ function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Dat
  * Each step has `onClick` (opens a review-style sheet) or `tool` (a practice tool shown inside the
  * daily session: "ear", "trace", "mekong", "sign" or "shadow").
  */
-function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onLeech, practice, trial, prod }) {
+function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onLeech, practice, trial, prod, decode = false }) {
   const today = log[todayKey()] || {};
   const acc = weekAccuracy(log);
   const lessonBatch = Math.min(lessonQueue.length, dailyMinutes <= 5 ? 3 : 5);
@@ -3860,6 +3865,8 @@ function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, 
       disabled: lessonsPaused && !(today.lessons > 0),
     });
   }
+  // 0.42 (R2): reading new syllables comes straight after lessons, once there are enough letters for it.
+  if (decode) steps.push({ id: "decode", label: `Sound out ${DECODE_DAILY} new syllables`, short: "Sound it out", thai: false, min: 3, done: (today.decode || 0) >= DECODE_DAILY, note: `${Math.min(today.decode || 0, DECODE_DAILY)} / ${DECODE_DAILY} read`, tool: "decode" });
   // 0.33: new items come before the Ear set, so a first session starts with letters.
   steps.push(earStep);
   // Opt-in production track: about ten English-to-Thai cards a day.
@@ -4521,9 +4528,10 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
     practice: todayPractice({ srs, mode, bridgeSched, log, sandbox, streetOpen: unlockedLevels.has(7) }),
     trial: readyTrial ? { label: `Guardian Trial · Level ${readyTrial}`, onClick: () => startTrial(readyTrial) } : null,
     prod: prodStep,
+    decode: mode !== "lo" && decodeKit(srs, sandbox).ready,
   });
   const todayLog = log[todayKey()] || {};
-  const startedToday = ["reviews", "lessons", "ear", "drills", "traces", "bridge", "signs", "shadow", "prod"].some((k) => (todayLog[k] || 0) > 0);
+  const startedToday = ["reviews", "lessons", "ear", "drills", "traces", "bridge", "signs", "shadow", "prod", "decode"].some((k) => (todayLog[k] || 0) > 0);
   const streak = computeStreak(log);
   // Outside the session, a tool step opens its tab; inside, it runs in the session.
   const runStepAlone = (st) => { if (st.tool === "ear") onOpenEar?.(); else if (st.tool) onPractice?.(st.tool); else st.onClick?.(); };
@@ -10977,6 +10985,296 @@ function ClockFace({ h, m, size = 120 }) {
   );
 }
 
+/* ============================================================================
+ * Sound it out (0.42, R2) and Tone in three taps (R4). Syllables built only from
+ * letters, vowels and marks you have met: real course words and made-up ones you
+ * can't have memorised, so the only way through is to read them. Pick the reading,
+ * then work out the tone. The tone steps (class, live or dead, mark) fade as you
+ * get them right: guided, then class only, then just the tone.
+ * Thai only for now. Nothing here writes to your reviews.
+ * ========================================================================== */
+const DECODE_ROUND = 15;
+const DECODE_DAILY = 10;
+const DECODE_LEVELS = [
+  { name: "Guided", steps: ["cls", "live", "mark"], note: "Class, ending and mark, then the tone" },
+  { name: "Class only", steps: ["cls"], note: "Class, then the tone" },
+  { name: "Solo", steps: [], note: "Just the tone" },
+];
+const DECODE_UP = 8; // right in a row to drop a step
+// Vowel patterns that can take a final, and the y/w glides each takes.
+const DECODE_CLOSED = { "◌า": "งนมกดบยว", "◌ิ": "งนมกดบ", "◌ี": "งนมกดบ", "◌ึ": "งนมกดบ", "◌ุ": "งนมกดบย", "◌ู": "งนมกดบ", "เ◌": "งนมกดบว", "แ◌": "งนมกดบว", "โ◌": "งนมกดบย", "เ◌ีย": "งนมกดบว", "เ◌ือ": "งนมกดบ", "◌อ": "งนมกดบย", "◌ั": "งนมกดบ", "◌ื": "งนมกดบ" };
+const DECODE_NEEDS_FINAL = new Set(["◌ั", "◌ื"]);
+const DECODE_COMBINING = "ัิีึืุู็";
+const MID_ONLY_MARKS = new Set(["tri", "jat"]);
+
+/** What you can be asked to read: consonants, vowel patterns and marks you have met. */
+function decodeKit(srs = {}, sandbox = false) {
+  const gate = letterGate(srs, "th", sandbox);
+  const met = (it) => sandbox || (srs[it.id]?.stage || 0) >= 1;
+  const cons = CURRICULUM.filter((i) => i.tier === "glyph" && !i.sign && [...i.th].length === 1 && isThaiCons(i.th) && met(i)).map((i) => i.th);
+  const signKnown = (s) => {
+    if (met(s)) return true;
+    const u = glyphUnits(s, "th");
+    return (u.length ? u : [...s.th].filter((c) => SCRIPT_CHAR.test(c))).every((c) => gate.known.has(c));
+  };
+  const vowels = SCRIPT_SIGNS.filter((s) => !s.mark && !s.thOnly && signKnown(s)).map((s) => s.th);
+  const marks = SCRIPT_SIGNS.filter((s) => s.mark && signKnown(s)).map((s) => s.mark);
+  const words = CURRICULUM.filter((i) => i.tier !== "glyph" && (sandbox || (srs[i.id]?.stage || 0) >= 1) && /^[ก-๛]+$/.test(i.th) && i.tone?.length === 1)
+    .filter((i) => { const r = readThai(i.th); return r.length === 1 && !r[0].raw && !r[0].guess && r[0].tone === i.tone[0] && plainRoman(r[0].roman) === plainRoman(i.thRoman.split(" ·")[0]); });
+  return { cons: [...new Set(cons)], vowels, marks, words, ready: cons.length >= 4 && vowels.length >= 2 };
+}
+
+/** Put a vowel pattern, an onset, a tone mark and a final together: เ◌ือ + ส + ่ + น = เสื่อน. */
+function composeSyllable(pattern, onset, markCh = "", final = "") {
+  const [pre, post = ""] = pattern.split("◌");
+  let k = 0;
+  while (k < post.length && DECODE_COMBINING.includes(post[k])) k += 1;
+  return (pre + onset + post.slice(0, k) + markCh + post.slice(k) + final).normalize("NFC");
+}
+
+/** One syllable to read, or null if the dice made something the reader can't parse cleanly. */
+function makeDecodeItem(kit, rnd = Math.random) {
+  const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
+  if (kit.words.length && rnd() < 0.4) {
+    const w = pick(kit.words);
+    const r = readThai(w.th)[0];
+    return { text: w.th, real: w, roman: w.thRoman.split(" ·")[0], tone: w.tone[0], parse: r };
+  }
+  const vowel = pick(kit.vowels);
+  const sonorants = kit.cons.filter((c) => "งญนมยรลว".includes(c));
+  const hn = kit.cons.includes("ห") && sonorants.length && rnd() < 0.15;
+  const onset = hn ? `ห${pick(sonorants)}` : pick(kit.cons);
+  const cls = hn ? "high" : thaiClassOf(onset);
+  const finals = [...(DECODE_CLOSED[vowel] || "")].filter((f) => kit.cons.includes(f));
+  const final = finals.length && (DECODE_NEEDS_FINAL.has(vowel) || rnd() < 0.5) ? pick(finals) : "";
+  if (DECODE_NEEDS_FINAL.has(vowel) && !final) return null;
+  const marks = kit.marks.filter((m) => cls === "mid" || !MID_ONLY_MARKS.has(m));
+  const mark = marks.length && rnd() < 0.45 ? pick(marks) : "none";
+  const text = composeSyllable(vowel, onset, MARKS[mark].th, final);
+  const read = readThai(text);
+  if (read.length !== 1 || read[0].raw || read[0].guess || read[0].onset !== onset || (read[0].final || "") !== final || read[0].mark !== mark) return null;
+  const real = thaiLexicon().get(text) || null;
+  // A real word read against its spelling would teach the wrong rule here.
+  if (real && (real.tone?.[0] !== read[0].tone || plainRoman(real.roman) !== plainRoman(read[0].roman))) return null;
+  return { text, real, roman: read[0].roman, tone: read[0].tone, parse: read[0] };
+}
+function decodeRound(kit, n = DECODE_ROUND, rnd = Math.random) {
+  const out = [];
+  const seen = new Set();
+  for (let tries = 0; out.length < n && tries < n * 40; tries += 1) {
+    const it = makeDecodeItem(kit, rnd);
+    if (it && !seen.has(it.text)) { seen.add(it.text); out.push(it); }
+  }
+  return out;
+}
+
+/* Wrong readings that differ from the right one in one way you might slip on. */
+const DECODE_SWAPS = {
+  onset: [["kh", "k"], ["ph", "p"], ["th", "t"], ["ch", "j"], ["ng", "n"], ["b", "p"], ["d", "t"], ["r", "l"]],
+  vowel: [["aa", "a"], ["ii", "i"], ["uu", "u"], ["ʉʉ", "ʉ"], ["ee", "e"], ["ɛɛ", "ɛ"], ["oo", "o"], ["ɔɔ", "ɔ"], ["əə", "ə"], ["ia", "ʉa"], ["ʉa", "ua"], ["ua", "ia"], ["ee", "ɛɛ"], ["oo", "ɔɔ"], ["ai", "ao"], ["am", "aa"], ["i", "ʉ"], ["u", "ʉ"]],
+  final: [["ng", "n"], ["n", "m"], ["m", "ng"], ["k", "t"], ["t", "p"], ["p", "k"], ["w", ""], ["y", ""], ["i", ""]],
+};
+const plainRoman = (r) => (r || "").normalize("NFD").replace(/[̀-ͯ]/g, "").normalize("NFC");
+function decodeOptions(roman, rnd = Math.random) {
+  const right = plainRoman(roman);
+  const m = right.match(/^([^aeiouɛɔʉə]*)([aeiouɛɔʉə]+)(.*)$/);
+  const out = new Set([right]);
+  if (m) {
+    const [, on, vo, fi] = m;
+    const alts = [];
+    DECODE_SWAPS.onset.forEach(([a, b]) => { if (on === a) alts.push(b + vo + fi); if (on === b) alts.push(a + vo + fi); });
+    DECODE_SWAPS.vowel.forEach(([a, b]) => { if (vo === a) alts.push(on + b + fi); if (vo === b) alts.push(on + a + fi); });
+    DECODE_SWAPS.final.forEach(([a, b]) => { if (fi === a && (b || fi)) alts.push(on + vo + b); if (fi === b && b) alts.push(on + vo + a); });
+    if (!fi) alts.push(on + vo + "n");
+    alts.map((a) => [rnd(), a]).sort((x, y) => x[0] - y[0]).forEach(([, a]) => { if (out.size < 4 && a && a !== right) out.add(a); });
+  }
+  return [...out].map((x) => [rnd(), x]).sort((x, y) => x[0] - y[0]).map(([, x]) => x);
+}
+
+/** The tone step after an answer: right in a row drops a step, two misses in the last five bring one back. */
+function decodeLevel(state = {}, ok) {
+  const recent = [...(state.recent || []), ok].slice(-5);
+  let level = state.level || 0;
+  let streak = ok ? (state.streak || 0) + 1 : 0;
+  if (streak >= DECODE_UP && level < DECODE_LEVELS.length - 1) { level += 1; streak = 0; }
+  if (!ok && level > 0 && recent.filter((x) => !x).length >= 2) { level -= 1; streak = 0; }
+  return { level, streak, recent };
+}
+
+function StepChoice({ options, onPick, picked, right }) {
+  return (
+    <div className={`grid gap-2 ${options.length > 3 ? "grid-cols-3 sm:grid-cols-5" : options.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+      {options.map(([k, label, sub, color]) => {
+        const state = picked == null ? "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" : k === right ? "border-emerald-400 bg-emerald-500/20" : k === picked ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
+        return (
+          <button key={k} type="button" disabled={picked != null} onClick={() => onPick(k)} data-step-opt={k} className={`rounded-2xl border-2 px-2 py-2.5 text-center transition active:scale-95 ${state}`}>
+            <div className="text-sm font-semibold" style={color ? { color } : undefined}>{label}</div>
+            {sub && <div className="text-[11px] text-slate-400">{sub}</div>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function SoundItOut({ mode, srs = {}, sandbox = false, drills = {}, setDrills, logActivity, focus = "decode" }) {
+  const toneOnly = focus === "tone";
+  const kit = useMemo(() => decodeKit(srs, sandbox), [srs, sandbox]);
+  const state = drills.decode || {};
+  const [round, setRound] = useState(null); // { items, idx, readRight, toneRight }
+  const [phase, setPhase] = useState("read"); // read | steps | tone | done
+  const [readPick, setReadPick] = useState(null);
+  const [stepIdx, setStepIdx] = useState(0);
+  const [stepPicks, setStepPicks] = useState([]);
+  const [tonePick, setTonePick] = useState(null);
+  const level = DECODE_LEVELS[state.level || 0];
+  const item = round?.items[round.idx];
+  const options = useMemo(() => (item ? decodeOptions(item.roman) : []), [item]);
+  const say = (t) => getAudio().speakHumanVoice(t);
+  const start = () => {
+    const items = decodeRound(kit);
+    setRound({ items, idx: 0, readRight: 0, toneRight: 0 });
+    reset(toneOnly);
+  };
+  const reset = (skipRead) => { setPhase(skipRead ? (level.steps.length ? "steps" : "tone") : "read"); setReadPick(null); setStepIdx(0); setStepPicks([]); setTonePick(null); };
+  if (mode === "lo") return <LetterLock icon={Target} title={toneOnly ? "Tone in three taps" : "Sound it out"} sub="Thai only for now" color="#F5A524" why="These drills build Thai syllables. Switch the course to Thai or Thai + Lao in Settings to use them; a Lao version comes after the Lao letters are checked." />;
+  if (!kit.ready) return <LetterLock icon={Target} title={toneOnly ? "Tone in three taps" : "Sound it out"} sub="Read syllables you've never seen" color="#F5A524" why="This opens once you've had lessons on at least 4 consonants and 2 vowels." progress={`${kit.cons.length} consonants · ${kit.vowels.length} vowels so far`} />;
+  const p = item?.parse;
+  const stepRight = { cls: p?.cls, live: p?.live ? "live" : "dead", mark: p?.mark };
+  const steps = level.steps;
+  const pickRead = (o) => {
+    if (readPick) return;
+    const ok = o === plainRoman(item.roman);
+    haptic(ok ? "ok" : "miss");
+    setReadPick(o);
+    if (ok) setRound((r) => ({ ...r, readRight: r.readRight + 1 }));
+    say(item.text);
+  };
+  const pickStep = (k) => {
+    const picks = [...stepPicks, k];
+    setStepPicks(picks);
+    haptic(k === stepRight[steps[stepIdx]] ? "ok" : "miss");
+    setTimeout(() => { if (stepIdx + 1 < steps.length) setStepIdx(stepIdx + 1); else setPhase("tone"); }, 450);
+  };
+  const pickTone = (t) => {
+    if (tonePick) return;
+    const stepsOk = steps.every((s, i) => stepPicks[i] === stepRight[s]);
+    const ok = t === item.tone && stepsOk;
+    haptic(t === item.tone ? "ok" : "miss");
+    setTonePick(t);
+    setPhase("done");
+    if (t === item.tone) setRound((r) => ({ ...r, toneRight: r.toneRight + 1 }));
+    if (toneOnly) say(item.text);
+    setDrills?.((d) => {
+      const cur = d.decode || {};
+      const lv = decodeLevel(cur, ok);
+      return { ...d, decode: { ...cur, ...lv, seen: (cur.seen || 0) + 1, readRight: (cur.readRight || 0) + (!toneOnly && readPick === plainRoman(item.roman) ? 1 : 0), toneRight: (cur.toneRight || 0) + (t === item.tone ? 1 : 0) } };
+    });
+    logActivity?.({ decode: 1 });
+  };
+  const next = () => {
+    if (round.idx + 1 >= round.items.length) {
+      setPhase("finished");
+      setDrills?.((d) => { const cur = d.decode || {}; const score = round.readRight + round.toneRight; return { ...d, decode: { ...cur, rounds: (cur.rounds || 0) + 1, best: Math.max(cur.best || 0, score) } }; });
+      logActivity?.({ drills: 1 });
+      return;
+    }
+    setRound((r) => ({ ...r, idx: r.idx + 1 }));
+    reset(toneOnly);
+  };
+  const stepOptions = {
+    cls: [["high", "High", "Sky Naga", CLASSES.high.color], ["mid", "Middle", "Golden Monk", CLASSES.mid.color], ["low", "Low", "River Spirit", CLASSES.low.color]],
+    live: [["live", "Live", "long vowel or m n ng w y"], ["dead", "Dead", "short open, or k t p"]],
+    mark: Object.keys(MARKS).map((k) => [k, k === "none" ? "None" : MARKS[k].th ? `◌${MARKS[k].th}` : k, MARKS[k].plain]),
+  };
+  const stepQ = { cls: "Which class does it follow?", live: "Live or dead ending?", mark: "Which tone mark?" };
+  const title = toneOnly ? "Tone in three taps" : "Sound it out";
+  return (
+    <div className="space-y-4" data-decode={focus}>
+      <Card className="p-4">
+        <div className="text-xs font-bold uppercase tracking-widest text-amber-300">{title}</div>
+        <p className="mt-1 text-sm text-slate-300">{toneOnly ? "Work out the tone of syllables you haven't seen: class, ending, mark, tone. The steps fade as you get them right." : "Syllables built only from letters you've met, half of them made up. You can't have memorised them, so you have to read them."}</p>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
+          <span className="rounded-full border border-white/10 px-2 py-0.5" data-decode-level>Tone help: <b className="text-white">{level.name}</b> · {level.note}</span>
+          {state.best ? <span className="rounded-full border border-white/10 px-2 py-0.5">Best round {state.best} / {toneOnly ? DECODE_ROUND : DECODE_ROUND * 2}</span> : null}
+          <span className="rounded-full border border-white/10 px-2 py-0.5">{kit.cons.length} consonants · {kit.vowels.length} vowels · {kit.marks.length} marks</span>
+        </div>
+      </Card>
+      {!round || phase === "finished" ? (
+        <Card className="p-5 text-center">
+          {phase === "finished" && round && (
+            <div className="mb-4" data-decode-summary>
+              <Trophy size={36} className="mx-auto text-amber-400" />
+              <div className="mt-2 text-xl font-black text-white">{toneOnly ? `${round.toneRight} / ${round.items.length} tones` : `${round.readRight} / ${round.items.length} read · ${round.toneRight} / ${round.items.length} tones`}</div>
+              <p className="mt-1 text-sm text-slate-400">Practice only: nothing here changes your reviews.</p>
+            </div>
+          )}
+          <button type="button" onClick={start} data-decode-start className="rounded-2xl bg-amber-500 px-6 py-3 font-bold text-black">{round ? "Another round" : `Start ${DECODE_ROUND} syllables`}</button>
+        </Card>
+      ) : item ? (
+        <Card className="p-5">
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>{round.idx + 1} / {round.items.length}</span>
+            {phase === "done" && <span data-decode-kind className={item.real ? "text-emerald-300" : "text-purple-200"}>{item.real ? `Real word: ${plainMeaning(item.real.meaning || item.real.m || "")}` : "Made up: read from the letters"}</span>}
+          </div>
+          <button type="button" onClick={() => say(item.text)} className="mx-auto mt-2 block text-7xl leading-[1.5] text-white" lang="th" style={{ fontFamily: FONT_STACKS.loop.th }} data-decode-text>{item.text}</button>
+          {!toneOnly && (
+            <div className="mt-3">
+              <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">1 · How does it sound?</div>
+              <div className="grid grid-cols-2 gap-2">
+                {options.map((o) => {
+                  const right = o === plainRoman(item.roman);
+                  const st = !readPick ? "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" : right ? "border-emerald-400 bg-emerald-500/20" : readPick === o ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
+                  return <button key={o} type="button" disabled={!!readPick} onClick={() => pickRead(o)} data-read-opt={right ? "right" : "wrong"} className={`rounded-2xl border-2 px-2 py-3 text-lg font-semibold text-white transition ${st}`}>{o}</button>;
+                })}
+              </div>
+              {readPick && phase === "read" && (
+                <button type="button" onClick={() => setPhase(steps.length ? "steps" : "tone")} data-decode-to-tone className="mt-3 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Now the tone</button>
+              )}
+            </div>
+          )}
+          {(phase === "steps" || phase === "tone" || phase === "done") && (
+            <div className="mt-4 space-y-3" data-decode-steps>
+              {steps.length > 0 && (
+                <div className="flex flex-wrap justify-center gap-1.5 text-xs">
+                  {steps.map((s, i) => {
+                    const done = i < stepPicks.length;
+                    const ok = done && stepPicks[i] === stepRight[s];
+                    return <span key={s} className={`rounded-full border px-2 py-0.5 ${!done ? (i === stepIdx && phase === "steps" ? "border-amber-400 text-amber-200" : "border-white/10 text-slate-500") : ok ? "border-emerald-400/60 text-emerald-200" : "border-rose-400/60 text-rose-200"}`}>{s === "cls" ? `Class: ${done ? CLASSES[stepRight.cls].name : "?"}` : s === "live" ? `Ending: ${done ? stepRight.live : "?"}` : `Mark: ${done ? MARKS[stepRight.mark].plain : "?"}`}</span>;
+                  })}
+                </div>
+              )}
+              {phase === "steps" && (
+                <div key={stepIdx}>
+                  <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">{stepQ[steps[stepIdx]]}</div>
+                  <StepChoice options={stepOptions[steps[stepIdx]]} onPick={pickStep} picked={stepPicks[stepIdx] ?? null} right={stepRight[steps[stepIdx]]} />
+                </div>
+              )}
+              {(phase === "tone" || phase === "done") && (
+                <div>
+                  <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">{toneOnly ? "Which tone?" : "2 · Which tone?"}</div>
+                  <ToneChoice onPick={pickTone} picked={tonePick} correct={phase === "done" ? item.tone : null} disabled={phase !== "tone"} />
+                </div>
+              )}
+              {phase === "done" && (
+                <div className="space-y-1 rounded-2xl bg-white/[0.04] p-3 text-sm" data-decode-result>
+                  <div className="text-slate-200"><b className="text-white">{R(item.roman)}</b> · {TONES[item.tone].name} ({TONES[item.tone].chao})</div>
+                  <div className="text-slate-300">{computeTone(p.parts).formula}</div>
+                  {p.notes?.map((n) => <div key={n} className="text-xs text-slate-400">{n}</div>)}
+                  <div className="flex gap-2 pt-2">
+                    <button type="button" onClick={() => say(item.text)} className="rounded-2xl border border-white/15 px-4 py-3 text-slate-200" aria-label="Play"><Volume2 size={16} /></button>
+                    <button type="button" onClick={next} data-decode-next className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">{round.idx + 1 >= round.items.length ? "Finish" : "Next"}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
 function MarketClock({ mode, drills = {}, setDrills, logActivity }) {
   const script = mode === "lo" ? "lo" : "th";
   const [kind, setKind] = useState("price");
@@ -12398,6 +12696,8 @@ const LAB_TABS = [
   { id: "reactor", label: "Tone Reactor", icon: FlaskConical },
   { id: "orbit", label: "Vowel Orbit", icon: Orbit },
   { id: "bridge", label: "Mekong Predictor", icon: Languages },
+  { id: "decode", label: "Sound it out", icon: Target },
+  { id: "tonetaps", label: "Tone in three taps", icon: Zap },
   { id: "clock", label: "Market Clock", icon: Clock },
   { id: "corral", label: "Classifiers", icon: Layers },
 ];
@@ -12445,6 +12745,8 @@ const PRACTICE_TOOLS = [
   { id: "reactor", tab: "lab", sub: "reactor", group: "How the script works", label: "Tone Reactor", icon: FlaskConical, blurb: "Build a syllable, watch its tone.", intro: "Pick a consonant class, a live or dead ending, a vowel length and a tone mark. The reactor works out the tone and shows the rule it used.", level: 2 },
   { id: "orbit", tab: "lab", sub: "orbit", group: "How the script works", label: "Vowel Orbit", icon: Orbit, blurb: "Where each vowel sits.", intro: "Vowels go in front of, above, below, after or around the consonant. Spin a consonant through them to see each shape." },
   { id: "bridge", tab: "lab", sub: "bridge", group: "How the script works", label: "Mekong Predictor", icon: Languages, blurb: "Thai spelling to Lao, by rule.", intro: "Ten rules turn a Thai spelling into Lao and back. Build the other script's word from tiles.", level: 3 },
+  { id: "decode", tab: "lab", sub: "decode", group: "Read faster", label: "Sound it out", icon: Target, blurb: "Read syllables you've never seen.", intro: "Every syllable is built from letters, vowels and marks you've had lessons on, and about half are made up, so you can't have memorised them. Pick how it sounds, then work out the tone. Nothing here changes your reviews." },
+  { id: "tonetaps", tab: "lab", sub: "tonetaps", group: "Read faster", label: "Tone in three taps", icon: Zap, blurb: "Class, ending, mark: tone.", intro: "Tap the class, live or dead ending and tone mark, then the tone. Get eight in a row and a step drops away, until you see the syllable and just know the tone." },
   { id: "clock", tab: "lab", sub: "clock", group: "Numbers and words", label: "Market Clock", icon: Clock, blurb: "Prices, numbers and the time.", intro: "Read prices and times the way they're said in a market or a taxi: baht, satang and the six-hour clock." },
   { id: "corral", tab: "lab", sub: "corral", group: "Numbers and words", label: "Classifiers", icon: Layers, blurb: "Counting words: ตัว, คน, อัน.", intro: "Thai counts with a classifier: noun, number, classifier. Sort words into the right pen." },
 ];
@@ -12591,6 +12893,7 @@ export default function SuvarnaKani() {
     if (kind === "mekong") { setTab("lab"); setLabTab("bridge"); }
     if (kind === "sign") { setTab("read"); setReadTab("street"); }
     if (kind === "shadow") { setTab("ear"); setEarTab("shadow"); }
+    if (kind === "decode") { setTab("lab"); setLabTab("decode"); }
     window.scrollTo?.(0, 0);
   };
   const [inspect, setInspect] = useState(null);
@@ -12617,6 +12920,7 @@ export default function SuvarnaKani() {
     if (kind === "shadow") return <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />;
     if (kind === "trace") return <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} kb={kb} setKb={setKb} />;
     if (kind === "mekong") return <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} srs={srs} sandbox={sandbox} introSeen={prefs.mekongIntro} onIntroSeen={() => setPrefs((p) => ({ ...p, mekongIntro: true }))} />;
+    if (kind === "decode") return <SoundItOut mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />;
     if (kind === "sign") return <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} sandbox={sandbox} />;
     return null;
   };
@@ -12767,6 +13071,8 @@ export default function SuvarnaKani() {
           <>
             {labTab === "reactor" && <Reactor mode={mode} font={font} />}
             {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
+            {labTab === "decode" && <SoundItOut mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
+            {labTab === "tonetaps" && <SoundItOut key="tone" focus="tone" mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "clock" && <MarketClock mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "corral" && <ClassifierCorral mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} srs={srs} sandbox={sandbox} />}
             {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} srs={srs} sandbox={sandbox} introSeen={prefs.mekongIntro} onIntroSeen={() => setPrefs((p) => ({ ...p, mekongIntro: true }))} />}
@@ -12824,4 +13130,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { glyphUnits, secondPrompt, signExample, scriptOrder, scriptFirstLessons, SCRIPT_WAVE, SCRIPT_SIGNS, LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { decodeKit, composeSyllable, makeDecodeItem, decodeRound, decodeOptions, decodeLevel, plainRoman, DECODE_LEVELS, planToday, glyphUnits, secondPrompt, signExample, scriptOrder, scriptFirstLessons, SCRIPT_WAVE, SCRIPT_SIGNS, LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
