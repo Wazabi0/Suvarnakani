@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.43.0";
+const APP_VERSION = "0.44.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2825,6 +2825,11 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.44.0", title: "Script passport", points: [
+    "Practice → Read faster → Script passport: four timed tests of 20 questions each. Consonants (sound and class), Vowels (sound and length), Tones (new syllables) and Reading (new syllables, reading and tone).",
+    "90% right earns a silver stamp. 90% right with a fast median answer earns gold. Retake any time; your best stamp stays.",
+    "Missed letter and vowel cards come due in your reviews straight away. Your four stamps also show on the Me tab next to the river passport.",
+  ] },
   { v: "0.43.0", title: "One-minute sprints", points: [
     "Practice → Read faster → One-minute sprint: as many as you can in 60 seconds. See a letter and tap its sound, hear it and tap the letter, or say it out loud and check yourself.",
     "Every answer is timed. Letters you get right but slowly, and ones you miss, come up more often, and lookalikes follow each other. After a run you see each letter coloured by speed.",
@@ -4312,7 +4317,7 @@ function RiverButton({ n, tried, onRun, compact }) {
   );
 }
 
-function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [], trials = {}, setTrials, prodSrs = {}, setProdSrs, setPref, renderTool, onGoLearn, sessionOnOpen, onSessionOpened }) {
+function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, ear, onOpenEar, log, logActivity, dailyMinutes, bridgeSched = {}, onPractice, autoReview, onAutoReviewDone, garden = [], setGarden, sentSrs = {}, setSentSrs, decoderSaved = [], mined = [], trials = {}, setTrials, prodSrs = {}, setProdSrs, setPref, renderTool, onGoLearn, sessionOnOpen, onSessionOpened, drills = {} }) {
   const prefs = usePrefs();
   const course = useMemo(() => courseItems(mode), [mode]);
   const [trialRun, setTrialRun] = useState(null);
@@ -4748,6 +4753,7 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
       {mode !== "lo" && <PatternDeck deck={sentSrs} setDeck={setSentSrs} sandbox={sandbox} logActivity={logActivity} stageOf={stageOf} />}
       <ProductionCard on={prodOn} onTurnOn={() => setPref?.("production", true)} cards={prodList} deck={prodSrs} sandbox={sandbox} script={prodScript(mode)} closeCount={prodClose} onOpen={() => setProdOpen(true)} />
 
+      {mode !== "lo" && <ScriptPassportRow passport={drills.passport} onOpen={() => onPractice?.("passport")} />}
       {/* River passport: one stamp per Guardian Trial. */}
       {!sandbox && <PlacementCard locked={COURSE_LEVELS.filter((l) => !unlockedLevels.has(l.n))} triedToday={riverTriedToday} onRun={startRiver} />}
       <div className="flex flex-wrap items-center gap-1.5 px-1" data-passport>
@@ -11614,6 +11620,198 @@ function OneMinuteSprint({ mode: courseMode, srs = {}, sandbox = false, drills =
   );
 }
 
+/* ============================================================================
+ * Script passport (0.44, R6): four alphabet tests that check speed as well as
+ * accuracy. Consonants (sound and class), Vowels (sound and length), Tones (the tone
+ * of new syllables) and Reading (new syllables: reading and tone). 90% right earns
+ * silver; 90% right with a median answer under the test's time earns gold. Retake any
+ * time. A missed letter or vowel card comes due in your reviews straight away (its
+ * schedule otherwise stays as it was). Thai only for now.
+ * ========================================================================== */
+const PASSPORT_SIZE = 20;
+const PASSPORT_PASS = 0.9;
+const PASSPORT_TESTS = [
+  { id: "consonants", label: "Consonants", sub: "Sound and class", fast: 3, min: 8 },
+  { id: "vowels", label: "Vowels", sub: "Sound and length", fast: 3, min: 6 },
+  { id: "tones", label: "Tones", sub: "Tone of new syllables", fast: 4, min: 8 },
+  { id: "reading", label: "Reading", sub: "New syllables, reading and tone", fast: 6, min: 8 },
+];
+
+/** The questions for one test, from what you have met. Each: { key, id?, text, steps: [{ q, options: [{ key, label, right }] }] }. */
+function passportQuestions(test, srs = {}, sandbox = false, rnd = Math.random) {
+  const mix = (xs) => xs.map((x) => [rnd(), x]).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+  const decks = sprintDecks(srs, sandbox, rnd);
+  const deck = (id) => decks.find((d) => d.id === id);
+  const toneStep = (tone) => ({ q: "Which tone?", tone: true, options: TONE_ORDER.map((t) => ({ key: t, label: TONES[t].name, right: t === tone, tone: t })) });
+  if (test === "consonants") {
+    const d = deck("letters");
+    return mix(d.items).slice(0, PASSPORT_SIZE).map((it) => ({ key: it.key, id: it.item.id, text: it.text, steps: [
+      { q: "Its sound?", options: sprintOptions(d, it, "see", rnd) },
+      { q: "Its class?", options: ["high", "mid", "low"].map((c) => ({ key: c, label: CLASSES[c].name, right: c === it.item.cls })) },
+    ] }));
+  }
+  if (test === "vowels") {
+    const d = deck("vowels");
+    return mix(d.items).slice(0, PASSPORT_SIZE).map((it) => ({ key: it.key, id: it.item.id, text: it.text, steps: [
+      { q: "Its sound?", options: sprintOptions(d, it, "see", rnd) },
+      { q: "Long or short?", options: [["long", "Long"], ["short", "Short"]].map(([k, label]) => ({ key: k, label, right: (k === "long") === !!it.item.long })) },
+    ] }));
+  }
+  const kit = decodeKit(srs, sandbox);
+  if (!kit.ready) return [];
+  const items = decodeRound(kit, PASSPORT_SIZE, rnd);
+  if (test === "tones") return items.map((it) => ({ key: it.text, text: it.text, roman: it.roman, steps: [toneStep(it.tone)] }));
+  return items.map((it) => ({ key: it.text, text: it.text, roman: it.roman, steps: [
+    { q: "How does it sound?", options: decodeOptions(it.roman, rnd).map((o) => ({ key: o, label: o, right: o === plainRoman(it.roman) })) },
+    toneStep(it.tone),
+  ] }));
+}
+
+/** Whether a test can be taken: enough met items for it. */
+function passportReady(test, srs = {}, sandbox = false) {
+  const t = PASSPORT_TESTS.find((x) => x.id === test);
+  if (test === "consonants" || test === "vowels") {
+    const d = sprintDecks(srs, sandbox).find((x) => x.id === (test === "consonants" ? "letters" : "vowels"));
+    return d.ready && d.items.length >= t.min;
+  }
+  const kit = decodeKit(srs, sandbox);
+  return kit.ready && kit.cons.length >= t.min;
+}
+
+/** A finished run's stamp: gold (accurate and fast), silver (accurate) or none. */
+function passportStamp(test, answers) {
+  const t = PASSPORT_TESTS.find((x) => x.id === test);
+  const right = answers.filter((a) => a.ok).length;
+  const acc = answers.length ? right / answers.length : 0;
+  const med = median(answers.map((a) => a.ms)) / 1000;
+  return { acc, median: Math.round(med * 10) / 10, right, total: answers.length, stamp: acc >= PASSPORT_PASS ? (med <= t.fast ? "gold" : "silver") : null };
+}
+const STAMP_RANK = { gold: 2, silver: 1 };
+function passportRecord(state = {}, test, res, day = todayKey()) {
+  const cur = state[test] || {};
+  const better = (STAMP_RANK[res.stamp] || 0) > (STAMP_RANK[cur.stamp] || 0);
+  return { ...state, [test]: { stamp: better ? res.stamp : cur.stamp || null, stampDay: better ? day : cur.stampDay, last: { ...res, day }, tries: (cur.tries || 0) + 1 } };
+}
+
+function StampBadge({ stamp, size = 16 }) {
+  const c = stamp === "gold" ? COLORS.gold : stamp === "silver" ? "#CBD5E1" : "#475569";
+  return <Stamp size={size} style={{ color: c }} aria-label={stamp ? `${stamp} stamp` : "no stamp yet"} />;
+}
+
+function ScriptPassport({ mode, srs = {}, setSrs, sandbox = false, drills = {}, setDrills, logActivity }) {
+  const passport = drills.passport || {};
+  const [run, setRun] = useState(null); // { test, qs, idx, step, picks, shownAt, answers }
+  const [result, setResult] = useState(null);
+  const say = (t) => getAudio().speakHumanVoice(t);
+  if (mode === "lo") return <LetterLock icon={Stamp} title="Script passport" sub="Thai only for now" color="#F5A524" why="The passport tests Thai letters for now. Switch the course to Thai or Thai + Lao in Settings to take it." />;
+  const start = (test) => {
+    const qs = passportQuestions(test, srs, sandbox);
+    if (!qs.length) return;
+    setResult(null);
+    setRun({ test, qs, idx: 0, step: 0, picks: [], shownAt: Date.now(), answers: [], picked: null });
+  };
+  const q = run?.qs[run.idx];
+  const step = q?.steps[run.step];
+  const pick = (o) => {
+    if (run.picked) return;
+    haptic(o.right ? "ok" : "miss");
+    const picks = [...run.picks, o.right];
+    const last = run.step + 1 >= q.steps.length;
+    setRun({ ...run, picked: o.key, picks });
+    setTimeout(() => {
+      if (!last) { setRun((r) => ({ ...r, step: r.step + 1, picked: null })); return; }
+      const ans = { key: q.key, id: q.id, text: q.text, ok: picks.every(Boolean), ms: Date.now() - run.shownAt };
+      const answers = [...run.answers, ans];
+      if (!ans.ok) say(q.text);
+      if (run.idx + 1 >= run.qs.length) { done(run.test, answers); return; }
+      setRun((r) => ({ ...r, idx: r.idx + 1, step: 0, picks: [], picked: null, answers, shownAt: Date.now() }));
+    }, o.right ? 250 : 900);
+  };
+  const done = (test, answers) => {
+    const res = passportStamp(test, answers);
+    const missed = answers.filter((a) => !a.ok);
+    setResult({ test, ...res, missed, prev: passport[test]?.stamp || null });
+    setRun(null);
+    setDrills?.((d) => ({ ...d, passport: passportRecord(d.passport || {}, test, res) }));
+    // Missed letter and vowel cards come due now; nothing else about their schedule changes.
+    const ids = missed.map((a) => a.id).filter((id) => id && (srs[id]?.stage || 0) >= 1 && srs[id].stage < 5);
+    if (ids.length && setSrs && !sandbox) setSrs((prev) => { const next = { ...prev }; ids.forEach((id) => { next[id] = { ...next[id], next: Math.min(next[id].next || Infinity, Date.now()) }; }); return next; });
+    logActivity?.({ drills: 1 });
+  };
+  const testInfo = (id) => PASSPORT_TESTS.find((t) => t.id === id);
+  return (
+    <div className="space-y-4" data-script-passport>
+      {result && !run && (
+        <Card className="p-5 text-center" data-passport-result>
+          <StampBadge stamp={result.stamp} size={44} />
+          <div className="mt-2 text-xl font-black text-white">{testInfo(result.test).label}: {result.stamp === "gold" ? "gold stamp" : result.stamp === "silver" ? "silver stamp" : "not yet"}</div>
+          <div className="mt-1 text-sm text-slate-300">{result.right} / {result.total} right ({Math.round(result.acc * 100)}%) · median {result.median} s per question</div>
+          <p className="mt-1 text-xs text-slate-400">Silver: {Math.round(PASSPORT_PASS * 100)}% right. Gold: that, with a median under {testInfo(result.test).fast} s.</p>
+          {result.missed.length > 0 && (
+            <div className="mt-3 text-left">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Missed{result.missed.some((a) => a.id) ? " (letter cards come due in your reviews now)" : ""}</div>
+              <div className="mt-1 flex flex-wrap gap-1.5">{result.missed.map((a) => <button key={a.key} type="button" onClick={() => say(a.text)} className="rounded-lg border border-rose-400/50 bg-rose-500/10 px-2 py-0.5 text-xl text-rose-100" lang="th" style={{ fontFamily: FONT_STACKS.loop.th }}>{a.text}</button>)}</div>
+            </div>
+          )}
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={() => setResult(null)} className="rounded-2xl border border-white/15 px-4 py-3 text-sm text-slate-200">All tests</button>
+            <button type="button" onClick={() => start(result.test)} data-passport-again className="flex-1 rounded-2xl bg-amber-500 py-3 font-bold text-black">Retake</button>
+          </div>
+        </Card>
+      )}
+      {!run && !result && (
+        <Card className="p-4">
+          <div className="text-xs font-bold uppercase tracking-widest text-amber-300">Script passport</div>
+          <p className="mt-1 text-sm text-slate-300">Four tests that tell you whether you're really reading or just recognising. Silver for {Math.round(PASSPORT_PASS * 100)}% right; gold when you're also fast. Retake any time.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            {PASSPORT_TESTS.map((t) => {
+              const ready = passportReady(t.id, srs, sandbox);
+              const p = passport[t.id];
+              return (
+                <button key={t.id} type="button" disabled={!ready} onClick={() => start(t.id)} data-passport-test={t.id}
+                  className={`rounded-2xl border p-3 text-left ${ready ? "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" : "border-white/5 opacity-40"}`}>
+                  <div className="flex items-center justify-between"><span className="font-bold text-white">{t.label}</span><StampBadge stamp={p?.stamp} /></div>
+                  <div className="text-xs text-slate-400">{t.sub}</div>
+                  <div className="mt-1 text-[11px] text-slate-400">{!ready ? "Opens with more letters" : p?.last ? `Last: ${Math.round(p.last.acc * 100)}% · ${p.last.median} s` : `Gold under ${t.fast} s`}</div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+      {run && q && (
+        <Card className="p-5" data-passport-run>
+          <div className="flex items-center justify-between text-xs text-slate-400">
+            <span>{testInfo(run.test).label} · {run.idx + 1} / {run.qs.length}</span>
+            <span>{run.answers.filter((a) => a.ok).length} right</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full bg-amber-400" style={{ width: `${(run.idx / run.qs.length) * 100}%` }} /></div>
+          <div className="my-4 text-center text-7xl leading-[1.5] text-white" lang="th" style={{ fontFamily: FONT_STACKS.loop.th }} data-passport-text>{q.text}</div>
+          <div className="mb-2 text-center text-xs font-bold uppercase tracking-widest text-slate-400">{step.q}</div>
+          <div className={`grid gap-2 ${step.options.length === 5 ? "grid-cols-3" : step.options.length === 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+            {step.options.map((o) => {
+              const st = !run.picked ? "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]" : o.right ? "border-emerald-400 bg-emerald-500/20" : run.picked === o.key ? "border-rose-400 bg-rose-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
+              return <button key={o.key} type="button" disabled={!!run.picked} onClick={() => pick(o)} data-passport-opt={o.right ? "right" : "wrong"} className={`rounded-2xl border-2 px-2 py-3 text-center text-lg font-semibold text-white transition ${st}`} style={o.tone ? { color: TONES[o.tone].ink } : undefined}>{o.label}</button>;
+            })}
+          </div>
+          <button type="button" onClick={() => setRun(null)} className="mt-3 w-full text-xs text-slate-500">Stop (this try won't count)</button>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/** The four stamps as a row for the Learn tab. */
+function ScriptPassportRow({ passport = {}, onOpen }) {
+  return (
+    <button type="button" onClick={onOpen} data-script-stamps className="flex w-full flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 text-left hover:bg-white/[0.06]">
+      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Script passport</span>
+      {PASSPORT_TESTS.map((t) => <span key={t.id} className="flex items-center gap-1 text-xs text-slate-300"><StampBadge stamp={passport[t.id]?.stamp} size={14} />{t.label}</span>)}
+      <ChevronRight size={14} className="ml-auto text-slate-500" />
+    </button>
+  );
+}
+
 function MarketClock({ mode, drills = {}, setDrills, logActivity }) {
   const script = mode === "lo" ? "lo" : "th";
   const [kind, setKind] = useState("price");
@@ -13038,6 +13236,7 @@ const LAB_TABS = [
   { id: "decode", label: "Sound it out", icon: Target },
   { id: "tonetaps", label: "Tone in three taps", icon: Zap },
   { id: "sprint", label: "Sprint", icon: Timer },
+  { id: "passport", label: "Passport", icon: Stamp },
   { id: "clock", label: "Market Clock", icon: Clock },
   { id: "corral", label: "Classifiers", icon: Layers },
 ];
@@ -13087,6 +13286,7 @@ const PRACTICE_TOOLS = [
   { id: "bridge", tab: "lab", sub: "bridge", group: "How the script works", label: "Mekong Predictor", icon: Languages, blurb: "Thai spelling to Lao, by rule.", intro: "Ten rules turn a Thai spelling into Lao and back. Build the other script's word from tiles.", level: 3 },
   { id: "decode", tab: "lab", sub: "decode", group: "Read faster", label: "Sound it out", icon: Target, blurb: "Read syllables you've never seen.", intro: "Every syllable is built from letters, vowels and marks you've had lessons on, and about half are made up, so you can't have memorised them. Pick how it sounds, then work out the tone. Nothing here changes your reviews." },
   { id: "sprint", tab: "lab", sub: "sprint", group: "Read faster", label: "One-minute sprint", icon: Timer, blurb: "As many as you can in 60 s.", intro: "See a letter and tap its sound, hear it and tap the letter, or say it aloud and check yourself. Every answer is timed: slow ones come back more, a miss costs 2 seconds, and a ghost shows your best run. Reach a deck's fluent mark on two days to open the next. Nothing here changes your reviews." },
+  { id: "passport", tab: "lab", sub: "passport", group: "Read faster", label: "Script passport", icon: Stamp, blurb: "Four alphabet tests, timed.", intro: "Consonants, Vowels, Tones and Reading: 20 questions each. 90% right earns silver; 90% right and fast earns gold. Missed letter and vowel cards come due in your reviews straight away. Retake any time." },
   { id: "tonetaps", tab: "lab", sub: "tonetaps", group: "Read faster", label: "Tone in three taps", icon: Zap, blurb: "Class, ending, mark: tone.", intro: "Tap the class, live or dead ending and tone mark, then the tone. Get eight in a row and a step drops away, until you see the syllable and just know the tone." },
   { id: "clock", tab: "lab", sub: "clock", group: "Numbers and words", label: "Market Clock", icon: Clock, blurb: "Prices, numbers and the time.", intro: "Read prices and times the way they're said in a market or a taxi: baht, satang and the six-hour clock." },
   { id: "corral", tab: "lab", sub: "corral", group: "Numbers and words", label: "Classifiers", icon: Layers, blurb: "Counting words: ตัว, คน, อัน.", intro: "Thai counts with a classifier: noun, number, classifier. Sort words into the right pen." },
@@ -13236,6 +13436,7 @@ export default function SuvarnaKani() {
     if (kind === "shadow") { setTab("ear"); setEarTab("shadow"); }
     if (kind === "decode") { setTab("lab"); setLabTab("decode"); }
     if (kind === "sprint") { setTab("lab"); setLabTab("sprint"); }
+    if (kind === "passport") { setTab("lab"); setLabTab("passport"); }
     window.scrollTo?.(0, 0);
   };
   const [inspect, setInspect] = useState(null);
@@ -13365,7 +13566,7 @@ export default function SuvarnaKani() {
 
       <main className="mx-auto max-w-6xl px-4 py-5">
         {["today", "learn", "me"].includes(tab) && (
-          <Shrine key={tab} view={tab} srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} trials={trials} setTrials={setTrials} prodSrs={prodSrs} setProdSrs={setProdSrs} setPref={setPref}
+          <Shrine key={tab} view={tab} srs={srs} setSrs={setSrs} sandbox={sandbox} mode={mode} font={font} onInspect={setInspect} ear={ear} onOpenEar={() => setTab("ear")} log={log} logActivity={logActivity} dailyMinutes={dailyMinutes} bridgeSched={bridgeSched} onPractice={goPractice} drills={drills} autoReview={autoReview} onAutoReviewDone={() => setAutoReview(false)} garden={garden} setGarden={setGarden} sentSrs={sentSrs} setSentSrs={setSentSrs} decoderSaved={decoderSaved} mined={library.mined} trials={trials} setTrials={setTrials} prodSrs={prodSrs} setProdSrs={setProdSrs} setPref={setPref}
             renderTool={renderTool} onGoLearn={() => { setTab("learn"); window.scrollTo?.(0, 0); }} sessionOnOpen={tab === "today" && sessionNow} onSessionOpened={() => setSessionNow(false)} />
         )}
         {tab === "me" && (
@@ -13416,6 +13617,7 @@ export default function SuvarnaKani() {
             {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
             {labTab === "decode" && <SoundItOut mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "tonetaps" && <SoundItOut key="tone" focus="tone" mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
+            {labTab === "passport" && <ScriptPassport mode={mode} srs={srs} setSrs={setSrs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "sprint" && <OneMinuteSprint mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "clock" && <MarketClock mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "corral" && <ClassifierCorral mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} srs={srs} sandbox={sandbox} />}
@@ -13474,4 +13676,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { sprintDecks, sprintOpen, sprintPick, sprintOptions, sprintRecord, SPRINT_DECK_INFO, decodeKit, composeSyllable, makeDecodeItem, decodeRound, decodeOptions, decodeLevel, plainRoman, DECODE_LEVELS, planToday, glyphUnits, secondPrompt, signExample, scriptOrder, scriptFirstLessons, SCRIPT_WAVE, SCRIPT_SIGNS, LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { passportQuestions, passportReady, passportStamp, passportRecord, PASSPORT_TESTS, sprintDecks, sprintOpen, sprintPick, sprintOptions, sprintRecord, SPRINT_DECK_INFO, decodeKit, composeSyllable, makeDecodeItem, decodeRound, decodeOptions, decodeLevel, plainRoman, DECODE_LEVELS, planToday, glyphUnits, secondPrompt, signExample, scriptOrder, scriptFirstLessons, SCRIPT_WAVE, SCRIPT_SIGNS, LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
