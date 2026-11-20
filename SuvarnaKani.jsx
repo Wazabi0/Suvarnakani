@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.44.0";
+const APP_VERSION = "0.44.1";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2825,6 +2825,11 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.44.1", title: "Alphabet polish", points: [
+    "With Script first on, the Lessons tile shows how many letter cards you've started.",
+    "Vowel and mark lessons show the sign as a sum, like ก + ◌า = กา, so the base letter is easy to see.",
+    "Sprints and Sound it out now also use the Word Garden words you've started, and a fast tap in a sprint no longer skips a card.",
+  ] },
   { v: "0.44.0", title: "Script passport", points: [
     "Practice → Read faster → Script passport: four timed tests of 20 questions each. Consonants (sound and class), Vowels (sound and length), Tones (new syllables) and Reading (new syllables, reading and tone).",
     "90% right earns a silver stamp. 90% right with a fast median answer earns gold. Retake any time; your best stamp stays.",
@@ -4693,6 +4698,7 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
               <div className="mt-2 text-3xl font-black text-white">{lessonQueue.length}</div>
               <div className="text-xs font-semibold uppercase tracking-wider text-pink-200">Lessons</div>
               {waitingCount > 0 && <div className="mt-1 text-[11px] text-pink-100/70" data-waiting-count>+{waitingCount} waiting on letters</div>}
+              {scriptFirst && (() => { const all = scriptOrder(mode); const started = all.filter((i) => stageOf(i.id) > 0).length; return <div className="mt-1 text-[11px] text-pink-100/70" data-script-first-progress>Script first: {started} of {all.length} letter cards started</div>; })()}
             </button>
             <button
               disabled={!reviewQueue.length}
@@ -4941,8 +4947,10 @@ function SignSpot({ item, mode }) {
           const ex = signExample(item, k);
           return (
             <div key={k} className="text-center">
-              <div className="text-6xl leading-[1.5]" lang={k} style={{ fontFamily: FONT_STACKS.loop[k] }}>
-                {[...item[k].replace("◌", base)].map((c, i) => <span key={i} className={c === base ? "text-white" : undefined} style={c === base ? undefined : { color: COLORS.gold }}>{c}</span>)}
+              <div className="flex items-center justify-center gap-2 text-5xl leading-[1.5]" lang={k} style={{ fontFamily: FONT_STACKS.loop[k] }}>
+                <span className="text-white">{base}</span><span className="text-2xl text-slate-500">+</span>
+                <span style={{ color: COLORS.gold }}>{item[k]}</span><span className="text-2xl text-slate-500">=</span>
+                <span className="text-white" data-sign-composed>{item[k].replace("◌", base)}</span>
               </div>
               {ex && <div className="text-xs text-slate-300"><span className="text-base" lang={k}>{ex[k]}</span> · {k === "lo" ? ex.loRoman : R(ex.thRoman.split(" ·")[0])} · {plainMeaning(ex.meaning)}</div>}
             </div>
@@ -11041,7 +11049,8 @@ function decodeKit(srs = {}, sandbox = false) {
   };
   const vowels = SCRIPT_SIGNS.filter((s) => !s.mark && !s.thOnly && signKnown(s)).map((s) => s.th);
   const marks = SCRIPT_SIGNS.filter((s) => s.mark && signKnown(s)).map((s) => s.mark);
-  const words = CURRICULUM.filter((i) => i.tier !== "glyph" && (sandbox || (srs[i.id]?.stage || 0) >= 1) && /^[ก-๛]+$/.test(i.th) && i.tone?.length === 1)
+  // Started course and Word Garden words of one syllable that read by the rules.
+  const words = courseItems("th").filter((i) => i.tier !== "glyph" && (sandbox || (srs[i.id]?.stage || 0) >= 1) && /^[ก-๛]+$/.test(i.th) && i.tone?.length === 1 && i.thRoman)
     .filter((i) => { const r = readThai(i.th); return r.length === 1 && !r[0].raw && !r[0].guess && r[0].tone === i.tone[0] && plainRoman(r[0].roman) === plainRoman(i.thRoman.split(" ·")[0]); });
   return { cons: [...new Set(cons)], vowels, marks, words, ready: cons.length >= 4 && vowels.length >= 2 };
 }
@@ -11339,6 +11348,7 @@ function sprintDecks(srs = {}, sandbox = false, rnd = Math.random) {
     const bases = [..."กจดตบปอ"];
     const vows = ["า", "ี", "ู", "อ"];
     bases.forEach((c) => vows.forEach((v) => {
+      if (c === "อ" && v === "อ") return;
       ["none", ...markSigns.map((s) => s.mark)].forEach((mk) => {
         const text = composeSyllable(v === "อ" ? "◌อ" : `◌${v}`, c, MARKS[mk].th, "");
         const tone = computeTone({ cls: "mid", live: true, long: true, mark: mk }).tone;
@@ -11348,7 +11358,7 @@ function sprintDecks(srs = {}, sandbox = false, rnd = Math.random) {
   }
   const kit = decodeKit(srs, sandbox);
   const syllables = kit.ready ? decodeRound(kit, 60, rnd).map((d) => ({ key: `syl:${d.text}`, text: d.text, answer: plainRoman(d.roman), audio: d.text, roman: d.roman })) : [];
-  const words = CURRICULUM.filter((i) => i.tier !== "glyph" && met(i) && /^[ก-๛]+$/.test(i.th) && [...i.th].length <= 8)
+  const words = courseItems("th").filter((i) => i.tier !== "glyph" && met(i) && /^[ก-๛]+$/.test(i.th) && [...i.th].length <= 8 && i.thRoman)
     .map((i) => ({ key: i.id, text: i.th, answer: plainRoman(i.thRoman.split(" ·")[0]), audio: i.ttsTh || i.th, roman: i.thRoman.split(" ·")[0], meaning: plainMeaning(i.meaning) }));
   const lists = { letters, vowels, marks, syllables, words };
   return SPRINT_DECK_INFO.map((d) => ({ ...d, items: lists[d.id], ready: new Set(lists[d.id].map((x) => x.answer)).size >= 4 || (d.id === "marks" && markSigns.length >= 1) }));
@@ -11453,6 +11463,8 @@ function OneMinuteSprint({ mode: courseMode, srs = {}, sandbox = false, drills =
   const [result, setResult] = useState(null);
   const [face, setFace] = useState("loop");
   const [hidden, setHidden] = useState(false);
+  const runRef = useRef(null);
+  runRef.current = run;
   const deck = decks.find((d) => d.id === deckId) || decks.find((d) => open.has(d.id)) || decks[0];
   useEffect(() => { if (hard) loadGauntletFonts(); }, [hard]);
   const elapsed = run ? (now - run.start) / 1000 + run.penalty : 0;
@@ -11510,7 +11522,7 @@ function OneMinuteSprint({ mode: courseMode, srs = {}, sandbox = false, drills =
     };
     setRun(r);
     if (!ok && mode !== "hear") play(run.item);
-    setTimeout(() => setRun((cur) => (cur && cur.start === r.start ? { ...cur, ...nextItem(cur, cur.item) } : cur)), ok ? 180 : 900);
+    setTimeout(() => { const cur = runRef.current; if (cur && cur.start === r.start) setRun({ ...cur, ...nextItem(cur, cur.item) }); }, ok ? 180 : 900);
   };
   if (courseMode === "lo") return <LetterLock icon={Timer} title="One-minute sprint" sub="Thai only for now" color="#F5A524" why="Sprints use Thai letters for now. Switch the course to Thai or Thai + Lao in Settings to use them." />;
   if (!decks[0].ready) return <LetterLock icon={Timer} title="One-minute sprint" sub="Speed for letters you know" color="#F5A524" why="Sprints open once you've had lessons on at least 4 consonants with different sounds." progress={`${decks[0].items.length} consonants so far`} />;
