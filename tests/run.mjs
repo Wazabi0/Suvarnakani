@@ -825,5 +825,48 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(plan.planned.some((s) => s.id === "decode" && s.tool === "decode"), "Today plan has a Sound it out step");
 }
 
+// 0.43.0: one-minute sprints (R3, R7).
+{
+  let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const all = T.sprintDecks({}, true, rnd);
+  eq(all.map((d) => d.id), ["letters", "vowels", "marks", "syllables", "words"], "five decks in ladder order");
+  check(all.every((d) => d.ready && d.items.length >= 4), "sandbox fills every deck");
+  check(T.sprintOpen(all, {}, true).size === 5, "sandbox opens every deck");
+  const none = T.sprintDecks({}, false, rnd);
+  check(!none[0].ready, "no letters, no sprint");
+  // Ladder: deck 2 opens after two fluent days on deck 1.
+  const srs = {}; T.CURRICULUM.filter((i) => i.level <= 2).forEach((i) => { srs[i.id] = { stage: 1 }; });
+  const decks = T.sprintDecks(srs, false, rnd);
+  check(decks[0].ready && decks[1].ready, "levels 1-2 give letters and vowels");
+  check(!T.sprintOpen(decks, {}, false).has("vowels"), "vowels wait for fluent letters");
+  check(T.sprintOpen(decks, { fluent: { letters: ["2026-11-01", "2026-11-02"] } }, false).has("vowels"), "two fluent days open vowels");
+  // Options: four, one right, distinct labels; hear mode offers letters.
+  for (const d of all) {
+    for (let i = 0; i < 20; i += 1) {
+      const it = T.sprintPick(d.items, {}, null, rnd);
+      for (const mode of ["see", "hear"]) {
+        const o = T.sprintOptions(d, it, mode, rnd);
+        check(o.filter((x) => x.right).length >= 1 && new Set(o.map((x) => x.label)).size === o.length && o.length >= 4, `${d.id} ${mode} ${it.text}: options ok`);
+      }
+    }
+  }
+  // Slow items come up more.
+  const letters = all[0].items;
+  const slow = letters[3].key;
+  const speed = Object.fromEntries(letters.map((x) => [x.key, { ms: 600, n: 3 }]));
+  speed[slow] = { ms: 3000, n: 3, miss: true };
+  let hits = 0; for (let i = 0; i < 2000; i += 1) if (T.sprintPick(letters, speed, null, rnd).key === slow) hits += 1;
+  check(hits > (2000 / letters.length) * 3, `a slow, missed letter comes up more (${hits} of 2000)`);
+  // Recording: best, ghost, fluent days.
+  let st = T.sprintRecord({}, { deck: "letters", mode: "see", score: 42, misses: 1, times: [1, 2], speed: { a: { ms: 800 } }, day: "2026-11-20", target: 40 });
+  check(st.best["letters:see"] === 42 && st.ghost["letters:see"].length === 2 && st.fluent.letters.includes("2026-11-20"), "a fluent run is recorded");
+  st = T.sprintRecord(st, { deck: "letters", mode: "see", score: 45, misses: 5, times: [1], speed: {}, day: "2026-11-21", target: 40 });
+  check(st.fluent.letters.length === 1 && st.best["letters:see"] === 45, "too many misses is not fluent, but still a best");
+  st = T.sprintRecord(st, { deck: "letters", mode: "say", score: 60, misses: 0, times: [], speed: {}, day: "2026-11-22", target: 40 });
+  check(st.fluent.letters.length === 1, "say-it runs don't count as fluent days");
+  const plan = T.planToday({ srs: {}, reviewCount: 0, lessonQueue: [], leeches: [], log: {}, dailyMinutes: 20, sprint: true });
+  check(plan.planned.some((s) => s.id === "sprint" && s.tool === "sprint"), "Today plan has a sprint step");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -5,7 +5,7 @@ import {
   Headphones, BookOpen, Trophy, Eraser, Play, Zap, Compass, AlertTriangle,
   Cloud, Sun, Waves, Ear, Target, Flame, Mic,
   Settings, Download, Upload, History, RefreshCw, Search, Keyboard, Moon, EyeOff, Hand, SunMoon,
-  Home, User, Map as MapIcon,
+  Home, User, Map as MapIcon, Timer, Stamp,
 } from "lucide-react";
 
 /* ============================================================================
@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.42.0";
+const APP_VERSION = "0.43.0";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2825,6 +2825,13 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.43.0", title: "One-minute sprints", points: [
+    "Practice → Read faster → One-minute sprint: as many as you can in 60 seconds. See a letter and tap its sound, hear it and tap the letter, or say it out loud and check yourself.",
+    "Every answer is timed. Letters you get right but slowly, and ones you miss, come up more often, and lookalikes follow each other. After a run you see each letter coloured by speed.",
+    "A miss costs 2 seconds, combos count up, and a ghost shows how far your best run had got at the same second.",
+    "Five decks in a ladder: letters, vowels, tone marks, syllables, words. Reach a deck's fluent mark (for letters, 40 a minute with 2 or fewer misses) on two days and the next one opens. A chart shows your best each day.",
+    "Hard mode switches between eight fonts, shrinks the text and flashes it for just over half a second. Today adds one sprint a day. Sprints never change your reviews.",
+  ] },
   { v: "0.42.0", title: "Sound it out, and tone in three taps", points: [
     "Sound it out (Practice → Read faster): syllables built only from letters, vowels and marks you've had lessons on, about half of them made up. You can't have memorised them, so you have to read them. Pick how it sounds, then the tone.",
     "Tone in three taps: tap the class, live or dead ending and mark, then the tone. Eight right in a row and a step drops away, until it's just the syllable and the tone. Two misses bring a step back.",
@@ -3841,7 +3848,7 @@ function todayPractice({ srs, mode, bridgeSched, log, sandbox = false, now = Dat
  * Each step has `onClick` (opens a review-style sheet) or `tool` (a practice tool shown inside the
  * daily session: "ear", "trace", "mekong", "sign" or "shadow").
  */
-function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onLeech, practice, trial, prod, decode = false }) {
+function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, onReviews, onLessons, onLeech, practice, trial, prod, decode = false, sprint = false }) {
   const today = log[todayKey()] || {};
   const acc = weekAccuracy(log);
   const lessonBatch = Math.min(lessonQueue.length, dailyMinutes <= 5 ? 3 : 5);
@@ -3867,6 +3874,8 @@ function planToday({ srs, reviewCount, lessonQueue, leeches, log, dailyMinutes, 
   }
   // 0.42 (R2): reading new syllables comes straight after lessons, once there are enough letters for it.
   if (decode) steps.push({ id: "decode", label: `Sound out ${DECODE_DAILY} new syllables`, short: "Sound it out", thai: false, min: 3, done: (today.decode || 0) >= DECODE_DAILY, note: `${Math.min(today.decode || 0, DECODE_DAILY)} / ${DECODE_DAILY} read`, tool: "decode" });
+  // 0.43 (R3): one sprint a day.
+  if (sprint) steps.push({ id: "sprint", label: "One-minute sprint", short: "Sprint", min: 2, done: (today.sprint || 0) >= 1, note: (today.sprint || 0) >= 1 ? "Done today" : "60 seconds, as many as you can", tool: "sprint" });
   // 0.33: new items come before the Ear set, so a first session starts with letters.
   steps.push(earStep);
   // Opt-in production track: about ten English-to-Thai cards a day.
@@ -4513,6 +4522,12 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
     }
   };
   const gateLevel = COURSE_LEVELS.find((l) => !unlockedLevels.has(l.n));
+  // Read-faster steps (0.42, 0.43): only once there are letters for them.
+  const readFaster = useMemo(() => {
+    if (mode === "lo") return { decode: false, sprint: false };
+    const met = CURRICULUM.filter((i) => i.tier === "glyph" && !i.sign && [...i.th].length === 1 && isThaiCons(i.th) && (sandbox || (srs[i.id]?.stage || 0) >= 1));
+    return { decode: decodeKit(srs, sandbox).ready, sprint: new Set(met.map((i) => TH_INITIAL[i.th])).size >= 4 };
+  }, [srs, sandbox, mode]);
   const readyTrial = gateLevel && gateLevel.n > 1 && trialStates[gateLevel.n - 1]?.status === "ready" ? gateLevel.n - 1 : null;
 
   const plan = planToday({
@@ -4528,10 +4543,11 @@ function Shrine({ view = "today", srs, setSrs, sandbox, mode, font, onInspect, e
     practice: todayPractice({ srs, mode, bridgeSched, log, sandbox, streetOpen: unlockedLevels.has(7) }),
     trial: readyTrial ? { label: `Guardian Trial · Level ${readyTrial}`, onClick: () => startTrial(readyTrial) } : null,
     prod: prodStep,
-    decode: mode !== "lo" && decodeKit(srs, sandbox).ready,
+    decode: readFaster.decode,
+    sprint: readFaster.sprint,
   });
   const todayLog = log[todayKey()] || {};
-  const startedToday = ["reviews", "lessons", "ear", "drills", "traces", "bridge", "signs", "shadow", "prod", "decode"].some((k) => (todayLog[k] || 0) > 0);
+  const startedToday = ["reviews", "lessons", "ear", "drills", "traces", "bridge", "signs", "shadow", "prod", "decode", "sprint"].some((k) => (todayLog[k] || 0) > 0);
   const streak = computeStreak(log);
   // Outside the session, a tool step opens its tab; inside, it runs in the session.
   const runStepAlone = (st) => { if (st.tool === "ear") onOpenEar?.(); else if (st.tool) onPractice?.(st.tool); else st.onClick?.(); };
@@ -11275,6 +11291,329 @@ function SoundItOut({ mode, srs = {}, sandbox = false, drills = {}, setDrills, l
   );
 }
 
+/* ============================================================================
+ * One-minute sprints (0.43, R3 + R7). As many as you can in 60 seconds: see a
+ * letter and tap its sound, hear it and tap the letter, or say it out loud and mark
+ * yourself. Every answer is timed, and letters you get right but slowly come back
+ * more often. Decks form a ladder (letters, vowels, tone marks, syllables, words):
+ * the next opens when you reach its fluent bar on two different days. A miss costs
+ * two seconds, a ghost shows your best run, and hard mode switches fonts, shrinks the
+ * text and flashes it for half a second. Thai only for now; nothing here touches SRS.
+ * ========================================================================== */
+const SPRINT_SECONDS = 60;
+const SPRINT_PENALTY = 2;
+const SPRINT_FLASH_MS = 600;
+const SPRINT_FLUENT_DAYS = 2;
+const SPRINT_MAX_MISSES = 2;
+const SPRINT_MODES = [
+  { id: "see", label: "See it", note: "Tap the sound" },
+  { id: "hear", label: "Hear it", note: "Tap the letter" },
+  { id: "say", label: "Say it", note: "Say it aloud, then check" },
+];
+const SPRINT_DECK_INFO = [
+  { id: "letters", label: "Letters", target: 40, blurb: "Consonant to sound" },
+  { id: "vowels", label: "Vowels", target: 35, blurb: "Vowel to sound" },
+  { id: "marks", label: "Tone marks", target: 30, blurb: "Marked syllable to tone" },
+  { id: "syllables", label: "Syllables", target: 25, blurb: "New syllable to reading" },
+  { id: "words", label: "Words", target: 20, blurb: "Course word to reading" },
+];
+const SPRINT_FACES = ["loop", "street", "sarabun", "prompt", "mitr", "chakra", "sriracha", "itim"];
+const sprintFace = (id) => (id === "loop" ? FONT_STACKS.loop.th : id === "street" ? FONT_STACKS.street.th : GAUNTLET_FACES.find((f) => f.id === id)?.th || FONT_STACKS.loop.th);
+
+/** The decks and their items, from what you have met. Each item: key, text, answer label, audio. */
+function sprintDecks(srs = {}, sandbox = false, rnd = Math.random) {
+  const met = (it) => sandbox || (srs[it.id]?.stage || 0) >= 1;
+  const letters = CURRICULUM.filter((i) => i.tier === "glyph" && !i.sign && [...i.th].length === 1 && isThaiCons(i.th) && met(i))
+    .map((i) => ({ key: i.id, text: i.th, answer: TH_INITIAL[i.th] || "silent", audio: i.ttsTh, item: i }));
+  const vowels = SCRIPT_SIGNS.filter((s) => !s.mark && !s.thOnly && met(s))
+    .map((s) => ({ key: s.id, text: s.th, answer: s.thRoman.split(" ·")[0], audio: s.ttsTh, item: s }));
+  const markSigns = SCRIPT_SIGNS.filter((s) => s.mark && met(s));
+  const marks = [];
+  if (markSigns.length) {
+    const bases = [..."กจดตบปอ"];
+    const vows = ["า", "ี", "ู", "อ"];
+    bases.forEach((c) => vows.forEach((v) => {
+      ["none", ...markSigns.map((s) => s.mark)].forEach((mk) => {
+        const text = composeSyllable(v === "อ" ? "◌อ" : `◌${v}`, c, MARKS[mk].th, "");
+        const tone = computeTone({ cls: "mid", live: true, long: true, mark: mk }).tone;
+        marks.push({ key: `mk:${text}`, text, answer: tone, audio: text, tone: true });
+      });
+    }));
+  }
+  const kit = decodeKit(srs, sandbox);
+  const syllables = kit.ready ? decodeRound(kit, 60, rnd).map((d) => ({ key: `syl:${d.text}`, text: d.text, answer: plainRoman(d.roman), audio: d.text, roman: d.roman })) : [];
+  const words = CURRICULUM.filter((i) => i.tier !== "glyph" && met(i) && /^[ก-๛]+$/.test(i.th) && [...i.th].length <= 8)
+    .map((i) => ({ key: i.id, text: i.th, answer: plainRoman(i.thRoman.split(" ·")[0]), audio: i.ttsTh || i.th, roman: i.thRoman.split(" ·")[0], meaning: plainMeaning(i.meaning) }));
+  const lists = { letters, vowels, marks, syllables, words };
+  return SPRINT_DECK_INFO.map((d) => ({ ...d, items: lists[d.id], ready: new Set(lists[d.id].map((x) => x.answer)).size >= 4 || (d.id === "marks" && markSigns.length >= 1) }));
+}
+
+/** Which decks are open: the first ready one, then each whose previous deck hit its fluent bar on two days. */
+function sprintOpen(decks, sprint = {}, sandbox = false) {
+  const open = new Set();
+  decks.forEach((d, i) => {
+    if (!d.ready) return;
+    const prev = decks[i - 1];
+    if (sandbox || i === 0 || !prev?.ready || (sprint.fluent?.[prev.id] || []).length >= SPRINT_FLUENT_DAYS) open.add(d.id);
+  });
+  return open;
+}
+
+/** Pick the next item: slow ones (by average time) and recent misses come up more, lookalikes cluster. */
+function sprintPick(items, speed = {}, prev = null, rnd = Math.random) {
+  const pool = items.filter((x) => x.key !== prev?.key);
+  const look = prev?.item ? new Set(confusables(prev.item, "th").map((o) => o.id)) : null;
+  const weight = (x) => {
+    const s = speed[x.key];
+    let w = 1;
+    if (!s) w += 1.5; // not timed yet
+    else w += Math.min(4, Math.max(0, (s.ms - 900) / 500)) + (s.miss ? 2 : 0);
+    if (look && x.item && look.has(x.item.id)) w += 1.5; // lookalikes follow each other (R7)
+    return w;
+  };
+  const ws = pool.map(weight);
+  let r = rnd() * ws.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i += 1) { r -= ws[i]; if (r <= 0) return pool[i]; }
+  return pool[pool.length - 1] || items[0];
+}
+
+/** Four choices: the answer, then the answers of lookalike items, then any others. */
+function sprintOptions(deck, item, mode, rnd = Math.random) {
+  if (deck.id === "marks" && mode !== "hear") return TONE_ORDER.map((t) => ({ key: t, label: TONES[t].name, right: t === item.answer, tone: t }));
+  const others = deck.items.filter((x) => x.answer !== item.answer);
+  const look = item.item ? new Set(confusables(item.item, "th").map((o) => o.id)) : new Set();
+  const shared = (x) => [...x.text].filter((c) => item.text.includes(c)).length;
+  const ranked = others.map((x) => [(look.has(x.item?.id) ? 4 : 0) + shared(x) + rnd() * 2, x]).sort((a, b) => b[0] - a[0]).map((x) => x[1]);
+  const out = [item];
+  const seen = new Set([mode === "hear" ? item.text : item.answer]);
+  if (deck.id === "syllables" && mode !== "hear") {
+    decodeOptions(item.roman, rnd).filter((o) => o !== item.answer).forEach((o) => { if (out.length < 4 && !seen.has(o)) { seen.add(o); out.push({ key: o, text: "", answer: o }); } });
+  }
+  for (const x of ranked) {
+    if (out.length >= 4) break;
+    const k = mode === "hear" ? x.text : x.answer;
+    if (!seen.has(k)) { seen.add(k); out.push(x); }
+  }
+  return out.map((x) => [rnd(), x]).sort((a, b) => a[0] - b[0]).map(([, x]) => ({ key: x.key, label: mode === "hear" ? x.text : x.answer, right: mode === "hear" ? x.text === item.text : x.answer === item.answer }));
+}
+
+/** Fold one finished run into the saved sprint state. */
+function sprintRecord(state = {}, { deck, mode, score, misses, times, speed, day = todayKey(), target }) {
+  const key = `${deck}:${mode}`;
+  const best = { ...(state.best || {}) };
+  const ghost = { ...(state.ghost || {}) };
+  if (score > (best[key] || 0)) { best[key] = score; ghost[key] = times; }
+  const days = { ...(state.days || {}) };
+  const dd = { ...(days[deck] || {}) };
+  dd[day] = Math.max(dd[day] || 0, score);
+  days[deck] = Object.fromEntries(Object.entries(dd).sort().slice(-60));
+  const fluent = { ...(state.fluent || {}) };
+  if (mode !== "say" && score >= target && misses <= SPRINT_MAX_MISSES) fluent[deck] = [...new Set([...(fluent[deck] || []), day])].sort().slice(-10);
+  return { ...state, best, ghost, days, fluent, speed: Object.fromEntries(Object.entries({ ...(state.speed || {}), ...speed }).slice(-400)), runs: (state.runs || 0) + 1 };
+}
+
+function SprintChart({ days = {}, target }) {
+  const list = [];
+  for (let i = 13; i >= 0; i -= 1) { const k = todayKey(Date.now() - i * DAY); list.push([k, days[k] || 0]); }
+  const max = Math.max(target, ...list.map((x) => x[1])) * 1.25;
+  const W = 280, H = 90;
+  const bw = W / list.length;
+  const y = (v) => H - (v / max) * H;
+  return (
+    <svg viewBox={`0 0 ${W} ${H + 14}`} className="w-full" role="img" aria-label="Best score per day, last 14 days" data-sprint-chart>
+      <line x1="0" x2={W} y1={y(target)} y2={y(target)} stroke={COLORS.gold} strokeDasharray="4 3" strokeWidth="1" />
+      <text x={W} y={y(target) - 3} textAnchor="end" fontSize="8" fill={COLORS.gold}>fluent {target}</text>
+      {list.map(([k, v], i) => (
+        <g key={k}>
+          <rect x={i * bw + 2} y={y(v)} width={bw - 4} height={H - y(v)} rx="2" fill={v >= target ? "#34D399" : "#94A3B8"} opacity={v ? 0.9 : 0.15} />
+          {v > 0 && <text x={i * bw + bw / 2} y={y(v) - 2} textAnchor="middle" fontSize="7" fill="#CBD5E1">{v}</text>}
+        </g>
+      ))}
+      <text x="0" y={H + 11} fontSize="8" fill="#94A3B8">2 weeks ago</text>
+      <text x={W} y={H + 11} textAnchor="end" fontSize="8" fill="#94A3B8">today</text>
+    </svg>
+  );
+}
+
+function OneMinuteSprint({ mode: courseMode, srs = {}, sandbox = false, drills = {}, setDrills, logActivity }) {
+  const sprint = drills.sprint || {};
+  const decks = useMemo(() => sprintDecks(srs, sandbox), [srs, sandbox]);
+  const open = useMemo(() => sprintOpen(decks, sprint, sandbox), [decks, sprint, sandbox]);
+  const [deckId, setDeckId] = useState(null);
+  const [mode, setMode] = useState("see");
+  const [hard, setHard] = useState(false);
+  const [run, setRun] = useState(null); // { start, penalty, score, misses, combo, bestCombo, times, item, options, shownAt, picked, revealed, speed: {} }
+  const [now, setNow] = useState(Date.now());
+  const [result, setResult] = useState(null);
+  const [face, setFace] = useState("loop");
+  const [hidden, setHidden] = useState(false);
+  const deck = decks.find((d) => d.id === deckId) || decks.find((d) => open.has(d.id)) || decks[0];
+  useEffect(() => { if (hard) loadGauntletFonts(); }, [hard]);
+  const elapsed = run ? (now - run.start) / 1000 + run.penalty : 0;
+  const left = Math.max(0, SPRINT_SECONDS - elapsed);
+  const ghostTimes = sprint.ghost?.[`${deck?.id}:${mode}`] || [];
+  const ghostCount = ghostTimes.filter((t) => t <= elapsed).length;
+  useEffect(() => {
+    if (!run) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
+  }, [run]);
+  const play = (it) => { const a = getAudio(); a.speakHumanVoice(it.audio || it.text); };
+  const nextItem = (r, prev) => {
+    const item = sprintPick(deck.items, { ...(sprint.speed || {}), ...(r?.speed || {}) }, prev);
+    const options = sprintOptions(deck, item, mode);
+    if (hard) setFace(SPRINT_FACES[Math.floor(Math.random() * SPRINT_FACES.length)]);
+    setHidden(false);
+    if (mode === "hear") setTimeout(() => play(item), 60);
+    return { item, options, shownAt: Date.now(), picked: null, revealed: false };
+  };
+  // Hard mode: the text shows for SPRINT_FLASH_MS, then hides.
+  useEffect(() => {
+    if (!run || !hard || mode === "hear" || run.picked) return undefined;
+    const id = setTimeout(() => setHidden(true), SPRINT_FLASH_MS);
+    return () => clearTimeout(id);
+  }, [run?.item, hard, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+  const finish = (r) => {
+    const res = { deck: deck.id, mode, score: r.score, misses: r.misses, times: r.times, speed: r.speed, target: deck.target, bestCombo: r.bestCombo, hard, prevBest: sprint.best?.[`${deck.id}:${mode}`] || 0 };
+    setResult(res);
+    setRun(null);
+    setDrills?.((d) => ({ ...d, sprint: sprintRecord(d.sprint || {}, res) }));
+    logActivity?.({ sprint: 1, drills: 1 });
+  };
+  useEffect(() => { if (run && left <= 0) finish(run); }, [left]); // eslint-disable-line react-hooks/exhaustive-deps
+  const start = () => {
+    setResult(null);
+    const r = { start: Date.now(), penalty: 0, score: 0, misses: 0, combo: 0, bestCombo: 0, times: [], speed: {} };
+    setNow(Date.now());
+    setRun({ ...r, ...nextItem(r, null) });
+  };
+  const answer = (ok) => {
+    if (!run || run.picked) return;
+    const ms = Date.now() - run.shownAt;
+    const k = run.item.key;
+    const prevSpeed = run.speed[k] || sprint.speed?.[k];
+    const sp = { ms: prevSpeed ? Math.round(prevSpeed.ms * 0.6 + (ok ? ms : Math.max(ms, 2500)) * 0.4) : ok ? ms : 2500, n: (prevSpeed?.n || 0) + 1, miss: !ok };
+    haptic(ok ? "ok" : "miss");
+    const t = (Date.now() - run.start) / 1000 + run.penalty;
+    const r = {
+      ...run, picked: ok ? "right" : "wrong",
+      score: run.score + (ok ? 1 : 0), misses: run.misses + (ok ? 0 : 1),
+      combo: ok ? run.combo + 1 : 0, bestCombo: Math.max(run.bestCombo, ok ? run.combo + 1 : 0),
+      penalty: run.penalty + (ok ? 0 : SPRINT_PENALTY), times: ok ? [...run.times, Math.round(t * 10) / 10] : run.times,
+      speed: { ...run.speed, [k]: sp },
+    };
+    setRun(r);
+    if (!ok && mode !== "hear") play(run.item);
+    setTimeout(() => setRun((cur) => (cur && cur.start === r.start ? { ...cur, ...nextItem(cur, cur.item) } : cur)), ok ? 180 : 900);
+  };
+  if (courseMode === "lo") return <LetterLock icon={Timer} title="One-minute sprint" sub="Thai only for now" color="#F5A524" why="Sprints use Thai letters for now. Switch the course to Thai or Thai + Lao in Settings to use them." />;
+  if (!decks[0].ready) return <LetterLock icon={Timer} title="One-minute sprint" sub="Speed for letters you know" color="#F5A524" why="Sprints open once you've had lessons on at least 4 consonants with different sounds." progress={`${decks[0].items.length} consonants so far`} />;
+  const speedOf = (k) => (sprint.speed || {})[k];
+  const textSize = (t) => (hard ? "text-5xl" : [...t].length > 4 ? "text-6xl" : "text-8xl");
+  return (
+    <div className="space-y-4" data-sprint>
+      {result && !run && (
+        <Card className="p-5" data-sprint-result>
+          <div className="text-center">
+            <div className="text-4xl font-black text-white">{result.score}<span className="text-base font-semibold text-slate-400"> / min</span></div>
+            <div className="mt-1 text-sm text-slate-300">{result.misses} miss{result.misses === 1 ? "" : "es"} · best combo {result.bestCombo}{result.score > result.prevBest ? " · new best!" : ` · best ${result.prevBest}`}</div>
+            <div className="mt-1 text-sm">{result.mode === "say" ? <span className="text-slate-400">Say-it run: practice for speaking speed.</span> : result.score >= result.target && result.misses <= SPRINT_MAX_MISSES ? <span className="font-bold text-emerald-300">Fluent today on {deck.label}.</span> : <span className="text-slate-400">Fluent is {result.target} with {SPRINT_MAX_MISSES} or fewer misses.</span>}</div>
+          </div>
+          <div className="mt-4">
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Speed per item (green under 1 s, amber under 2 s, red slower)</div>
+            <div className="flex flex-wrap gap-1" data-sprint-speed>
+              {deck.items.slice(0, 80).map((x) => {
+                const s = result.speed[x.key] || speedOf(x.key);
+                const c = !s ? "border-white/10 text-slate-500" : s.miss ? "border-rose-400 bg-rose-500/20 text-rose-100" : s.ms < 1000 ? "border-emerald-400/70 bg-emerald-500/15 text-emerald-100" : s.ms < 2000 ? "border-amber-400/70 bg-amber-500/15 text-amber-100" : "border-rose-400/70 bg-rose-500/10 text-rose-100";
+                return <span key={x.key} title={s ? `${(s.ms / 1000).toFixed(1)} s` : "not timed yet"} className={`rounded-lg border px-1.5 py-0.5 text-base ${c}`} lang="th" style={{ fontFamily: FONT_STACKS.loop.th }}>{x.text}</span>;
+              })}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">Slow and missed ones come up more in your next sprint.</p>
+          </div>
+          <div className="mt-4">
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">{deck.label}: best each day</div>
+            <SprintChart days={(drills.sprint?.days || {})[deck.id]} target={deck.target} />
+          </div>
+          <button type="button" onClick={start} data-sprint-again className="mt-4 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Go again</button>
+          <button type="button" onClick={() => setResult(null)} className="mt-2 w-full text-xs text-slate-400">Change deck or mode</button>
+        </Card>
+      )}
+      {!run && !result && (
+        <Card className="p-4">
+          <div className="text-xs font-bold uppercase tracking-widest text-amber-300">One-minute sprint</div>
+          <p className="mt-1 text-sm text-slate-300">As many as you can in a minute. A miss costs {SPRINT_PENALTY} seconds. Fluent means reaching the deck's mark with {SPRINT_MAX_MISSES} or fewer misses; do it on {SPRINT_FLUENT_DAYS} days and the next deck opens.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5" data-sprint-decks>
+            {decks.map((d) => {
+              const isOpen = open.has(d.id);
+              const fl = (sprint.fluent?.[d.id] || []).length;
+              return (
+                <button key={d.id} type="button" disabled={!isOpen} onClick={() => setDeckId(d.id)} data-deck={d.id}
+                  className={`rounded-xl border px-2 py-2 text-left text-xs ${deck.id === d.id ? "border-amber-400 bg-amber-500/15" : "border-white/10 bg-white/[0.03]"} ${isOpen ? "" : "opacity-40"}`}>
+                  <div className="font-bold text-white">{isOpen ? null : <Lock size={11} className="mr-1 inline" />}{d.label}</div>
+                  <div className="text-slate-400">{d.blurb}</div>
+                  <div className="mt-0.5 text-[10px] text-slate-400">Fluent {d.target}/min · {Math.min(fl, SPRINT_FLUENT_DAYS)}/{SPRINT_FLUENT_DAYS} days</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            {SPRINT_MODES.map((m) => <Chip key={m.id} active={mode === m.id} onClick={() => setMode(m.id)}>{m.label} · {m.note}</Chip>)}
+            <Chip active={hard} onClick={() => setHard(!hard)}>{hard ? "Hard mode on: fonts, small, flash" : "Hard mode off"}</Chip>
+          </div>
+          <div className="mt-3 flex items-center gap-3 text-sm text-slate-300">
+            <span>Best: <b className="text-white">{sprint.best?.[`${deck.id}:${mode}`] || 0}</b></span>
+            {mode === "say" && <span className="text-xs text-slate-400">Say-it runs don't count toward fluent days.</span>}
+          </div>
+          <button type="button" onClick={start} data-sprint-start className="mt-3 w-full rounded-2xl bg-amber-500 py-3 font-bold text-black">Start: {deck.label}</button>
+        </Card>
+      )}
+      {run && (
+        <Card className="p-5" data-sprint-run>
+          <div className="flex items-baseline justify-between tabular-nums">
+            <span className="text-2xl font-black text-white" data-sprint-left>{left.toFixed(0)}<span className="text-xs font-semibold text-slate-400"> s</span></span>
+            <span className="text-xs text-slate-400" data-sprint-ghost>{ghostTimes.length ? <>Ghost {ghostCount} · <b className={run.score >= ghostCount ? "text-emerald-300" : "text-rose-300"}>{run.score >= ghostCount ? "+" : ""}{run.score - ghostCount}</b></> : "No ghost yet"}</span>
+            <span className="text-2xl font-black text-white">{run.score}<span className="text-xs font-semibold text-slate-400"> right</span></span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full bg-amber-400" style={{ width: `${(left / SPRINT_SECONDS) * 100}%` }} /></div>
+          <div className="mt-1 h-5 text-center text-xs font-bold text-amber-300">{run.combo >= 5 ? `Combo ×${run.combo}` : ""}</div>
+          <div className="flex min-h-[9rem] items-center justify-center">
+            {mode === "hear" ? (
+              <button type="button" onClick={() => play(run.item)} className="flex h-20 w-20 items-center justify-center rounded-full bg-amber-500 text-black" aria-label="Play again"><Volume2 size={32} /></button>
+            ) : (
+              <span className={`${textSize(run.item.text)} leading-[1.5] text-white ${hidden ? "opacity-0" : ""}`} lang="th" style={{ fontFamily: hard ? sprintFace(face) : FONT_STACKS.loop.th }} data-sprint-text>{run.item.text}</span>
+            )}
+          </div>
+          {mode === "say" ? (
+            run.revealed ? (
+              <div className="space-y-2 text-center">
+                <div className="text-lg text-white">{run.item.tone ? TONES[run.item.answer].name : run.item.roman ? R(run.item.roman) : run.item.answer}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={!!run.picked} onClick={() => answer(false)} data-say="miss" className="rounded-2xl border-2 border-rose-400/60 py-3 font-bold text-rose-200">Missed it</button>
+                  <button type="button" disabled={!!run.picked} onClick={() => answer(true)} data-say="ok" className="rounded-2xl border-2 border-emerald-400/60 py-3 font-bold text-emerald-200">Said it</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => { setRun({ ...run, revealed: true }); play(run.item); }} data-say="show" className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white">Say it, then tap to check</button>
+            )
+          ) : (
+            <div className={`grid gap-2 ${run.options.length > 4 ? "grid-cols-3" : "grid-cols-2"}`}>
+              {run.options.map((o) => {
+                const st = !run.picked ? "border-white/10 bg-white/[0.04] active:bg-white/[0.1]" : o.right ? "border-emerald-400 bg-emerald-500/20" : "border-white/10 bg-white/[0.04] opacity-50";
+                return (
+                  <button key={o.key + o.label} type="button" disabled={!!run.picked} onClick={() => answer(o.right)} data-sprint-opt={o.right ? "right" : "wrong"}
+                    className={`rounded-2xl border-2 px-2 py-4 text-center font-semibold text-white transition ${st} ${mode === "hear" ? "text-4xl leading-[1.5]" : "text-xl"}`}
+                    style={mode === "hear" ? { fontFamily: FONT_STACKS.loop.th } : o.tone ? { color: TONES[o.tone].ink } : undefined}>{o.label}</button>
+                );
+              })}
+            </div>
+          )}
+          <button type="button" onClick={() => setRun(null)} data-sprint-stop className="mt-3 w-full text-xs text-slate-500">Stop (this run won't count)</button>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function MarketClock({ mode, drills = {}, setDrills, logActivity }) {
   const script = mode === "lo" ? "lo" : "th";
   const [kind, setKind] = useState("price");
@@ -12698,6 +13037,7 @@ const LAB_TABS = [
   { id: "bridge", label: "Mekong Predictor", icon: Languages },
   { id: "decode", label: "Sound it out", icon: Target },
   { id: "tonetaps", label: "Tone in three taps", icon: Zap },
+  { id: "sprint", label: "Sprint", icon: Timer },
   { id: "clock", label: "Market Clock", icon: Clock },
   { id: "corral", label: "Classifiers", icon: Layers },
 ];
@@ -12746,6 +13086,7 @@ const PRACTICE_TOOLS = [
   { id: "orbit", tab: "lab", sub: "orbit", group: "How the script works", label: "Vowel Orbit", icon: Orbit, blurb: "Where each vowel sits.", intro: "Vowels go in front of, above, below, after or around the consonant. Spin a consonant through them to see each shape." },
   { id: "bridge", tab: "lab", sub: "bridge", group: "How the script works", label: "Mekong Predictor", icon: Languages, blurb: "Thai spelling to Lao, by rule.", intro: "Ten rules turn a Thai spelling into Lao and back. Build the other script's word from tiles.", level: 3 },
   { id: "decode", tab: "lab", sub: "decode", group: "Read faster", label: "Sound it out", icon: Target, blurb: "Read syllables you've never seen.", intro: "Every syllable is built from letters, vowels and marks you've had lessons on, and about half are made up, so you can't have memorised them. Pick how it sounds, then work out the tone. Nothing here changes your reviews." },
+  { id: "sprint", tab: "lab", sub: "sprint", group: "Read faster", label: "One-minute sprint", icon: Timer, blurb: "As many as you can in 60 s.", intro: "See a letter and tap its sound, hear it and tap the letter, or say it aloud and check yourself. Every answer is timed: slow ones come back more, a miss costs 2 seconds, and a ghost shows your best run. Reach a deck's fluent mark on two days to open the next. Nothing here changes your reviews." },
   { id: "tonetaps", tab: "lab", sub: "tonetaps", group: "Read faster", label: "Tone in three taps", icon: Zap, blurb: "Class, ending, mark: tone.", intro: "Tap the class, live or dead ending and tone mark, then the tone. Get eight in a row and a step drops away, until you see the syllable and just know the tone." },
   { id: "clock", tab: "lab", sub: "clock", group: "Numbers and words", label: "Market Clock", icon: Clock, blurb: "Prices, numbers and the time.", intro: "Read prices and times the way they're said in a market or a taxi: baht, satang and the six-hour clock." },
   { id: "corral", tab: "lab", sub: "corral", group: "Numbers and words", label: "Classifiers", icon: Layers, blurb: "Counting words: ตัว, คน, อัน.", intro: "Thai counts with a classifier: noun, number, classifier. Sort words into the right pen." },
@@ -12894,6 +13235,7 @@ export default function SuvarnaKani() {
     if (kind === "sign") { setTab("read"); setReadTab("street"); }
     if (kind === "shadow") { setTab("ear"); setEarTab("shadow"); }
     if (kind === "decode") { setTab("lab"); setLabTab("decode"); }
+    if (kind === "sprint") { setTab("lab"); setLabTab("sprint"); }
     window.scrollTo?.(0, 0);
   };
   const [inspect, setInspect] = useState(null);
@@ -12920,6 +13262,7 @@ export default function SuvarnaKani() {
     if (kind === "shadow") return <ShadowMirror ear={ear} shadow={shadow} setShadow={setShadow} sandbox={sandbox} logActivity={logActivity} />;
     if (kind === "trace") return <Tracer mode={mode} srs={srs} setSrs={setSrs} logActivity={logActivity} kb={kb} setKb={setKb} />;
     if (kind === "mekong") return <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} srs={srs} sandbox={sandbox} introSeen={prefs.mekongIntro} onIntroSeen={() => setPrefs((p) => ({ ...p, mekongIntro: true }))} />;
+    if (kind === "sprint") return <OneMinuteSprint mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />;
     if (kind === "decode") return <SoundItOut mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />;
     if (kind === "sign") return <StreetReader mode={mode} srs={srs} setSrs={setSrs} best={streetBest} setBest={setStreetBest} logActivity={logActivity} sandbox={sandbox} />;
     return null;
@@ -13073,6 +13416,7 @@ export default function SuvarnaKani() {
             {labTab === "orbit" && <OrbitModule mode={mode} font={font} />}
             {labTab === "decode" && <SoundItOut mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "tonetaps" && <SoundItOut key="tone" focus="tone" mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
+            {labTab === "sprint" && <OneMinuteSprint mode={mode} srs={srs} sandbox={sandbox} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "clock" && <MarketClock mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} />}
             {labTab === "corral" && <ClassifierCorral mode={mode} drills={drills} setDrills={setDrills} logActivity={logActivity} srs={srs} sandbox={sandbox} />}
             {labTab === "bridge" && <MekongPredictor mode={mode} font={font} bridge={bridge} setBridge={setBridge} sched={bridgeSched} setSched={setBridgeSched} logActivity={logActivity} srs={srs} sandbox={sandbox} introSeen={prefs.mekongIntro} onIntroSeen={() => setPrefs((p) => ({ ...p, mekongIntro: true }))} />}
@@ -13130,4 +13474,4 @@ export default function SuvarnaKani() {
 }
 
 /* Pure functions exposed for the test suite (tests/run.mjs). Not used by the app. */
-export const __test = { decodeKit, composeSyllable, makeDecodeItem, decodeRound, decodeOptions, decodeLevel, plainRoman, DECODE_LEVELS, planToday, glyphUnits, secondPrompt, signExample, scriptOrder, scriptFirstLessons, SCRIPT_WAVE, SCRIPT_SIGNS, LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
+export const __test = { sprintDecks, sprintOpen, sprintPick, sprintOptions, sprintRecord, SPRINT_DECK_INFO, decodeKit, composeSyllable, makeDecodeItem, decodeRound, decodeOptions, decodeLevel, plainRoman, DECODE_LEVELS, planToday, glyphUnits, secondPrompt, signExample, scriptOrder, scriptFirstLessons, SCRIPT_WAVE, SCRIPT_SIGNS, LETTER_PICS, letterPicFor, PATTERNS, patternCards, patternQuestion, patternSession, PATTERN_NEW_PER_DAY, examplePool, examplesFor, textKey, EXAMPLE_GAP_STAGE, thaiLetterOnly, LIBRARY, sentenceCards, reviewDirection, hearOrSpell, hearMeaningOptions, plainMeaning, HEAR_STAGE, nativeKey, nativeClip, applyNativeIndex, nativeInfo, runtimePrefs, practicePool, practiceDirection, PRACTICE_SIZE, voiceGender, speakerGender, SuvarnaMobileAudioEngine, SHADOW_DIALOGUES, PITCH_MALE, PITCH_FEMALE, prodCards, prodSession, prodDirection, prodAnswer, prodTiles, prodNorm, PROD_DAILY, PROD_NEW_PER_DAY, PROD_UNLOCK_STAGE, DEFAULT_PREFS, SENTENCE_GAPS, sentenceSession, gardenBoxes, gardenBoxGoal, GARDEN_CHECK, GARDEN_LAYOUT_SRC: GARDEN_LAYOUT, trialCue, openLevels, legacyTrials, reviewedRightSince, trialState, buildTrial, riverLevels, trialOutcome, trialKey, TRIAL_SIZE, RIVER_SIZE, unlockChain, levelGoal, levelPassed, reviewOrder, LADDER_HOURS, BRIDGE_LAWS, STREET_PACKS, RIDE_ROUTES, CORRAL, resolveToken, letterGate, bridgeAccess, streetPacks, packReady, rideStops, corralFor, todayPractice, KEYMAPS, keyFor, typeable, dictationPool, syllableTargets, traceTargets, SRS_STAGES, ANATOMY, TONES_LIGHT_BASE, applyTonePalette, STREAK_MILESTONES, TALK_PATHS, talkLine, SOUND_SETS, phraseTrials, climbLadder, voiceBankLists, LIBRARY, storyText, rideRun, SIGN_PACKS, dailyMenu, numberWords, numberRoman, clockPhrase, sentenceCards, interleave, looseRoman, answerSplit, readingMatch, meaningMatch, twoPartReview, soundSlip, slipChoices, computeStreak, PRACTICE_TOOLS, GARDEN_BEDS, GARDEN_ITEMS, laoToThai, laoReading, isCorrect, SENTENCES, readThai, segmentThai, romanize, computeTone, laoSyllables, laoSyllable, laoTone, courseItems, CURRICULUM, LAO_ONLY_ITEMS, TONES, fsrsUpdate, scheduleItem, politeLine, loadPrefs, readBackup, makeBackup, verCmp };
