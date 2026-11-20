@@ -789,5 +789,41 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(next.length === 3 && next.every((i) => !grown[i.id]), "letters past their 8-hour review make room for new ones");
 }
 
+// 0.42.0: Sound it out (R2) and Tone in three taps (R4).
+{
+  const none = T.decodeKit({}, false);
+  check(!none.ready, "Sound it out stays locked with no letters");
+  const kit = T.decodeKit({}, true);
+  check(kit.ready && kit.cons.length >= 40 && kit.vowels.length >= 20 && kit.marks.length === 4, "sandbox opens every letter, vowel and mark");
+  eq(T.composeSyllable("เ◌ือ", "ส", "่", "น"), "เสื่อน", "a mark goes after an above vowel");
+  eq(T.composeSyllable("◌า", "ก", "้", "ง"), "ก้าง", "a mark goes on the consonant before า");
+  eq(T.composeSyllable("เ◌", "ห" + "ม", "", ""), "เหม", "ห นำ onsets compose");
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const round = T.decodeRound(kit, 200, rnd);
+  check(round.length >= 150, `made a long round (${round.length})`);
+  round.forEach((it) => {
+    check(T.TONES[it.tone], `${it.text}: has a tone`);
+    check(T.readThai(it.text).length === 1, `${it.text}: reads as one syllable`);
+    const opts = T.decodeOptions(it.roman, rnd);
+    check(opts.includes(T.plainRoman(it.roman)) && new Set(opts).size === opts.length && opts.length >= 2, `${it.text}: options hold the right reading once`);
+    if (it.parse?.mark && ["tri", "jat"].includes(it.parse.mark)) check(it.parse.cls === "mid", `${it.text}: mai tri and jattawa only on Middle letters`);
+  });
+  check(round.some((i) => !i.real) && round.some((i) => i.real), "rounds mix real and made-up syllables");
+  // Only letters you have met.
+  const srs = { "g-ko": { stage: 1 }, "g-do": { stage: 1 }, "g-to": { stage: 1 }, "g-bo": { stage: 1 }, "vw-aa": { stage: 1 }, "vw-ii": { stage: 1 } };
+  const small = T.decodeKit(srs, false);
+  check(small.ready, "four consonants and two vowels open the drill");
+  const allowed = new Set([..."กดตบาี"]);
+  T.decodeRound(small, 30, rnd).forEach((it) => check([...it.text].every((c) => allowed.has(c)), `${it.text}: only met letters`));
+  // Tone help fades and comes back.
+  let st = {};
+  for (let i = 0; i < 8; i += 1) st = T.decodeLevel(st, true);
+  check(st.level === 1, "eight right drops a tone step");
+  st = T.decodeLevel(T.decodeLevel(st, false), false);
+  check(st.level === 0, "two misses bring the step back");
+  const plan = T.planToday({ srs: {}, reviewCount: 0, lessonQueue: [], leeches: [], log: {}, dailyMinutes: 20, decode: true });
+  check(plan.planned.some((s) => s.id === "decode" && s.tool === "decode"), "Today plan has a Sound it out step");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
