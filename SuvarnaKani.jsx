@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.44.2";
+const APP_VERSION = "0.44.3";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2842,6 +2842,9 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.44.3", title: "Sprint sounds", points: [
+    "The one-minute sprint is back to the app's own voice for every card. Native recordings covered only some cards, from different speakers, so a deck sounded uneven.",
+  ] },
   { v: "0.44.2", title: "Steadier speech, a fairer daily plan", points: [
     "Speak buttons no longer skip or stay silent when the phone's speech engine drops a word: it now tries again, and a two-part answer always plays both parts.",
     "A native recording that is slow to load gives way to the speech voice after 4 seconds instead of staying silent.",
@@ -3220,7 +3223,8 @@ class SuvarnaMobileAudioEngine {
     const live = () => token === this.seqToken;
     // A Voice Bank recording of the same text wins over the synthetic voice.
     // Then a native speaker's clip (Thai only: a Lao word is never read with a Thai recording).
-    const recOf = (e) => (e.lo && voiceBank.get(voiceKey("lo", e.lo))) || (e.th && voiceBank.get(voiceKey("th", e.th))) || (!e.lo && e.th && nativeClip(e.th, e.who)?.f) || null;
+    // `synth: true` skips recordings (the sprint wants one steady voice for every card).
+    const recOf = (e) => e.synth ? null : (e.lo && voiceBank.get(voiceKey("lo", e.lo))) || (e.th && voiceBank.get(voiceKey("th", e.th))) || (!e.lo && e.th && nativeClip(e.th, e.who)?.f) || null;
     const urls = list.map(recOf); // once, so speaker rotation advances once per play
     const run = async () => {
       for (let i = 0; i < list.length; i += 1) {
@@ -11556,7 +11560,9 @@ function OneMinuteSprint({ mode: courseMode, srs = {}, sandbox = false, drills =
     const id = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(id);
   }, [run]);
-  const play = (it) => { const a = getAudio(); a.speakHumanVoice(it.audio || it.text); };
+  // 0.44.3: the sprint always uses the device voice. Mixing native clips (only some cards have one,
+  // each from a different speaker, some cut from sentences) made decks sound uneven.
+  const play = (it) => { const a = getAudio(); a.speakHumanVoice(it.audio || it.text, undefined, { synth: true }); };
   const nextItem = (r, prev) => {
     const item = sprintPick(deck.items, { ...(sprint.speed || {}), ...(r?.speed || {}) }, prev);
     const options = sprintOptions(deck, item, mode);
