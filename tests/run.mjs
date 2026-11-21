@@ -968,5 +968,12 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   check(ids(paused).includes("lessons") && paused.total <= 12, "paused lessons are shown but don't use up the day");
 }
 
+// Native recordings off by default (0.44.4), also for saves that had them on.
+{
+  eq(T.loadPrefs({}).nativeVoices, false, "new saves use the device voice");
+  eq(T.loadPrefs({ nativeVoices: true }).nativeVoices, false, "old saves are switched off once");
+  eq(T.loadPrefs({ nativeVoices: true, nativeOff: true }).nativeVoices, true, "turning them back on in Settings sticks");
+}
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

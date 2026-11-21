@@ -15,7 +15,7 @@ import {
  * ========================================================================== */
 
 const STORAGE_KEY = "suvarnakani.v1";
-const APP_VERSION = "0.44.3";
+const APP_VERSION = "0.44.4";
 
 const COLORS = {
   obsidian: "#0B0F19",
@@ -2802,12 +2802,14 @@ function useWakeLock(active) {
 /* ---------------------------------------------------------------------------
  * Preferences shared by many screens.
  * ------------------------------------------------------------------------- */
-const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false, toolsSeen: {}, vacation: null, placementAsk: false, nativeVoices: true, hearIt: true, scriptFirst: false };
+const DEFAULT_PREFS = { particle: "male", particleSet: false, textSize: 100, haptics: true, roman: "learner", tint: true, randomFonts: false, theme: "system", trueBlack: false, mekongIntro: false, production: false, voiceGender: "auto", voiceTh: "", voiceLo: "", speakerVoices: true, pitchNumbers: false, toolsSeen: {}, vacation: null, placementAsk: false, nativeVoices: false, hearIt: true, scriptFirst: false };
 const PrefsContext = React.createContext(DEFAULT_PREFS);
 /** Saved prefs over the defaults. 0.28.1 made ครับ the default: saves from before then hold "unset" only because nobody had picked yet. */
 function loadPrefs(saved) {
   const p = { ...DEFAULT_PREFS, ...(saved || {}) };
   if (p.particle === "unset" && !p.particleSet) p.particle = "male";
+  // 0.44.4: Josh asked for the app's own voice everywhere, so native recordings go off once for every save.
+  if (!p.nativeOff) { p.nativeVoices = false; p.nativeOff = true; }
   return p;
 }
 const usePrefs = () => React.useContext(PrefsContext);
@@ -2842,6 +2844,10 @@ const verCmp = (a, b) => {
 
 /* What's new, newest first. Shown once after an update. */
 const WHATS_NEW = [
+  { v: "0.44.4", title: "The app's own voice everywhere", points: [
+    "Native speaker recordings are off across the app, so every word is read by your phone's voice, the same as before the recordings were added.",
+    "You can turn them back on in Settings → Voices → Native speakers.",
+  ] },
   { v: "0.44.3", title: "Sprint sounds", points: [
     "The one-minute sprint is back to the app's own voice for every card. Native recordings covered only some cards, from different speakers, so a deck sounded uneven.",
   ] },
@@ -7238,7 +7244,7 @@ function SpeedNote({ ear, setEar }) {
           {ear.varyVoices === false ? "One voice" : `Rotating ${n} voices`}
         </button>
       )}
-      {nativeInfo.loaded && <span>Words with native recordings rotate {nativeInfo.speakers} real speakers.</span>}
+      {nativeInfo.loaded && runtimePrefs.nativeVoices !== false && <span>Words with native recordings rotate {nativeInfo.speakers} real speakers.</span>}
       {n <= 1 && !nativeInfo.loaded && <span>One Thai voice on this phone. Recordings in the Voice Bank add real ones.</span>}
     </div>
   );
