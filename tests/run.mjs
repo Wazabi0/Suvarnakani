@@ -945,6 +945,9 @@ check(!T.trialOutcome(runOf(11, []), 3, 12).passed, "an unfinished trial doesn't
   log.length = 0; audioFault = "stall";
   eq(await a.speakHumanVoice("กิน"), true, "a stalled clip gives way");
   check(log.join() === "stall:v/kin.mp3,start:กิน,end:กิน", `the speech voice reads it instead (${log.join()})`);
+  log.length = 0; audioFault = "ok";
+  eq(await a.speakHumanVoice("กิน", undefined, { synth: true }), true, "synth-only speech plays");
+  check(log.join() === "start:กิน,end:กิน", `synth: true skips the native clip (${log.join()})`);
   T.applyNativeIndex({ clips: {} });
 
   a.muted = true;
